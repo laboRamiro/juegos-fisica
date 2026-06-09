@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presión Hidrostática – Juego de Playa</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #0a1628;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 10px 20px;
+    color: #fff;
+    user-select: none;
+  }
+  h1 { font-size: 1.35rem; color: #87ceeb; letter-spacing: 1px; margin-bottom: 3px; }
+  .subtitle {
+    font-size: .82rem; color: #aac; margin-bottom: 12px;
+    background: rgba(0,0,0,0.35); padding: 4px 18px; border-radius: 20px;
+  }
+  .subtitle b { color: #ffd166; }
+  .layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; justify-content: center; }
+  canvas { border-radius: 14px; box-shadow: 0 0 40px rgba(0,150,255,0.25); display: block; cursor: none; }
+  .panel {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 18px; padding: 18px 16px; width: 252px; backdrop-filter: blur(8px);
+  }
+  .panel h2 { font-size: .88rem; color: #87ceeb; margin-bottom: 11px;
+    border-bottom: 1px solid rgba(255,255,255,0.12); padding-bottom: 6px; }
+  .results { background: rgba(0,0,0,0.4); border-radius: 12px; padding: 11px; }
+  .rrow {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: .82rem;
+  }
+  .rrow:last-child { border-bottom: none; }
+  .rrow .lbl { color: #9ac; }
+  .rrow .val { font-weight: bold; }
+  .rrow .val.yellow { color: #ffd166; }
+  .rrow .val.blue   { color: #64b5f6; }
+  .rrow .val.red    { color: #ff6b6b; }
+  .rrow .val.green  { color: #81c784; }
+  .pres-display {
+    margin-top: 14px; background: rgba(0,0,0,0.5); border-radius: 14px;
+    padding: 14px; text-align: center;
+  }
+  .pres-formula { font-size: .78rem; color: #aac; margin-bottom: 6px; }
+  .pres-formula b { color: #ffd166; }
+  .pres-value { font-size: 1.6rem; font-weight: bold; transition: color .2s; color: #81c784; }
+  .pres-unit { font-size: .78rem; color: #aac; margin-top: 2px; }
+  .depth-bar-wrap { margin-top: 12px; }
+  .depth-bar-label { font-size: .74rem; color: #9ac; margin-bottom: 3px; display:flex; justify-content:space-between; }
+  .depth-bar-track { background: rgba(255,255,255,0.1); border-radius: 6px; height: 18px; overflow: hidden; }
+  .depth-bar-fill  { height: 100%; border-radius: 6px; transition: width .1s, background .3s; }
+  .level-badge {
+    margin-top: 12px; padding: 7px 10px; border-radius: 10px;
+    font-size: .8rem; font-weight: bold; text-align: center; transition: all .3s;
+  }
+  .nota { margin-top: 12px; font-size: .73rem; color: #8ab; line-height: 1.55; }
+  .nota b { color: #ffd166; }
+</style>
+</head>
+<body>
+
+<h1>🏖️ Presión Hidrostática – Del Mar a la Costa</h1>
+<div class="subtitle">Mové el mouse → el nadador avanza · <b>P = ρ · g · h</b></div>
+
+<div class="layout">
+  <canvas id="c" width="680" height="470"></canvas>
+
+  <div class="panel">
+    <h2>🌊 Presión en tiempo real</h2>
+    <div class="results">
+      <div class="rrow"><span class="lbl">ρ agua de mar</span><span class="val yellow">1025 kg/m³</span></div>
+      <div class="rrow"><span class="lbl">g</span><span class="val yellow">9.81 m/s²</span></div>
+      <div class="rrow"><span class="lbl">Profundidad (h)</span><span class="val blue" id="r-h">— m</span></div>
+      <div class="rrow"><span class="lbl">Presión hidrostática</span><span class="val red" id="r-p">— Pa</span></div>
+      <div class="rrow"><span class="lbl">+ Presión atmosférica</span><span class="val green">101 325 Pa</span></div>
+      <div class="rrow"><span class="lbl">Presión total</span><span class="val" id="r-ptot" style="color:#fff">— kPa</span></div>
+    </div>
+
+    <div class="pres-display">
+      <div class="pres-formula"><b>P = ρ · g · h</b></div>
+      <div class="pres-value" id="pv">0</div>
+      <div class="pres-unit">Pa (presión hidrostática)</div>
+    </div>
+
+    <div class="depth-bar-wrap">
+      <div class="depth-bar-label"><span>Profundidad</span><span id="depth-pct">0%</span></div>
+      <div class="depth-bar-track"><div class="depth-bar-fill" id="depth-bar" style="width:0%;background:#64b5f6"></div></div>
+    </div>
+
+    <div id="level-badge" class="level-badge" style="background:rgba(129,199,132,0.15);border:1px solid rgba(129,199,132,0.4);color:#81c784">
+      🏖️ En la playa – sin presión
+    </div>
+
+    <div class="nota">
+      <b>h = 0</b>: playa → P = 0 Pa<br>
+      <b>h = 5 m</b>: P ≈ 50 kPa<br>
+      <b>h = 10 m</b>: P ≈ 100 kPa (≈ 1 atm extra!)<br><br>
+      Las <b>flechas rojas</b> son la presión empujando al nadador desde todos los lados.
+    </div>
+  </div>
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false; // pixel art crisp edges
+const W = canvas.width, H = canvas.height;
+
+// ── Constants ──────────────────────────────────────────────
+const RHO       = 1025;
+const G         = 9.81;
+const P_ATM     = 101325;
+const PX_PER_M  = 13;
+// Water on LEFT, Beach on RIGHT
+const COAST_X   = 415;   // where water ends and beach begins
+const SURF_Y    = 255;   // water surface (horizontal line)
+const SLOPE     = 0.46;  // px deeper per px further left
+const MAX_D_M   = 14;    // max depth at left edge
+
+// ── Geometry helpers ───────────────────────────────────────
+// Seabed gets DEEPER as we go LEFT from COAST_X
+function seabedY(x) {
+  if (x >= COAST_X) return SURF_Y;                          // beach level
+  return SURF_Y + (COAST_X - x) * SLOPE;                   // slopes down to the left
+}
+function depthM(x)   { return Math.max(0, (seabedY(x) - SURF_Y) / PX_PER_M); }
+function pressure(x) { return RHO * G * depthM(x); }
+const inWater = x => x < COAST_X;
+
+// ── Mouse – controls swimmer X ─────────────────────────────
+let mouseX = 55; // starts far left = deep water
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouseX = Math.max(20, Math.min(W - 20, e.clientX - r.left));
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  mouseX = Math.max(20, Math.min(W - 20, e.touches[0].clientX - r.left));
+}, { passive: false });
+
+let tick = 0;
+
+// ── Fish (left/water zone, near seabed) ───────────────────
+const FISH = [];
+for (let i = 0; i < 6; i++) {
+  const fx = 30 + Math.random() * (COAST_X - 80);
+  const sb = seabedY(fx);
+  FISH.push({
+    x: fx,
+    y: sb - 18 - Math.random() * 55,
+    vx: (Math.random() < 0.5 ? 1 : -1) * (0.4 + Math.random() * 0.9),
+    col: ['#f4a460','#ff8c00','#ff6347','#40e0d0','#ffd700'][i % 5],
+    sz: 8 + Math.random() * 8,
+  });
+}
+function updateFish() {
+  FISH.forEach(f => {
+    f.x += f.vx;
+    if (f.x < 15 || f.x > COAST_X - 30) f.vx *= -1;
+    const sb  = seabedY(f.x);
+    const tgt = sb - 28 - Math.sin(f.x * 0.05 + tick * 0.01) * 25;
+    f.y += (tgt - f.y) * 0.04;
+    if (f.y > sb - 12) f.y = sb - 12;
+  });
+}
+
+// ── Bubbles ────────────────────────────────────────────────
+let bubbles = [];
+function spawnBubble(x, y) {
+  if (Math.random() < 0.09)
+    bubbles.push({ x: x + (Math.random()-0.5)*8, y, vy:-(0.4+Math.random()*0.8), life:1, r:2+Math.random()*3 });
+}
+function updateBubbles() {
+  bubbles = bubbles.filter(b => b.life > 0.05);
+  bubbles.forEach(b => { b.x += Math.sin(b.y*0.06)*0.4; b.y += b.vy; b.life -= 0.016; });
+}
+
+// ── Sky ────────────────────────────────────────────────────
+function drawSky() {
+  const g = ctx.createLinearGradient(0,0,0,SURF_Y);
+  g.addColorStop(0,'#1a6fa8'); g.addColorStop(0.6,'#5bafd6'); g.addColorStop(1,'#aadff7');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,SURF_Y);
+}
+
+// ── Sun (upper right, over beach) ─────────────────────────
+function drawSun() {
+  const sx=590,sy=58;
+  const g=ctx.createRadialGradient(sx,sy,10,sx,sy,60);
+  g.addColorStop(0,'rgba(255,240,100,0.55)'); g.addColorStop(1,'rgba(255,240,100,0)');
+  ctx.fillStyle=g; ctx.beginPath(); ctx.arc(sx,sy,60,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#ffe566'; ctx.beginPath(); ctx.arc(sx,sy,22,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(255,230,100,0.35)'; ctx.lineWidth=2;
+  for(let i=0;i<8;i++){
+    const a=i*Math.PI/4+tick*0.005;
+    ctx.beginPath(); ctx.moveTo(sx+Math.cos(a)*26,sy+Math.sin(a)*26);
+    ctx.lineTo(sx+Math.cos(a)*40,sy+Math.sin(a)*40); ctx.stroke();
+  }
+}
+
+// ── Clouds ─────────────────────────────────────────────────
+const CLOUDS=[{x:80,y:55,rx:38,ry:18},{x:150,y:38,rx:28,ry:14},{x:120,y:70,rx:22,ry:12},
+              {x:450,y:62,rx:34,ry:16},{x:520,y:42,rx:26,ry:13},{x:570,y:78,rx:20,ry:11}];
+function drawClouds() {
+  CLOUDS.forEach(c=>{
+    const d=Math.sin(tick*0.003+c.x*0.01)*1.5;
+    ctx.fillStyle='rgba(255,255,255,0.83)';
+    [[0,0,1],[-.4,.2,.7],[.4,.15,.65]].forEach(([ox,oy,s])=>{
+      ctx.beginPath(); ctx.ellipse(c.x+d+ox*c.rx,c.y+oy*c.ry,c.rx*s,c.ry*s,0,0,Math.PI*2); ctx.fill();
+    });
+  });
+}
+
+// ── Water (left zone) ──────────────────────────────────────
+function drawWater() {
+  // Fill polygon: water surface → seabed slope → left wall
+  ctx.beginPath();
+  ctx.moveTo(0, SURF_Y);
+  for (let x=0; x<=COAST_X; x+=2) ctx.lineTo(x, seabedY(x));
+  ctx.lineTo(COAST_X, SURF_Y);
+  ctx.closePath();
+  const g=ctx.createLinearGradient(0,SURF_Y,0,H);
+  g.addColorStop(0,'rgba(30,100,200,0.82)'); g.addColorStop(0.5,'rgba(15,70,160,0.90)'); g.addColorStop(1,'rgba(5,40,120,0.98)');
+  ctx.fillStyle=g; ctx.fill();
+  // shimmer lines
+  ctx.strokeStyle='rgba(100,190,255,0.18)'; ctx.lineWidth=1.5;
+  for(let i=0;i<5;i++){
+    const wy=SURF_Y+25+i*32;
+    ctx.beginPath();
+    for(let x=0;x<COAST_X;x+=3){
+      const y=wy+Math.sin(x*0.07+tick*0.03+i)*3;
+      x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+}
+
+// ── Water surface waves ────────────────────────────────────
+function drawSurface() {
+  ctx.strokeStyle='rgba(150,220,255,0.7)'; ctx.lineWidth=2.5;
+  ctx.beginPath();
+  for(let x=0;x<COAST_X;x+=2){
+    const y=SURF_Y+Math.sin(x*0.06+tick*0.05)*2.5;
+    x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+}
+
+// ── Seabed ─────────────────────────────────────────────────
+function drawSeabed() {
+  // Sand bottom
+  ctx.strokeStyle='#8d6e4a'; ctx.lineWidth=3;
+  ctx.beginPath();
+  for(let x=0;x<=COAST_X;x+=2){
+    const y=seabedY(x); x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+  ctx.fillStyle='#c8a96e';
+  ctx.beginPath(); ctx.moveTo(0,seabedY(0));
+  for(let x=0;x<=COAST_X;x+=2) ctx.lineTo(x,seabedY(x));
+  ctx.lineTo(COAST_X,H); ctx.lineTo(0,H); ctx.closePath(); ctx.fill();
+
+  // Seaweed (scattered along left side seabed)
+  [60,130,210,290,360].forEach(sx=>{
+    const sy=seabedY(sx);
+    ctx.strokeStyle='#2e7d32'; ctx.lineWidth=2.5;
+    for(let s=0;s<3;s++){
+      const sh=18+s*7;
+      ctx.beginPath(); ctx.moveTo(sx+s*7,sy);
+      ctx.bezierCurveTo(sx+s*7+Math.sin(tick*0.04+s)*6,sy-sh*0.5,
+                        sx+s*7-Math.sin(tick*0.04+s)*6,sy-sh*0.8,
+                        sx+s*7+Math.sin(tick*0.04)*5,sy-sh);
+      ctx.stroke();
+    }
+  });
+  // Corals
+  [[80,6,'#ff8c00'],[170,8,'#ff6347'],[260,7,'#ff69b4'],[340,9,'#40e0d0'],[400,6,'#ffd700']].forEach(([cx,cr,cc])=>{
+    const cy=seabedY(cx);
+    ctx.fillStyle=cc;
+    for(let i=0;i<5;i++){
+      const a=i*Math.PI*2/5-Math.PI/2;
+      ctx.beginPath(); ctx.arc(cx+Math.cos(a)*cr,cy-Math.sin(a)*cr-cr,3,0,Math.PI*2); ctx.fill();
+    }
+    ctx.fillStyle=cc+'cc';
+    ctx.beginPath(); ctx.arc(cx,cy-cr,cr*0.6,0,Math.PI*2); ctx.fill();
+  });
+}
+
+// ── Beach (right zone) ─────────────────────────────────────
+function drawBeach() {
+  const g=ctx.createLinearGradient(COAST_X,SURF_Y,W,H);
+  g.addColorStop(0,'#e8c97a'); g.addColorStop(0.3,'#d4a855'); g.addColorStop(1,'#b8892e');
+  ctx.fillStyle=g; ctx.fillRect(COAST_X,SURF_Y,W-COAST_X,H-SURF_Y);
+  // texture dots
+  ctx.fillStyle='rgba(180,140,50,0.35)';
+  for(let i=0;i<55;i++){
+    ctx.beginPath();
+    ctx.arc(COAST_X+10+((i*41)%(W-COAST_X-20)),SURF_Y+6+((i*23)%80),1.5,0,Math.PI*2); ctx.fill();
+  }
+  // seashells
+  [[COAST_X+35,SURF_Y+22],[COAST_X+80,SURF_Y+45],[COAST_X+130,SURF_Y+28],[COAST_X+55,SURF_Y+60]].forEach(([sx,sy])=>{
+    ctx.fillStyle='#f0d080';
+    ctx.beginPath(); ctx.ellipse(sx,sy,5,3,0.5,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='#c8a840'; ctx.lineWidth=0.8;
+    ctx.beginPath(); ctx.arc(sx,sy,4,0,Math.PI*2); ctx.stroke();
+  });
+  // water-sand edge
+  ctx.strokeStyle='rgba(150,220,255,0.5)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(COAST_X,SURF_Y); ctx.lineTo(COAST_X,H); ctx.stroke();
+}
+
+// ── Palm trees (beach, right) ──────────────────────────────
+function drawPalm(x,y,h) {
+  ctx.strokeStyle='#8d6e4a'; ctx.lineWidth=7; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(x,y);
+  ctx.bezierCurveTo(x-10,y-h*0.4,x+8,y-h*0.7,x-5,y-h); ctx.stroke();
+  const tx=x-5,ty=y-h;
+  [[-1.1,.4],[-.6,-.1],[0,.3],[.6,-.1],[1.1,.4]].forEach(([ax,ay],i)=>{
+    const wave=Math.sin(tick*0.03+i)*3;
+    ctx.strokeStyle='#2e7d32'; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(tx,ty);
+    ctx.quadraticCurveTo(tx+ax*30,ty+ay*20+wave,tx+ax*55,ty+35+wave); ctx.stroke();
+    ctx.fillStyle='#388e3c';
+    ctx.beginPath(); ctx.ellipse(tx+ax*45,ty+30+wave,14,5,ax*0.6,0,Math.PI*2); ctx.fill();
+  });
+  ctx.fillStyle='#5d4037';
+  [[tx+3,ty+8],[tx-5,ty+12],[tx+8,ty+14]].forEach(([cx,cy])=>{
+    ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.fill();
+  });
+}
+
+// ── Fish ───────────────────────────────────────────────────
+function drawFish(f) {
+  const flip=f.vx>0?1:-1;
+  ctx.save(); ctx.translate(f.x,f.y); ctx.scale(flip,1);
+  ctx.fillStyle=f.col;
+  ctx.beginPath(); ctx.ellipse(0,0,f.sz,f.sz*0.55,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-f.sz,0); ctx.lineTo(-f.sz-8,-f.sz*0.5); ctx.lineTo(-f.sz-8,f.sz*0.5); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(f.sz*0.5,-f.sz*0.1,f.sz*0.22,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#1a1a1a'; ctx.beginPath(); ctx.arc(f.sz*0.55,-f.sz*0.1,f.sz*0.12,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=f.col+'99';
+  ctx.beginPath(); ctx.moveTo(0,-f.sz*0.5); ctx.lineTo(f.sz*0.3,-f.sz); ctx.lineTo(-f.sz*0.3,-f.sz*0.5); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// ── Bubbles ────────────────────────────────────────────────
+function drawBubbles() {
+  bubbles.forEach(b=>{
+    ctx.globalAlpha=b.life*0.6;
+    ctx.strokeStyle='rgba(180,230,255,0.9)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.stroke();
+  });
+  ctx.globalAlpha=1;
+}
+
+// ── Swimmer – pixel art style, snorkel, horizontal ────────
+function drawSwimmer(px, py, dep) {
+  const kick = Math.sin(tick * 0.15) * 10;
+  const arm  = Math.sin(tick * 0.12) * 18;
+  const sy   = py - 14; // body centre Y
+
+  // ── SNORKEL – solo un pixel amarillo en la boca ──────────
+  const headRightX = px + 34;
+  const mouthY     = sy + 4;
+  ctx.fillStyle = '#ffd600';
+  ctx.fillRect(headRightX, mouthY, 4, 4);
+
+  ctx.save();
+  ctx.translate(px, sy);
+
+  // ── WETSUIT BODY (pixel-art rectangles) ────────────────
+  // Main torso block
+  ctx.fillStyle = '#0d47a1';
+  ctx.fillRect(-18, -7, 34, 14);
+  // Wetsuit chest stripe
+  ctx.fillStyle = '#1e88e5';
+  ctx.fillRect(-14, -7, 26, 4);
+  ctx.fillRect(-14,  3, 26, 4);
+  // Side accent
+  ctx.fillStyle = '#42a5f5';
+  ctx.fillRect(-18, -3, 4, 6);
+  ctx.fillRect(12, -3, 4, 6);
+
+  // ── LEGS kicking LEFT (pixel blocks) ──────────────────
+  ctx.fillStyle = '#0d47a1';
+  const k1 = Math.round(kick);
+  ctx.fillRect(-30, -4 + k1, 14, 5);    // upper leg 1
+  ctx.fillRect(-38, -8 + k1, 8, 4);    // lower leg 1
+  ctx.fillRect(-30, 1 - k1, 14, 5);    // upper leg 2
+  ctx.fillRect(-38, 4 - k1, 8, 4);     // lower leg 2
+  // Fins
+  ctx.fillStyle = '#ffd600';
+  ctx.fillRect(-46, -9 + k1, 10, 4);
+  ctx.fillRect(-46, 4 - k1, 10, 4);
+
+  // ── ARMS stroking RIGHT (pixel blocks) ────────────────
+  ctx.fillStyle = '#1565c0';
+  const a1 = Math.round(arm * 0.4);
+  ctx.fillRect(16, -5 + a1, 16, 4);
+  ctx.fillRect(16,  2 - a1, 16, 4);
+  // Hands
+  ctx.fillStyle = '#f4a460';
+  ctx.fillRect(32, -6 + a1, 5, 4);
+  ctx.fillRect(32,  1 - a1, 5, 4);
+
+  // ── HEAD (pixel block, facing right) ──────────────────
+  ctx.fillStyle = '#f4a460';
+  ctx.fillRect(18, -9, 16, 16);
+  // Hair (dark block on top/back)
+  ctx.fillStyle = '#3e2723';
+  ctx.fillRect(18, -9, 16, 5);
+  ctx.fillRect(18, -4, 4, 4); // back of head hair
+
+  // ── MASK / GOGGLES (pixel art) ────────────────────────
+  ctx.fillStyle = '#00bcd4';
+  ctx.fillRect(26, -5, 10, 8);  // mask lens area
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(28, -4, 6, 5);   // lens white
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(30, -3, 3, 3);   // pupil
+  // mask strap
+  ctx.fillStyle = '#37474f';
+  ctx.fillRect(18, -3, 8, 3);
+
+  // ── EXPRESSION ────────────────────────────────────────
+  if (dep > 5) {
+    // scared: open mouth
+    ctx.fillStyle = '#cc2200';
+    ctx.fillRect(27, 4, 6, 4);
+    ctx.fillStyle = '#ff8a65';
+    ctx.fillRect(28, 5, 4, 2);
+  } else {
+    // OK: small line mouth
+    ctx.fillStyle = '#5d4037';
+    ctx.fillRect(27, 5, 5, 2);
+  }
+
+  ctx.restore();
+
+  // Blue water tint overlay on submerged area
+  const subPx = Math.max(0, py - SURF_Y);
+  if (subPx > 5) {
+    ctx.save();
+    ctx.beginPath(); ctx.rect(px - 50, SURF_Y, 100, subPx + 20);
+    ctx.clip();
+    ctx.fillStyle = 'rgba(20,80,180,0.25)';
+    ctx.fillRect(px - 50, SURF_Y, 100, subPx + 20);
+    ctx.restore();
+  }
+}
+
+// ── Person on beach – pixel art, red clothes ──────────────
+function drawPersonBeach(px, py) {
+  ctx.save(); ctx.translate(px, py);
+  const w = Math.round(Math.sin(tick*0.09)*8);
+
+  // Shoes
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(-8, 12, 7, 4);
+  ctx.fillRect(2, 12, 7, 4);
+  // Legs (blue pants – pixel blocks)
+  ctx.fillStyle = '#1565c0';
+  ctx.fillRect(-6, 0, 5, 13);
+  ctx.fillRect(2, 0, 5, 13);
+  // Body – red shirt (pixel block)
+  ctx.fillStyle = '#e53935';
+  ctx.fillRect(-8, -28, 16, 18);
+  // Shirt collar detail
+  ctx.fillStyle = '#c62828';
+  ctx.fillRect(-4, -28, 8, 3);
+  // Belt
+  ctx.fillStyle = '#5d4037';
+  ctx.fillRect(-8, -10, 16, 3);
+  // Arms (waving left arm, pixel)
+  ctx.fillStyle = '#e53935';
+  ctx.fillRect(-14, -28+w, 7, 4);   // left arm
+  ctx.fillStyle = '#f4a460';
+  ctx.fillRect(-18, -28+w, 5, 4);   // left hand
+  ctx.fillStyle = '#e53935';
+  ctx.fillRect(8, -26, 7, 4);       // right arm
+  ctx.fillStyle = '#f4a460';
+  ctx.fillRect(14, -26, 5, 4);      // right hand
+  // Head (pixel block)
+  ctx.fillStyle = '#f4a460';
+  ctx.fillRect(-8, -44, 16, 16);
+  // Hair
+  ctx.fillStyle = '#3e2723';
+  ctx.fillRect(-8, -44, 16, 5);
+  ctx.fillRect(-8, -39, 3, 4);
+  // Eyes
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(-5, -38, 3, 3);
+  ctx.fillRect(2,  -38, 3, 3);
+  // Smile
+  ctx.fillStyle = '#5d4037';
+  ctx.fillRect(-3, -31, 6, 2);
+  // Hat (pixel)
+  ctx.fillStyle = '#f9a825';
+  ctx.fillRect(-11, -46, 22, 4);   // brim
+  ctx.fillStyle = '#f57f17';
+  ctx.fillRect(-7, -58, 14, 14);   // cap
+  ctx.fillStyle = '#f9a825';
+  ctx.fillRect(-7, -58, 14, 3);    // band
+
+  ctx.restore();
+}
+
+// ── Dog (waiting at coast, right side) ────────────────────
+function drawDog(x, y) {
+  ctx.save(); ctx.translate(x, y);
+  // flipped to face left (toward water / swimmer)
+  ctx.scale(-1, 1);
+  ctx.fillStyle='#bcaaa4';
+  ctx.beginPath(); ctx.ellipse(0,0,13,8,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#d7ccc8'; ctx.beginPath(); ctx.arc(13,-8,8,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#a1887f';
+  ctx.beginPath(); ctx.moveTo(8,-14); ctx.lineTo(5,-4); ctx.lineTo(13,-14); ctx.closePath(); ctx.fill();
+  ctx.fillStyle='#e0d0cc';
+  ctx.beginPath(); ctx.ellipse(19,-6,5,3.5,0.2,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#1a1a1a'; ctx.beginPath(); ctx.arc(15,-10,1.5,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#1a1a1a'; ctx.beginPath(); ctx.arc(22,-7,1.2,0,Math.PI*2); ctx.fill();
+  // tail wagging
+  const tw = Math.sin(tick*0.18)*18;
+  ctx.strokeStyle='#bcaaa4'; ctx.lineWidth=3;
+  ctx.beginPath(); ctx.moveTo(-12,0); ctx.bezierCurveTo(-22,-10+tw,-22,-20+tw,-16,-18+tw*0.5); ctx.stroke();
+  // Legs
+  ctx.lineWidth=4; ctx.lineCap='round';
+  [-6,0,6,12].forEach(ox=>{ ctx.beginPath(); ctx.moveTo(ox,6); ctx.lineTo(ox,16); ctx.stroke(); });
+  ctx.restore();
+}
+
+// ── Pressure arrows ────────────────────────────────────────
+function drawPressureArrows(px, py, p_val) {
+  if (p_val < 500) return;
+  const t = Math.min(1, p_val / (RHO*G*MAX_D_M));
+  const len = 8 + t*28;
+  const num = 2 + Math.floor(t*3);
+  const r = Math.floor(80+t*175);
+  const al = 0.4+t*0.55;
+  ctx.strokeStyle=`rgba(${r},30,30,${al})`;
+  ctx.fillStyle=`rgba(${r},30,30,${al})`;
+  ctx.lineWidth=2.5; ctx.lineCap='round';
+  [-36,-18,-2,12].slice(0,num).forEach(dy=>{
+    const ay=py+dy;
+    // left arrow →
+    const lx=px-52-len;
+    ctx.beginPath(); ctx.moveTo(lx,ay); ctx.lineTo(lx+len,ay); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lx+len,ay); ctx.lineTo(lx+len-6,ay-5); ctx.lineTo(lx+len-6,ay+5); ctx.closePath(); ctx.fill();
+    // right arrow ←
+    const rx=px+52+len;
+    ctx.beginPath(); ctx.moveTo(rx,ay); ctx.lineTo(rx-len,ay); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(rx-len,ay); ctx.lineTo(rx-len+6,ay-5); ctx.lineTo(rx-len+6,ay+5); ctx.closePath(); ctx.fill();
+    // top arrow ↓
+    if(dy===-36){
+      ctx.beginPath(); ctx.moveTo(px,ay-len-6); ctx.lineTo(px,ay-6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(px,ay-6); ctx.lineTo(px-5,ay-12); ctx.lineTo(px+5,ay-12); ctx.closePath(); ctx.fill();
+    }
+  });
+  // red glow
+  if(t>0.4){
+    const g=ctx.createRadialGradient(px,py-14,10,px,py-14,52);
+    g.addColorStop(0,`rgba(${r},0,0,${t*0.33})`); g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(px,py-14,52,0,Math.PI*2); ctx.fill();
+  }
+}
+
+// ── Depth scale (left wall) ────────────────────────────────
+function drawDepthScale() {
+  const sx=16;
+  ctx.strokeStyle='rgba(255,255,255,0.28)'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.beginPath(); ctx.moveTo(sx,SURF_Y); ctx.lineTo(sx,H-10); ctx.stroke();
+  ctx.setLineDash([]);
+  for(let d=0;d<=MAX_D_M;d+=2){
+    const y=SURF_Y+d*PX_PER_M;
+    if(y>H-10) break;
+    ctx.strokeStyle='rgba(255,255,255,0.35)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(sx-4,y); ctx.lineTo(sx+4,y); ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font='10px sans-serif'; ctx.textAlign='left';
+    ctx.fillText(d+'m', sx+7, y+4);
+  }
+}
+
+// ── Cursor line ────────────────────────────────────────────
+function drawCursor(x) {
+  const blue = x < COAST_X;
+  ctx.strokeStyle=blue?'rgba(100,180,255,0.6)':'rgba(255,220,100,0.6)';
+  ctx.lineWidth=1.5; ctx.setLineDash([4,3]);
+  ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ── Pressure label on canvas ───────────────────────────────
+function drawPressureLabel(px, py, p_val, dep) {
+  if (!inWater(px) || dep < 0.2) return;
+  const lw=145, lh=34;
+  const lx=Math.max(5, Math.min(px-lw/2, W-lw-5));
+  const ly=Math.max(SURF_Y+8, py-75);
+  ctx.fillStyle='rgba(0,0,0,0.55)';
+  roundRect(lx, ly, lw, lh, 8);
+  ctx.fillStyle='#ffd166'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('P = ρ·g·h', lx+lw/2, ly+13);
+  ctx.fillStyle='#ff8a65'; ctx.font='bold 13px sans-serif';
+  ctx.fillText((p_val/1000).toFixed(2)+' kPa', lx+lw/2, ly+29);
+}
+
+function roundRect(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath(); ctx.fill();
+}
+
+// ── Panel update ───────────────────────────────────────────
+function updatePanel(dep, p_val) {
+  const ptot=P_ATM+p_val;
+  document.getElementById('r-h').textContent  = dep.toFixed(2)+' m';
+  document.getElementById('r-p').textContent  = p_val<1000 ? Math.round(p_val)+' Pa' : (p_val/1000).toFixed(2)+' kPa';
+  document.getElementById('r-ptot').textContent = (ptot/1000).toFixed(1)+' kPa';
+  document.getElementById('pv').textContent   = p_val<1000 ? Math.round(p_val) : (p_val/1000).toFixed(1)+' k';
+  document.getElementById('pv').style.color   = `hsl(${120-dep*9},90%,60%)`;
+  const maxP=RHO*G*MAX_D_M, pct=Math.min(100,p_val/maxP*100);
+  const bar=document.getElementById('depth-bar');
+  bar.style.width=pct+'%'; bar.style.background=`hsl(${120-pct*1.2},80%,50%)`;
+  document.getElementById('depth-pct').textContent=pct.toFixed(0)+'%';
+  const badge=document.getElementById('level-badge');
+  if(dep<0.1){
+    badge.textContent='🏖️ En la costa – sin presión';
+    badge.style.cssText='margin-top:12px;padding:7px 10px;border-radius:10px;font-size:.8rem;font-weight:bold;text-align:center;background:rgba(129,199,132,0.15);border:1px solid rgba(129,199,132,0.4);color:#81c784';
+  } else if(dep<3){
+    badge.textContent='🌊 Aguas poco profundas';
+    badge.style.cssText='margin-top:12px;padding:7px 10px;border-radius:10px;font-size:.8rem;font-weight:bold;text-align:center;background:rgba(100,180,255,0.15);border:1px solid rgba(100,180,255,0.4);color:#64b5f6';
+  } else if(dep<7){
+    badge.textContent='⚠️ Presión elevada – ¡cuidado!';
+    badge.style.cssText='margin-top:12px;padding:7px 10px;border-radius:10px;font-size:.8rem;font-weight:bold;text-align:center;background:rgba(255,200,50,0.15);border:1px solid rgba(255,200,50,0.4);color:#ffd166';
+  } else if(dep<11){
+    badge.textContent='🔴 Presión muy alta – peligroso';
+    badge.style.cssText='margin-top:12px;padding:7px 10px;border-radius:10px;font-size:.8rem;font-weight:bold;text-align:center;background:rgba(255,100,50,0.2);border:1px solid rgba(255,100,50,0.5);color:#ff8a65';
+  } else {
+    badge.textContent='💀 Profundidad extrema';
+    badge.style.cssText='margin-top:12px;padding:7px 10px;border-radius:10px;font-size:.8rem;font-weight:bold;text-align:center;background:rgba(200,30,30,0.25);border:1px solid rgba(200,30,30,0.6);color:#ff6b6b';
+  }
+}
+
+// ── Main loop ──────────────────────────────────────────────
+function loop() {
+  ctx.clearRect(0,0,W,H);
+
+  const personX = mouseX;
+  const personY = seabedY(personX);
+  const dep     = depthM(personX);
+  const p_val   = pressure(personX);
+  const swim    = inWater(personX);
+
+  // Background
+  drawSky();
+  drawSun();
+  drawClouds();
+
+  // Water (left)
+  drawWater();
+  drawSeabed();
+  drawSurface();
+
+  // Beach (right)
+  drawBeach();
+  drawPalm(COAST_X+60, SURF_Y, 95);
+  drawPalm(COAST_X+120, SURF_Y, 80);
+  drawPalm(COAST_X+190, SURF_Y, 105);
+
+  // Fish
+  updateFish();
+  FISH.forEach(drawFish);
+
+  // Bubbles
+  if (swim && dep > 0.3) spawnBubble(personX+22, personY-20);
+  updateBubbles();
+  drawBubbles();
+
+  // Dog always at coast waiting
+  drawDog(COAST_X + 38, SURF_Y + 10);
+
+  // Pressure arrows (behind person)
+  if (swim) drawPressureArrows(personX, personY, p_val);
+
+  // Person: swimmer in water, red clothes on beach
+  if (swim) {
+    drawSwimmer(personX, personY, dep);
+  } else {
+    drawPersonBeach(personX, personY);
+  }
+
+  // Pressure label near swimmer
+  drawPressureLabel(personX, personY, p_val, dep);
+
+  // Depth scale
+  drawDepthScale();
+  drawCursor(personX);
+
+  // Hint if near coast and in water
+  if (swim && personX > COAST_X - 80) {
+    ctx.fillStyle='rgba(255,255,255,0.75)'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('¡Casi llegás a la costa! →', COAST_X-60, SURF_Y-12);
+  }
+
+  updatePanel(dep, p_val);
+  tick++;
+  requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>

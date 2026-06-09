@@ -1,0 +1,2477 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1200">
+  <title>Circuito Vivo — Simulador Eléctrico</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#000; display:flex; justify-content:center; align-items:center; min-height:100vh; overflow:hidden; }
+    #game-container { position:relative; width:1200px; height:700px; overflow:hidden; }
+    #circuit-canvas { position:absolute; left:0; top:0; width:820px; height:700px; z-index:0; }
+    #debug-canvas   { position:absolute; left:0; top:0; width:820px; height:700px; z-index:1; pointer-events:none; }
+    #hud            { position:absolute; right:0; top:0; width:380px; height:700px; z-index:2; }
+
+    /* ── HUD container ─────────────────────────────────────────────────── */
+    #hud {
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 380px;
+      height: 700px;
+      background: rgba(10,15,40,0.96);
+      border-left: 1px solid rgba(0,229,255,0.2);
+      padding: 20px 16px;
+      box-sizing: border-box;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      color: #E0E0E0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 2;
+    }
+    #hud::-webkit-scrollbar { width: 4px; }
+    #hud::-webkit-scrollbar-track { background: transparent; }
+    #hud::-webkit-scrollbar-thumb { background: rgba(0,229,255,0.2); border-radius: 2px; }
+
+    /* ── Título ─────────────────────────────────────────────────────────── */
+    .game-title {
+      font-size: 20px;
+      font-weight: bold;
+      color: #00E5FF;
+      text-align: center;
+      text-shadow: 0 0 12px rgba(0,229,255,0.5);
+      letter-spacing: 2px;
+      margin-bottom: 2px;
+      flex-shrink: 0;
+    }
+
+    /* ── Etiquetas de sección ───────────────────────────────────────────── */
+    .section-label {
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: rgba(0,229,255,0.5);
+      text-transform: uppercase;
+      border-bottom: 1px solid rgba(0,229,255,0.15);
+      padding-bottom: 4px;
+      flex-shrink: 0;
+    }
+
+    /* ── ModeButtons CSS ─────────────────────────────────────────────── */
+    #mode-buttons {
+      display: flex;
+      gap: 6px;
+    }
+    .mode-btn {
+      flex: 1;
+      padding: 8px 4px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px;
+      color: #aaa;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s, color 0.2s;
+      white-space: nowrap;
+    }
+    .mode-btn:hover {
+      border-color: rgba(0,229,255,0.4);
+      color: #ccc;
+    }
+    .mode-btn.active {
+      border-color: #00E5FF;
+      background: rgba(0,229,255,0.12);
+      color: #00E5FF;
+    }
+
+    /* ── SlidersPanel CSS ────────────────────────────────────────────── */
+    #sliders-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .slider-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .slider-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+    .slider-label {
+      font-size: 12px;
+      color: #ccc;
+      font-family: 'Courier New', monospace;
+    }
+    .slider-display {
+      font-size: 13px;
+      color: #00E5FF;
+      font-weight: bold;
+      font-family: 'Courier New', monospace;
+      min-width: 48px;
+      text-align: right;
+    }
+    input[type=range] {
+      width: 100%;
+      accent-color: #00E5FF;
+      cursor: pointer;
+      height: 4px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* ── MetricsPanel CSS ────────────────────────────────────────────── */
+    #metrics-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .metrics-section {
+      background: rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+    }
+    .metrics-section:last-child {
+      margin-bottom: 0;
+    }
+    .metrics-section-title {
+      font-size: 10px;
+      color: rgba(0,229,255,0.6);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      font-family: 'Courier New', monospace;
+    }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      font-size: 13px;
+      padding: 2px 0;
+      font-family: 'Courier New', monospace;
+    }
+    .metric-label {
+      color: #888;
+      flex: 1;
+    }
+    .metric-value {
+      color: #00E5FF;
+      font-weight: bold;
+      min-width: 55px;
+      text-align: right;
+    }
+    .metric-unit {
+      color: #444;
+      width: 20px;
+      text-align: right;
+      margin-left: 4px;
+    }
+
+    /* ── FormulaPanel CSS ────────────────────────────────────────────── */
+    .ohm-law {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .ohm-title {
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: rgba(0,229,255,0.5);
+      text-transform: uppercase;
+    }
+    .ohm-eq {
+      font-size: 15px;
+      font-weight: bold;
+      color: #FFD700;
+      text-shadow: 0 0 10px rgba(255,215,0,0.6);
+      letter-spacing: 1px;
+    }
+    #formula-panel {
+      background: rgba(0,0,0,0.4);
+      border-left: 2px solid #00E5FF;
+      border-radius: 0 6px 6px 0;
+      padding: 10px 12px;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      color: #aaa;
+      line-height: 1.9;
+    }
+    .formula-line {
+      display: block;
+      white-space: pre;
+    }
+    .formula-value {
+      color: #00E5FF;
+      font-weight: bold;
+    }
+    .formula-sep {
+      display: block;
+      color: rgba(255,255,255,0.2);
+      margin: 4px 0;
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    .formula-section-title {
+      font-size: 10px;
+      letter-spacing: 2px;
+      color: rgba(0,229,255,0.5);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="circuit-canvas" width="820" height="700"></canvas>
+    <canvas id="debug-canvas"   width="820" height="700"></canvas>
+    <div id="hud"></div>
+  </div>
+  <script>
+  // ============================================================
+  // 1. CIRCUIT constants (PhysicsConstants.js)
+  // ============================================================
+  const CIRCUIT = {
+    V_MIN:               0,
+    V_MAX:               24,
+    V_DEFAULT:           12,
+    R_MIN:               1,
+    R_MAX:               100,
+    R_DEFAULT:           20,
+    ELECTRON_BASE_SPEED: 120,
+    ELECTRON_I_REF:      0.5,
+    ELECTRON_RADIUS:     2,
+    ELECTRONS_PER_SEGMENT: 30,
+    TUBE_INNER_RADIUS:   5,
+    MAX_LATERAL:         3,
+    LATERAL_SPEED_MIN:   25,
+    LATERAL_SPEED_MAX:   70,
+    BULB_P_REF:          7.2,
+  };
+
+  // ============================================================
+  // 2. EVENTS + EventBus singleton (EventBus.js)
+  // ============================================================
+  const EVENTS = {
+    MODE_CHANGED:   'mode_changed',
+    PARAMS_CHANGED: 'params_changed',
+    METRICS_UPDATE: 'metrics_update',
+    CIRCUIT_READY:  'circuit_ready',
+    SPARK_EFFECT:   'spark_effect',
+    SLIDER_CHANGED: 'slider_changed',
+    DEBUG_TOGGLE:   'debug_toggle',
+  };
+
+  class EventBusClass {
+    constructor() {
+      this._listeners = new Map();
+    }
+    on(event, fn) {
+      if (!this._listeners.has(event)) {
+        this._listeners.set(event, new Set());
+      }
+      this._listeners.get(event).add(fn);
+      return () => this.off(event, fn);
+    }
+    off(event, fn) {
+      this._listeners.get(event)?.delete(fn);
+    }
+    emit(event, data) {
+      this._listeners.get(event)?.forEach(fn => fn(data));
+    }
+    once(event, fn) {
+      const wrapper = (data) => {
+        fn(data);
+        this.off(event, wrapper);
+      };
+      this.on(event, wrapper);
+    }
+    clear(event) {
+      if (event) {
+        this._listeners.delete(event);
+      } else {
+        this._listeners.clear();
+      }
+    }
+  }
+
+  const EventBus = new EventBusClass();
+
+  // ============================================================
+  // 3. GameState
+  // ============================================================
+  const GameState = {
+    currentMode: 'SINGLE',
+    voltage: 12,
+    r1: 20,
+    r2: 20,
+    debugVisible: false,
+  };
+
+  // ============================================================
+  // 4. CircuitPaths (POSITIONS, PATHS, PATH_LENGTHS)
+  // ============================================================
+  const POSITIONS = {
+    BATTERY:            { x: 110, y: 350 },
+    BULB1_SINGLE:       { x: 710, y: 350 },
+    BULB1_SERIES:       { x: 410, y: 120 },
+    BULB2_SERIES:       { x: 410, y: 580 },
+    BULB1_PARALLEL:     { x: 410, y: 350 },
+    BULB2_PARALLEL:     { x: 710, y: 350 },
+    JUNCTION_TOP_LEFT:  { x: 110, y: 120 },
+    JUNCTION_TOP_RIGHT: { x: 710, y: 120 },
+    JUNCTION_BOT_LEFT:  { x: 110, y: 580 },
+    JUNCTION_BOT_RIGHT: { x: 710, y: 580 },
+  };
+
+  function pathLength(waypoints) {
+    let total = 0;
+    for (let i = 1; i < waypoints.length; i++) {
+      const dx = waypoints[i].x - waypoints[i - 1].x;
+      const dy = waypoints[i].y - waypoints[i - 1].y;
+      total += Math.sqrt(dx * dx + dy * dy);
+    }
+    return total;
+  }
+
+  // Open paths: clockwise flow — spawn at blue terminal (-), end at red terminal (+)
+  // Direction: up left side → right across top → down right side → left across bottom
+  const _pathSingle = [
+    { x: 110, y: 405 },  // terminal- azul (spawn)
+    { x: 110, y: 120 },  // esquina superior izquierda
+    { x: 710, y: 120 },  // esquina superior derecha
+    { x: 710, y: 285 },  // arriba de la bombilla
+    { x: 710, y: 415 },  // debajo de la bombilla
+    { x: 710, y: 580 },  // esquina inferior derecha
+    { x: 110, y: 580 },  // esquina inferior izquierda
+    { x: 110, y: 295 },  // terminal+ roja (fin)
+  ];
+
+  const _pathSeries = [
+    { x: 110, y: 405 },  // terminal- azul (spawn)
+    { x: 110, y: 120 },  // esquina superior izquierda
+    { x: 280, y: 120 },
+    { x: 410, y: 120 },  // B1 (cable tope)
+    { x: 540, y: 120 },
+    { x: 710, y: 120 },  // esquina superior derecha
+    { x: 710, y: 580 },  // esquina inferior derecha
+    { x: 540, y: 580 },
+    { x: 410, y: 580 },  // B2 (cable fondo)
+    { x: 280, y: 580 },
+    { x: 110, y: 580 },  // esquina inferior izquierda
+    { x: 110, y: 295 },  // terminal+ roja (fin)
+  ];
+
+  const _pathParallel1 = [
+    { x: 110, y: 405 },  // terminal- azul (spawn)
+    { x: 110, y: 120 },
+    { x: 410, y: 120 },
+    { x: 410, y: 285 },  // B1 arriba
+    { x: 410, y: 415 },  // B1 abajo
+    { x: 410, y: 580 },
+    { x: 110, y: 580 },
+    { x: 110, y: 295 },  // terminal+ roja (fin)
+  ];
+
+  const _pathParallel2 = [
+    { x: 110, y: 405 },  // terminal- azul (spawn)
+    { x: 110, y: 120 },
+    { x: 710, y: 120 },
+    { x: 710, y: 285 },  // B2 arriba
+    { x: 710, y: 415 },  // B2 abajo
+    { x: 710, y: 580 },
+    { x: 110, y: 580 },
+    { x: 110, y: 295 },  // terminal+ roja (fin)
+  ];
+
+  const PATHS = {
+    SINGLE:   _pathSingle,
+    SERIES:   _pathSeries,
+    PARALLEL: [_pathParallel1, _pathParallel2],
+  };
+
+  const PATH_LENGTHS = {
+    SINGLE:   pathLength(PATHS.SINGLE),
+    SERIES:   pathLength(PATHS.SERIES),
+    PARALLEL: [
+      pathLength(PATHS.PARALLEL[0]),
+      pathLength(PATHS.PARALLEL[1]),
+    ],
+  };
+
+  // Closed paths used only for cable rendering (visual loop)
+  const _PATHS_CLOSED = {
+    SINGLE:   [..._pathSingle,    _pathSingle[0]],
+    SERIES:   [..._pathSeries,    _pathSeries[0]],
+    PARALLEL: [
+      [..._pathParallel1, _pathParallel1[0]],
+      [..._pathParallel2, _pathParallel2[0]],
+    ],
+  };
+
+  class CircuitPaths {
+    constructor() {
+      this.positions   = POSITIONS;
+      this.paths       = PATHS;
+      this.pathLengths = PATH_LENGTHS;
+    }
+  }
+
+  // ============================================================
+  // 5. CircuitSolver
+  // ============================================================
+  class CircuitSolver {
+    constructor() {
+      this.lastMetrics = null;
+      this._state = {
+        mode:    'SINGLE',
+        voltage: 12,
+        r1:      20,
+        r2:      20,
+      };
+
+      EventBus.on(EVENTS.MODE_CHANGED, ({ mode }) => {
+        this._state.mode = mode;
+        this._recalculate();
+      });
+
+      EventBus.on(EVENTS.PARAMS_CHANGED, ({ voltage, r1, r2 }) => {
+        if (voltage !== undefined) this._state.voltage = voltage;
+        if (r1      !== undefined) this._state.r1      = r1;
+        if (r2      !== undefined) this._state.r2      = r2;
+        this._recalculate();
+      });
+    }
+
+    _recalculate() {
+      this.solve(this._state);
+    }
+
+    solve({ mode, voltage, r1, r2 }) {
+      this._state.mode    = mode;
+      this._state.voltage = voltage;
+      this._state.r1      = r1;
+      this._state.r2      = r2 !== undefined ? r2 : this._state.r2;
+
+      const v   = voltage;
+      const _r1 = r1;
+      const _r2 = r2 !== undefined ? r2 : this._state.r2;
+
+      let r_eq, i_total, i1, i2, v1, v2, p1, p2;
+
+      switch (mode) {
+        case 'SINGLE':
+          r_eq    = _r1;
+          i_total = v / _r1;
+          i1      = i_total;
+          i2      = 0;
+          v1      = v;
+          v2      = 0;
+          p1      = v * i1;
+          p2      = 0;
+          break;
+
+        case 'SERIES':
+          r_eq    = _r1 + _r2;
+          i_total = v / r_eq;
+          i1      = i_total;
+          i2      = i_total;
+          v1      = i1 * _r1;
+          v2      = i2 * _r2;
+          p1      = i1 * v1;
+          p2      = i2 * v2;
+          break;
+
+        case 'PARALLEL':
+          r_eq    = (_r1 * _r2) / (_r1 + _r2);
+          v1      = v;
+          v2      = v;
+          i1      = v / _r1;
+          i2      = v / _r2;
+          i_total = i1 + i2;
+          p1      = v * i1;
+          p2      = v * i2;
+          break;
+
+        default:
+          console.warn('CircuitSolver.solve(): modo desconocido "' + mode + '"');
+          return null;
+      }
+
+      const metrics = {
+        mode,
+        v_src:   v,
+        r1:      _r1,
+        r2:      _r2,
+        r_eq,
+        i_total,
+        i1,
+        i2,
+        v1,
+        v2,
+        p1,
+        p2,
+      };
+
+      this.lastMetrics = metrics;
+
+      // CRITICO: emitir METRICS_UPDATE (lección Publisher lessons-learned)
+      EventBus.emit(EVENTS.METRICS_UPDATE, metrics);
+
+      return metrics;
+    }
+  }
+
+  // ============================================================
+  // 6. ElectronPool (Electron + ElectronPool)
+  // ============================================================
+  class ObjectPool {
+    constructor(factory, reset, initialSize = 20) {
+      this._factory = factory;
+      this._reset   = reset;
+      this._pool    = [];
+      this._active  = new Set();
+
+      for (let i = 0; i < initialSize; i++) {
+        this._pool.push(this._factory());
+      }
+    }
+    get() {
+      const obj = this._pool.length > 0
+        ? this._pool.pop()
+        : this._factory();
+      this._reset(obj);
+      this._active.add(obj);
+      return obj;
+    }
+    release(obj) {
+      obj.active = false;
+      this._active.delete(obj);
+      this._pool.push(obj);
+    }
+    releaseAll() {
+      this._active.forEach(obj => {
+        obj.active = false;
+        this._pool.push(obj);
+      });
+      this._active.clear();
+    }
+    forEach(fn) { this._active.forEach(fn); }
+    toArray()   { return Array.from(this._active); }
+    get activeCount() { return this._active.size; }
+    get poolSize()    { return this._pool.length; }
+  }
+
+  class Electron {
+    constructor() {
+      this.segIdx         = 0;    // índice del segmento actual en el path
+      this.tSeg           = 0;    // progreso dentro del segmento [0,1]
+      this.lateralOffset  = 0;    // desplazamiento lateral en px (± MAX_LATERAL)
+      this.lateralVelocity = 0;   // px/s, puede ser negativo
+      this.driftSpeed     = 80;   // px/s — velocidad de avance
+      this.pathIdx        = 0;    // 0 o 1 (para modo paralelo)
+      this.x              = 0;
+      this.y              = 0;
+      this.active         = false;
+    }
+  }
+
+  class ElectronPool {
+    constructor(initialSize = 100) {
+      this._pool = new ObjectPool(
+        () => new Electron(),
+        (e) => {
+          e.active          = true;
+          e.segIdx          = 0;
+          e.tSeg            = 0;
+          e.lateralOffset   = 0;
+          e.lateralVelocity = 0;
+          e.driftSpeed      = 80;
+          e.pathIdx         = 0;
+          e.x               = 0;
+          e.y               = 0;
+        },
+        initialSize
+      );
+    }
+    spawn(segIdx, tSeg, pathIdx, driftSpeed, lateralOffset, lateralVelocity) {
+      const e            = this._pool.get();
+      e.segIdx           = segIdx;
+      e.tSeg             = tSeg;
+      e.pathIdx          = pathIdx;
+      e.driftSpeed       = driftSpeed;
+      e.lateralOffset    = lateralOffset;
+      e.lateralVelocity  = lateralVelocity;
+      return e;
+    }
+    release(electron) {
+      this._pool.release(electron);
+    }
+    releaseAll() {
+      this._pool.releaseAll();
+    }
+    forEach(fn) {
+      this._pool.forEach(fn);
+    }
+    toArray() {
+      return this._pool.toArray();
+    }
+    get activeCount() { return this._pool.activeCount; }
+  }
+
+  // ============================================================
+  // 7. ElectronFlow
+  // ============================================================
+  // _calcSpeed removed — driftSpeed is now constant (CHANGE 1)
+
+  function _calcSegmentLengths(waypoints) {
+    const lens = [];
+    for (let i = 0; i < waypoints.length - 1; i++) {
+      const dx = waypoints[i+1].x - waypoints[i].x;
+      const dy = waypoints[i+1].y - waypoints[i].y;
+      lens.push(Math.sqrt(dx*dx + dy*dy) || 0.001);
+    }
+    return lens;
+  }
+
+  function _calcTotalLength(segLens) {
+    return segLens.reduce((a, b) => a + b, 0);
+  }
+
+  // Place electron at distance targetDist along the path (by segment index + tSeg)
+  function _distToSegTSeg(targetDist, segmentLengths) {
+    let accumulated = 0;
+    for (let s = 0; s < segmentLengths.length; s++) {
+      const segLen = segmentLengths[s];
+      if (accumulated + segLen >= targetDist || s === segmentLengths.length - 1) {
+        return {
+          segIdx: s,
+          tSeg: Math.min(1, (targetDist - accumulated) / segLen),
+        };
+      }
+      accumulated += segLen;
+    }
+    return { segIdx: 0, tSeg: 0 };
+  }
+
+  function _electronWorldPos(path, segIdx, tSeg, lateralOffset) {
+    const numSegs = path.length - 1;
+    const si = Math.min(segIdx, numSegs - 1);
+    const seg0 = path[si];
+    const seg1 = path[(si + 1) % path.length];
+    const sdx = seg1.x - seg0.x;
+    const sdy = seg1.y - seg0.y;
+    const sLen = Math.sqrt(sdx*sdx + sdy*sdy) || 1;
+    const perpX = -sdy / sLen;
+    const perpY =  sdx / sLen;
+    const cx = seg0.x + sdx * tSeg;
+    const cy = seg0.y + sdy * tSeg;
+    return {
+      x: cx + lateralOffset * perpX,
+      y: cy + lateralOffset * perpY,
+    };
+  }
+
+  class ElectronFlow {
+    constructor(pool) {
+      this._pool        = pool !== undefined ? pool : new ElectronPool(300);
+      this._mode        = null;
+      this._metrics     = null;
+      this._paths       = null;
+      this._spawnRate   = [0];
+      this._spawnTimers = [0];
+    }
+
+    // Reset all electrons and reconfigure for a new circuit mode/metrics.
+    setCircuit(mode, metrics) {
+      // Release all in-flight electrons back to the pool
+      this._pool.releaseAll();
+
+      this._mode    = mode;
+      this._metrics = metrics;
+
+      // Determine active paths
+      if (mode === 'PARALLEL') {
+        this._paths = PATHS.PARALLEL;
+      } else {
+        this._paths = PATHS[mode];
+      }
+
+      // Compute per-path spawn rates (electrons/second)
+      this._recalcSpawnRates(mode, metrics);
+
+      // Pre-fill the circuit with electrons distributed along the entire path
+      this._prefillElectrons();
+    }
+
+    _prefillElectrons() {
+      const mode    = this._mode;
+      const metrics = this._metrics;
+      if (!metrics || !this._paths) return;
+
+      const isParallel = (mode === 'PARALLEL');
+      const pathsArray = isParallel ? this._paths : [this._paths];
+
+      for (let pi = 0; pi < pathsArray.length; pi++) {
+        const path     = pathsArray[pi];
+        const segLens  = _calcSegmentLengths(path);
+        const totalLen = _calcTotalLength(segLens);
+
+        const current = isParallel
+          ? (pi === 0 ? (metrics.i1 || 0) : (metrics.i2 || 0))
+          : (metrics.i_total || metrics.i1 || 0);
+
+        const count = Math.max(6, Math.min(80,
+          Math.floor(totalLen * 0.14 * (current / CIRCUIT.ELECTRON_I_REF))
+        ));
+
+        for (let i = 0; i < count; i++) {
+          const targetDist = (i / count) * totalLen;
+          const pos        = _distToSegTSeg(targetDist, segLens);
+
+          const latOff = (Math.random() - 0.5) * 4;
+          const latVel = (Math.random() > 0.5 ? 1 : -1) *
+            (CIRCUIT.LATERAL_SPEED_MIN +
+             Math.random() * (CIRCUIT.LATERAL_SPEED_MAX - CIRCUIT.LATERAL_SPEED_MIN));
+
+          const e = this._pool.spawn(
+            pos.segIdx, pos.tSeg, pi,
+            CIRCUIT.ELECTRON_BASE_SPEED, latOff, latVel
+          );
+          if (!e) break;
+
+          // Compute initial world position
+          const wp  = _electronWorldPos(path, pos.segIdx, pos.tSeg, latOff);
+          e.x = wp.x;
+          e.y = wp.y;
+        }
+      }
+    }
+
+    // Update spawn rates when metrics change without resetting in-flight electrons.
+    updateMetrics(metrics) {
+      this._metrics = metrics;
+      this._recalcSpawnRates(this._mode, metrics);
+    }
+
+    _recalcSpawnRates(mode, metrics) {
+      const BASE_RATE = 10; // electrons/second at I_REF
+      if (mode === 'PARALLEL') {
+        this._spawnRate   = [
+          BASE_RATE * ((metrics.i1 || 0) / CIRCUIT.ELECTRON_I_REF),
+          BASE_RATE * ((metrics.i2 || 0) / CIRCUIT.ELECTRON_I_REF),
+        ];
+        if (this._spawnTimers.length !== 2) this._spawnTimers = [0, 0];
+      } else {
+        const current = metrics.i_total || metrics.i1 || 0;
+        this._spawnRate   = [BASE_RATE * (current / CIRCUIT.ELECTRON_I_REF)];
+        if (this._spawnTimers.length !== 1) this._spawnTimers = [0];
+      }
+    }
+
+    _spawnElectron(pathIdx) {
+      const latOff = (Math.random() - 0.5) * 4;
+      const latVel = (Math.random() > 0.5 ? 1 : -1) *
+        (CIRCUIT.LATERAL_SPEED_MIN +
+         Math.random() * (CIRCUIT.LATERAL_SPEED_MAX - CIRCUIT.LATERAL_SPEED_MIN));
+
+      const e = this._pool.spawn(0, 0, pathIdx, CIRCUIT.ELECTRON_BASE_SPEED, latOff, latVel);
+      if (!e) return; // pool exhausted
+
+      e.segIdx         = 0;
+      e.tSeg           = 0;
+      e.pathIdx        = pathIdx;
+      e.driftSpeed     = CIRCUIT.ELECTRON_BASE_SPEED;
+      e.lateralOffset  = latOff;
+      e.lateralVelocity = latVel;
+      e.active         = true;
+
+      // Set initial world position at the start of the path
+      const path = Array.isArray(this._paths[0]) ? this._paths[pathIdx] : this._paths;
+      const pos  = _electronWorldPos(path, 0, 0, latOff);
+      e.x = pos.x;
+      e.y = pos.y;
+    }
+
+    fixedUpdate(dt) {
+      if (!this._mode || !this._paths) return;
+
+      const MAX_LAT = CIRCUIT.MAX_LATERAL;
+
+      // --- SPAWN: battery injects new electrons ---
+      for (let pi = 0; pi < this._spawnRate.length; pi++) {
+        if (this._spawnRate[pi] <= 0) continue;
+        this._spawnTimers[pi] += dt;
+        const interval = 1 / this._spawnRate[pi];
+        while (this._spawnTimers[pi] >= interval) {
+          this._spawnTimers[pi] -= interval;
+          this._spawnElectron(pi);
+        }
+      }
+
+      // --- MOVE all active electrons ---
+      const isParallel   = this._mode === 'PARALLEL';
+      const bulbPositions = this._getCurrentBulbPositions();
+
+      this._pool.forEach((electron) => {
+        if (!electron.active) return;
+
+        const path    = isParallel ? this._paths[electron.pathIdx] : this._paths;
+        const numSegs = path.length - 1;
+        if (numSegs <= 0) return;
+
+        // Current segment bounds
+        const si = Math.min(electron.segIdx, numSegs - 1);
+        const p0 = path[si];
+        const p1 = path[si + 1];
+        if (!p0 || !p1) { this._pool.release(electron); return; }
+
+        const dx     = p1.x - p0.x;
+        const dy     = p1.y - p0.y;
+        const segLen = Math.sqrt(dx * dx + dy * dy) || 1;
+
+        // Slow down inside bulb zones
+        let effectiveSpeed = electron.driftSpeed;
+        for (const bp of bulbPositions) {
+          if (Math.hypot(electron.x - bp.x, electron.y - bp.y) < 35) {
+            effectiveSpeed *= 0.18;
+            break;
+          }
+        }
+
+        electron.tSeg += effectiveSpeed * dt / segLen;
+
+        // Advance to next segment(s)
+        while (electron.tSeg >= 1) {
+          electron.tSeg -= 1;
+          electron.segIdx++;
+
+          // Reached the end → goes to ground, disappears
+          if (electron.segIdx >= numSegs) {
+            this._pool.release(electron);
+            return;
+          }
+        }
+
+        // Lateral motion (bounce off tube walls)
+        electron.lateralOffset += electron.lateralVelocity * dt;
+        if (Math.abs(electron.lateralOffset) >= MAX_LAT) {
+          electron.lateralOffset = Math.sign(electron.lateralOffset) * MAX_LAT;
+          electron.lateralVelocity = -(electron.lateralVelocity * 0.85 + (Math.random() - 0.5) * 8);
+        }
+
+        // World position
+        const si2  = Math.min(electron.segIdx, numSegs - 1);
+        const sp0  = path[si2];
+        const sp1  = path[si2 + 1] || path[si2];
+        const sdx  = sp1.x - sp0.x;
+        const sdy  = sp1.y - sp0.y;
+        const sLen = Math.sqrt(sdx * sdx + sdy * sdy) || 1;
+        const perpX = -sdy / sLen;
+        const perpY =  sdx / sLen;
+
+        electron.x = sp0.x + sdx * electron.tSeg + electron.lateralOffset * perpX;
+        electron.y = sp0.y + sdy * electron.tSeg + electron.lateralOffset * perpY;
+      });
+    }
+
+    // Return current bulb world positions for slowdown detection
+    _getCurrentBulbPositions() {
+      const mode = GameState.currentMode;
+      if (mode === 'SINGLE')   return [{ x: POSITIONS.BULB1_SINGLE.x,   y: POSITIONS.BULB1_SINGLE.y   }];
+      if (mode === 'SERIES')   return [
+        { x: POSITIONS.BULB1_SERIES.x,   y: POSITIONS.BULB1_SERIES.y   },
+        { x: POSITIONS.BULB2_SERIES.x,   y: POSITIONS.BULB2_SERIES.y   },
+      ];
+      if (mode === 'PARALLEL') return [
+        { x: POSITIONS.BULB1_PARALLEL.x, y: POSITIONS.BULB1_PARALLEL.y },
+        { x: POSITIONS.BULB2_PARALLEL.x, y: POSITIONS.BULB2_PARALLEL.y },
+      ];
+      return [];
+    }
+
+    // Count electrons currently within 'radius' px of a bulb center
+    getElectronsNearBulb(bx, by, radius) {
+      let count = 0;
+      this._pool.forEach(e => {
+        if (e.active && Math.hypot(e.x - bx, e.y - by) < radius) count++;
+      });
+      return count;
+    }
+
+    // For ElectronRenderer — returns all active electrons via pool iteration
+    get electrons() {
+      return this._pool.toArray();
+    }
+  }
+
+  // ============================================================
+  // 8. CircuitFSM
+  // ============================================================
+  class _StateMachine {
+    constructor(owner) {
+      this._owner   = owner;
+      this._states  = new Map();
+      this._current = null;
+    }
+    addState(name, { onEnter, onExit, onUpdate } = {}) {
+      this._states.set(name, { onEnter, onExit, onUpdate });
+      return this;
+    }
+    transition(nextName) {
+      if (!this._states.has(nextName)) {
+        console.warn('CircuitFSM: estado desconocido "' + nextName + '"');
+        return;
+      }
+      if (this._current === nextName) return;
+
+      if (this._current) {
+        this._states.get(this._current)?.onExit?.call(this._owner);
+      }
+      this._current = nextName;
+      this._states.get(nextName)?.onEnter?.call(this._owner);
+    }
+    update(dt) {
+      if (!this._current) return;
+      this._states.get(this._current)?.onUpdate?.call(this._owner, dt);
+    }
+    get state()  { return this._current; }
+    is(name)     { return this._current === name; }
+  }
+
+  const BATTERY_TERMINAL_POS = [
+    { x: 180, y: 350 },
+    { x: 180, y: 420 },
+  ];
+
+  class CircuitFSM {
+    constructor() {
+      this._fsm = new _StateMachine(this);
+
+      this._fsm.addState('SINGLE', {
+        onEnter() {
+          GameState.currentMode = 'SINGLE';
+          EventBus.emit(EVENTS.MODE_CHANGED, { mode: 'SINGLE' });
+          for (const pos of BATTERY_TERMINAL_POS) {
+            EventBus.emit(EVENTS.SPARK_EFFECT, { x: pos.x, y: pos.y });
+          }
+        },
+        onExit()    {},
+        onUpdate(dt){},
+      });
+
+      this._fsm.addState('SERIES', {
+        onEnter() {
+          GameState.currentMode = 'SERIES';
+          EventBus.emit(EVENTS.MODE_CHANGED, { mode: 'SERIES' });
+          for (const pos of BATTERY_TERMINAL_POS) {
+            EventBus.emit(EVENTS.SPARK_EFFECT, { x: pos.x, y: pos.y });
+          }
+        },
+        onExit()    {},
+        onUpdate(dt){},
+      });
+
+      this._fsm.addState('PARALLEL', {
+        onEnter() {
+          GameState.currentMode = 'PARALLEL';
+          EventBus.emit(EVENTS.MODE_CHANGED, { mode: 'PARALLEL' });
+          for (const pos of BATTERY_TERMINAL_POS) {
+            EventBus.emit(EVENTS.SPARK_EFFECT, { x: pos.x, y: pos.y });
+          }
+        },
+        onExit()    {},
+        onUpdate(dt){},
+      });
+
+      // FIX: FSM is constructed AFTER CircuitSolver so MODE_CHANGED has a listener.
+      // Initial transition is done in main() after all systems are wired.
+    }
+
+    setMode(mode) {
+      this._fsm.transition(mode);
+    }
+
+    get currentMode() {
+      return this._fsm.state;
+    }
+
+    is(mode) {
+      return this._fsm.is(mode);
+    }
+
+    update(dt) {
+      this._fsm.update(dt);
+    }
+  }
+
+  // ============================================================
+  // 9. GameLoop
+  // ============================================================
+  class GameLoop {
+    constructor({ fixedUpdate, draw, fixedHz = 60, maxFrameTime = 0.1 } = {}) {
+      if (typeof fixedUpdate !== 'function') {
+        throw new Error('GameLoop: se requiere el callback fixedUpdate(dt).');
+      }
+      if (typeof draw !== 'function') {
+        throw new Error('GameLoop: se requiere el callback draw(ctx, alpha).');
+      }
+
+      this._fixedUpdate  = fixedUpdate;
+      this._draw         = draw;
+      this.fixedDt       = 1 / fixedHz;
+      this.maxFrameTime  = maxFrameTime;
+      this.timeScale     = 1.0;
+      this.paused        = false;
+      this._accumulator  = 0;
+      this._lastTime     = 0;
+      this._rafId        = null;
+      this._ctx          = null;
+    }
+
+    start(ctx) {
+      if (!ctx) {
+        throw new Error('GameLoop.start(): se requiere un CanvasRenderingContext2D.');
+      }
+      this._ctx = ctx;
+      requestAnimationFrame((t) => {
+        this._lastTime = t;
+        this._rafId    = requestAnimationFrame(this._tick.bind(this));
+      });
+    }
+
+    stop() {
+      if (this._rafId !== null) {
+        cancelAnimationFrame(this._rafId);
+        this._rafId = null;
+      }
+    }
+
+    pause()  { this.paused = true;  }
+    resume() { this.paused = false; }
+
+    setTimeScale(scale) {
+      this.timeScale = Math.max(0, scale);
+    }
+
+    _tick(timestamp) {
+      this._rafId = requestAnimationFrame(this._tick.bind(this));
+
+      if (this.paused) return;
+
+      const rawDt     = Math.min((timestamp - this._lastTime) / 1000, this.maxFrameTime);
+      this._lastTime  = timestamp;
+      const scaledDt  = rawDt * this.timeScale;
+      this._accumulator += scaledDt;
+
+      while (this._accumulator >= this.fixedDt) {
+        this._fixedUpdate(this.fixedDt);
+        this._accumulator -= this.fixedDt;
+      }
+
+      const alpha = this._accumulator / this.fixedDt;
+      this._draw(this._ctx, alpha);
+    }
+  }
+
+  // ============================================================
+  // 10. InputManager
+  // ============================================================
+  class InputManager {
+    constructor() {
+      this._bound = false;
+    }
+
+    // FIX: bind() must be called explicitly after construction
+    bind() {
+      if (this._bound) return;
+      this._bound = true;
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'F1') {
+          e.preventDefault();
+          GameState.debugVisible = !GameState.debugVisible;
+          EventBus.emit(EVENTS.DEBUG_TOGGLE, {});
+        }
+      });
+    }
+
+    destroy() {
+      this._bound = false;
+    }
+  }
+
+  // ============================================================
+  // 11. BulbGlow
+  // ============================================================
+  class BulbGlow {
+    constructor() {
+      this.currentRatio = 0;
+      this.targetRatio  = 0;
+    }
+
+    setTarget(powerRatio) {
+      this.targetRatio = Math.max(0, Math.min(1, powerRatio));
+    }
+
+    update(dt) {
+      this.currentRatio += (this.targetRatio - this.currentRatio) * Math.min(1, dt * 4.0);
+    }
+
+    getAnimatedRatio(time) {
+      if (this.currentRatio < 0.05) return 0;
+      const flicker =
+        1 +
+        Math.sin(time * 18) * 0.015 +
+        (Math.random() - 0.5) * 0.008;
+      return Math.max(0, Math.min(1, this.currentRatio * flicker));
+    }
+  }
+
+  // ============================================================
+  // 12. ElectronRenderer
+  // ============================================================
+  class ElectronRenderer {
+    draw(ctx, electrons) {
+      for (const e of electrons) {
+        if (!e.active) continue;
+
+        ctx.save();
+        ctx.shadowColor = '#00B0FF';
+        ctx.shadowBlur  = 14;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, CIRCUIT.ELECTRON_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = '#00E5FF';
+        ctx.fill();
+        ctx.restore();
+
+        if (e.vx !== undefined && e.vy !== undefined) {
+          const speed = Math.sqrt(e.vx * e.vx + e.vy * e.vy);
+          if (speed > 0.5) {
+            const nx = e.vx / speed;
+            const ny = e.vy / speed;
+            const trailDist = CIRCUIT.ELECTRON_RADIUS * 2.2;
+
+            ctx.save();
+            ctx.globalAlpha = 0.35;
+            ctx.shadowColor = '#00B0FF';
+            ctx.shadowBlur  = 6;
+            ctx.beginPath();
+            ctx.arc(
+              e.x - nx * trailDist,
+              e.y - ny * trailDist,
+              CIRCUIT.ELECTRON_RADIUS * 0.55,
+              0,
+              Math.PI * 2,
+            );
+            ctx.fillStyle = '#00E5FF';
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+      }
+    }
+  }
+
+  // ============================================================
+  // 13. SparkEffect
+  // ============================================================
+  const SPARK_COLORS = ['#00E5FF', '#FFE040', '#00B0FF', '#FFD700'];
+
+  function _createParticle() {
+    return {
+      x: 0, y: 0,
+      vx: 0, vy: 0,
+      life: 0, maxLife: 0.3,
+      r: 2,
+      color: '#00E5FF',
+      active: false,
+    };
+  }
+
+  class SparkEffect {
+    constructor() {
+      this._particles = Array.from({ length: 128 }, _createParticle);
+      EventBus.on(EVENTS.SPARK_EFFECT, ({ x, y }) => this.fire(x, y));
+    }
+
+    fire(x, y) {
+      const COUNT = 12;
+      let spawned = 0;
+
+      for (const p of this._particles) {
+        if (p.active) continue;
+        if (spawned >= COUNT) break;
+
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 80 + Math.random() * 220;
+        const life  = 0.18 + Math.random() * 0.18;
+
+        p.active  = true;
+        p.x       = x;
+        p.y       = y;
+        p.vx      = Math.cos(angle) * speed;
+        p.vy      = Math.sin(angle) * speed;
+        p.life    = life;
+        p.maxLife = life;
+        p.r       = 2 + Math.random() * 1.5;
+        p.color   = SPARK_COLORS[Math.floor(Math.random() * SPARK_COLORS.length)];
+
+        spawned++;
+      }
+    }
+
+    fixedUpdate(dt) {
+      for (const p of this._particles) {
+        if (!p.active) continue;
+
+        p.life -= dt;
+        if (p.life <= 0) {
+          p.active = false;
+          continue;
+        }
+
+        p.vy += 300 * dt;
+        p.x  += p.vx * dt;
+        p.y  += p.vy * dt;
+        p.vx *= 1 - dt * 1.5;
+      }
+    }
+
+    draw(ctx) {
+      for (const p of this._particles) {
+        if (!p.active) continue;
+
+        const lifeRatio = Math.max(0, p.life / p.maxLife);
+
+        ctx.save();
+        ctx.globalAlpha = lifeRatio;
+        ctx.shadowColor = p.color;
+        ctx.shadowBlur  = 8 * lifeRatio;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r * lifeRatio, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+  }
+
+  // ============================================================
+  // 14. ModeTransition
+  // ============================================================
+  // CHANGE 2: ModeTransition is instant — no fade animation
+  class ModeTransition {
+    constructor() {}
+
+    start(onMidpoint) {
+      // Instant: call midpoint callback immediately, no animation
+      if (onMidpoint) onMidpoint();
+    }
+
+    update(dt) {
+      // No animation, nothing to update
+    }
+
+    draw(ctx, w, h) {
+      // No fade overlay to draw
+    }
+
+    get isActive() {
+      return false;
+    }
+  }
+
+  // ============================================================
+  // 15. CircuitRenderer
+  // ============================================================
+  const CIRCUIT_W = 820;
+  const CIRCUIT_H = 700;
+  const JUNCTION_RADIUS = 8;
+
+  function _lerpColor(c0, c1, t) {
+    const r = Math.round(c0[0] + (c1[0] - c0[0]) * t);
+    const g = Math.round(c0[1] + (c1[1] - c0[1]) * t);
+    const b = Math.round(c0[2] + (c1[2] - c0[2]) * t);
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  }
+
+  function _roundRectPath(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y,     x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x,     y + h, x,     y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x,     y,     x + r, y);
+    ctx.closePath();
+  }
+
+  class CircuitRenderer {
+    constructor({ circuitPaths, bulbGlow1, bulbGlow2, electronRenderer, sparkEffect, modeTransition }) {
+      this._bulbGlow1        = bulbGlow1;
+      this._bulbGlow2        = bulbGlow2;
+      this._electronRenderer = electronRenderer;
+      this._sparkEffect      = sparkEffect;
+      this._modeTransition   = modeTransition;
+
+      this._currentMode = 'SINGLE';
+      this._pendingMode = null;
+      this._time        = 0;
+      this._electronFlow = null;
+
+      this._metrics = {
+        v_src: CIRCUIT.V_DEFAULT,
+        i1: 0, i2: 0,
+        p1: 0, p2: 0,
+      };
+
+      EventBus.on(EVENTS.MODE_CHANGED, ({ mode }) => {
+        this._pendingMode = mode;
+        this._modeTransition.start(() => this.applyNewMode());
+      });
+
+      // BulbGlow targets are now driven by electron count in the bulb zone (see main fixedUpdate)
+      EventBus.on(EVENTS.METRICS_UPDATE, (data) => {
+        this._metrics = data;
+        // brightness is NOT set here — it comes from actual electron flow
+      });
+    }
+
+    updateTime(time) {
+      this._time = time;
+    }
+
+    setElectronFlow(electronFlow) {
+      this._electronFlow = electronFlow;
+    }
+
+    applyNewMode() {
+      if (this._pendingMode !== null) {
+        this._currentMode = this._pendingMode;
+        this._pendingMode = null;
+      }
+    }
+
+    draw(ctx, alpha = 1) {
+      const mode    = this._currentMode;
+      const time    = this._time;
+      const metrics = this._metrics;
+
+      this._drawBackground(ctx);
+      this._drawCables(ctx, mode);
+
+      if (mode === 'SINGLE') {
+        const ratio1 = this._bulbGlow1.getAnimatedRatio(time);
+        this._drawBulb(ctx, POSITIONS.BULB1_SINGLE.x, POSITIONS.BULB1_SINGLE.y,
+                       ratio1, 'R1', metrics.i1 || 0, metrics.p1 || 0);
+      } else if (mode === 'SERIES') {
+        const ratio1 = this._bulbGlow1.getAnimatedRatio(time);
+        const ratio2 = this._bulbGlow2.getAnimatedRatio(time);
+        this._drawBulb(ctx, POSITIONS.BULB1_SERIES.x, POSITIONS.BULB1_SERIES.y,
+                       ratio1, 'R1', metrics.i1 || 0, metrics.p1 || 0);
+        this._drawBulb(ctx, POSITIONS.BULB2_SERIES.x, POSITIONS.BULB2_SERIES.y,
+                       ratio2, 'R2', metrics.i2 || 0, metrics.p2 || 0);
+      } else if (mode === 'PARALLEL') {
+        const ratio1 = this._bulbGlow1.getAnimatedRatio(time);
+        const ratio2 = this._bulbGlow2.getAnimatedRatio(time);
+        this._drawBulb(ctx, POSITIONS.BULB1_PARALLEL.x, POSITIONS.BULB1_PARALLEL.y,
+                       ratio1, 'R1', metrics.i1 || 0, metrics.p1 || 0);
+        this._drawBulb(ctx, POSITIONS.BULB2_PARALLEL.x, POSITIONS.BULB2_PARALLEL.y,
+                       ratio2, 'R2', metrics.i2 || 0, metrics.p2 || 0);
+      }
+
+      this._drawBattery(ctx, POSITIONS.BATTERY.x, POSITIONS.BATTERY.y, metrics.v_src || CIRCUIT.V_DEFAULT);
+
+      if (this._electronFlow && this._electronFlow.electrons) {
+        this._electronRenderer.draw(ctx, this._electronFlow.electrons);
+      }
+
+      this._sparkEffect.draw(ctx);
+      this._modeTransition.draw(ctx, CIRCUIT_W, CIRCUIT_H);
+    }
+
+    _drawBackground(ctx) {
+      ctx.fillStyle = '#0A0F1E';
+      ctx.fillRect(0, 0, CIRCUIT_W, CIRCUIT_H);
+
+      const step = 40;
+      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      for (let gx = 0; gx <= CIRCUIT_W; gx += step) {
+        for (let gy = 0; gy <= CIRCUIT_H; gy += step) {
+          ctx.beginPath();
+          ctx.arc(gx, gy, 1, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    _drawCables(ctx, mode) {
+      if (mode === 'PARALLEL') {
+        const paths = _PATHS_CLOSED.PARALLEL;
+        for (const waypoints of paths) {
+          this._drawSinglePath(ctx, waypoints);
+        }
+        // Junction dots where branches meet the horizontal bus wires
+        this._drawJunctionDot(ctx, 110, 120);   // battery top corner
+        this._drawJunctionDot(ctx, 410, 120);   // B1 top junction
+        this._drawJunctionDot(ctx, 710, 120);   // B2 top junction
+        this._drawJunctionDot(ctx, 110, 580);   // battery bottom corner
+        this._drawJunctionDot(ctx, 410, 580);   // B1 bottom junction
+        this._drawJunctionDot(ctx, 710, 580);   // B2 bottom junction
+      } else {
+        const waypoints = mode === 'SINGLE' ? _PATHS_CLOSED.SINGLE : _PATHS_CLOSED.SERIES;
+        this._drawSinglePath(ctx, waypoints);
+      }
+    }
+
+    _drawSinglePath(ctx, waypoints) {
+      if (waypoints.length < 2) return;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(waypoints[0].x, waypoints[0].y);
+      for (let i = 1; i < waypoints.length; i++) {
+        ctx.lineTo(waypoints[i].x, waypoints[i].y);
+      }
+      ctx.strokeStyle = '#C8862A';
+      ctx.lineWidth   = 12;
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.translate(0, -2);
+      ctx.beginPath();
+      ctx.moveTo(waypoints[0].x, waypoints[0].y);
+      for (let i = 1; i < waypoints.length; i++) {
+        ctx.lineTo(waypoints[i].x, waypoints[i].y);
+      }
+      ctx.strokeStyle = 'rgba(232,168,74,0.35)';
+      ctx.lineWidth   = 4;
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    _drawJunctionDot(ctx, x, y) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(x, y, JUNCTION_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = '#E8A84A';
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // CHANGE 3: Incandescent bulb with pear-shaped glass and coil filament — dramatic brightness
+    _drawBulb(ctx, x, y, powerRatio, label, currentAmps, powerWatts) {
+      powerRatio = Math.max(0, Math.min(1, powerRatio));
+
+      // Non-linear curve: exaggerates low and high ends perceptually
+      const raw          = Math.min(1, powerRatio);
+      const displayRatio = Math.pow(raw, 0.45);
+
+      // Determine R value from label ('R1' → GameState.r1, 'R2' → GameState.r2)
+      const rValue = (label === 'R1' || label === 'R2')
+        ? (label === 'R1' ? GameState.r1 : GameState.r2)
+        : 20;
+
+      // --- Wide ambient glow around bulb (r_outer = 140px) ---
+      if (displayRatio > 0.05) {
+        const grad = ctx.createRadialGradient(x, y, 28, x, y, 140);
+        grad.addColorStop(0,   'rgba(255,200,40,'  + (0.45 * displayRatio) + ')');
+        grad.addColorStop(0.4, 'rgba(255,150,0,'   + (0.2  * displayRatio) + ')');
+        grad.addColorStop(1,   'rgba(255,100,0,0)');
+        ctx.save();
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, 140, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // --- Bulb glass body (pear shape) ---
+      const bulbR   = 28;
+      const neckW   = 14;
+      const neckH   = 18;
+      const domeTop = y - bulbR - 4;
+      const domeCy  = y;
+
+      // Bulb body fill color — from near-black to near-white-yellow
+      let bulbColor;
+      if (displayRatio < 0.5) {
+        const t = displayRatio / 0.5;
+        const r = Math.round(26  + (255 - 26)  * t);
+        const g = Math.round(0   + 106          * t);
+        const b = 0;
+        bulbColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+      } else {
+        const t = (displayRatio - 0.5) / 0.5;
+        const r = 255;
+        const g = Math.round(106 + (255 - 106) * t);
+        const b = Math.round(0   + 160          * t);
+        bulbColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+      }
+
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,220,60,' + (0.85 * displayRatio) + ')';
+      ctx.shadowBlur  = 8 + 72 * displayRatio;
+
+      ctx.beginPath();
+      ctx.moveTo(x - neckW / 2, domeCy + neckH);
+      ctx.lineTo(x - neckW / 2, domeCy + 8);
+      ctx.arc(x, domeCy, bulbR, Math.PI * 0.6, Math.PI * -0.6, false);
+      ctx.lineTo(x + neckW / 2, domeCy + neckH);
+      ctx.closePath();
+
+      ctx.fillStyle   = bulbColor;
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(180,200,220,' + (0.25 + 0.5 * displayRatio) + ')';
+      ctx.lineWidth   = 1 + displayRatio;
+      ctx.stroke();
+      ctx.restore();
+
+      // --- Coil filament inside bulb ---
+      this._drawCoilFilament(ctx, x, domeCy - 4, displayRatio);
+
+      // --- Watt label above bulb ---
+      if (displayRatio > 0.08) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, displayRatio * 1.2);
+        ctx.font        = 'bold 12px monospace';
+        ctx.fillStyle   = '#FFD700';
+        ctx.textAlign   = 'center';
+        ctx.shadowColor = 'rgba(0,0,0,0.8)';
+        ctx.shadowBlur  = 3;
+        ctx.fillText(powerWatts.toFixed(1) + ' W', x, domeTop - 6);
+        ctx.restore();
+      }
+
+      // --- Label below bulb: "R₁ = 20 Ω" ---
+      const baseY  = domeCy + neckH;
+      const rLabel = (label === 'R1' ? 'R₁' : (label === 'R2' ? 'R₂' : label));
+      ctx.save();
+      ctx.font      = '11px monospace';
+      ctx.fillStyle = '#888888';
+      ctx.textAlign = 'center';
+      ctx.fillText(rLabel + ' = ' + rValue + ' Ω', x, baseY + 14);
+      ctx.restore();
+
+      ctx.save();
+      ctx.font      = '11px monospace';
+      ctx.fillStyle = '#666666';
+      ctx.textAlign = 'center';
+      ctx.fillText('I: ' + currentAmps.toFixed(2) + ' A', x, baseY + 28);
+      ctx.restore();
+    }
+
+    // displayRatio already has the power curve applied before arriving here
+    _drawCoilFilament(ctx, cx, cy, displayRatio) {
+      const loops  = 6;
+      const coilH  = 32;
+      const loopH  = coilH / loops;
+      const loopW  = 7;
+      const startY = cy - coilH / 2;
+
+      // Filament color: nearly invisible dark red → orange → white
+      let filamentColor;
+      if (displayRatio < 0.3) {
+        const t = displayRatio / 0.3;
+        const r = Math.round(42  + (204 - 42)  * t);
+        const g = Math.round(16  + (48  - 16)  * t);
+        const b = 0;
+        filamentColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+      } else if (displayRatio < 0.7) {
+        const t = (displayRatio - 0.3) / 0.4;
+        const r = Math.round(204 + (255 - 204) * t);
+        const g = Math.round(48  + (153 - 48)  * t);
+        const b = 0;
+        filamentColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+      } else {
+        const t = (displayRatio - 0.7) / 0.3;
+        const r = 255;
+        const g = Math.round(153 + (255 - 153) * t);
+        const b = Math.round(0   + 255          * t);
+        filamentColor = 'rgb(' + r + ',' + g + ',' + b + ')';
+      }
+
+      ctx.save();
+      if (displayRatio > 0.05) {
+        ctx.shadowColor = 'rgba(255,220,60,' + displayRatio + ')';
+        ctx.shadowBlur  = 8 + 18 * displayRatio;
+      }
+      ctx.strokeStyle = filamentColor;
+      ctx.lineWidth   = 1.5;
+      ctx.lineCap     = 'round';
+      ctx.lineJoin    = 'round';
+
+      ctx.beginPath();
+      ctx.moveTo(cx, startY);
+      for (let i = 0; i < loops; i++) {
+        const y0  = startY + i * loopH;
+        const y1  = y0 + loopH;
+        const dir = (i % 2 === 0) ? 1 : -1;
+        ctx.bezierCurveTo(
+          cx + loopW * dir * 2, y0 + loopH * 0.15,
+          cx + loopW * dir * 2, y1 - loopH * 0.15,
+          cx, y1
+        );
+      }
+      ctx.stroke();
+
+      // Support wires
+      ctx.strokeStyle = 'rgba(150,150,150,0.5)';
+      ctx.lineWidth   = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(cx - 3, cy + coilH / 2);
+      ctx.lineTo(cx - 3, cy + 24);
+      ctx.moveTo(cx + 3, cy + coilH / 2);
+      ctx.lineTo(cx + 3, cy + 24);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    _drawBattery(ctx, x, y, voltage) {
+      const bw = 60;
+      const bh = 80;
+      const bx = x - bw / 2;
+      const by = y - bh / 2;
+
+      ctx.save();
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(bx, by, bw, bh, 6);
+      } else {
+        _roundRectPath(ctx, bx, by, bw, bh, 6);
+      }
+      ctx.fillStyle   = '#1A2040';
+      ctx.fill();
+      ctx.strokeStyle = '#E8A84A';
+      ctx.lineWidth   = 2;
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = '#FF4444';
+      ctx.lineWidth   = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y - bh / 2);
+      ctx.lineTo(x, y - bh / 2 - 15);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y - bh / 2 - 15, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#FF4444';
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.strokeStyle = '#4488FF';
+      ctx.lineWidth   = 2;
+      ctx.beginPath();
+      ctx.moveTo(x, y + bh / 2);
+      ctx.lineTo(x, y + bh / 2 + 15);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, y + bh / 2 + 15, 6, 0, Math.PI * 2);
+      ctx.fillStyle = '#4488FF';
+      ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      ctx.font         = '20px serif';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('⚡', x, y - 8);
+      ctx.restore();
+
+      ctx.save();
+      ctx.font         = 'bold 13px monospace';
+      ctx.fillStyle    = '#E8A84A';
+      ctx.textAlign    = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(voltage.toFixed(0) + 'V', x, y + 14);
+      ctx.restore();
+    }
+  }
+
+  // ============================================================
+  // 16. DebugDraw
+  // ============================================================
+  const _MIN_SEGMENT_LEN = 80;
+
+  class DebugDraw {
+    constructor(debugCtx) {
+      this._ctx         = debugCtx;
+      this._canvas      = debugCtx.canvas;
+      this._visible     = false;
+      this._metrics     = null;
+      this._circuitData = null;
+
+      EventBus.on(EVENTS.METRICS_UPDATE, data => { this._metrics = data; });
+      EventBus.on(EVENTS.CIRCUIT_READY,  data => { this._circuitData = data; });
+      EventBus.on(EVENTS.DEBUG_TOGGLE,   ()   => {
+        this._visible = !this._visible;
+        GameState.debugVisible = this._visible;
+        if (!this._visible) this._clear();
+      });
+    }
+
+    // FIX: draw() takes no args — called as debugDraw.draw() (no ctx arg)
+    draw() {
+      if (!this._visible) {
+        this._clear();
+        return;
+      }
+
+      this._clear();
+
+      if (!this._circuitData || !this._circuitData.paths) return;
+
+      const paths   = this._circuitData.paths;
+      const metrics = this._metrics || {};
+
+      for (const path of paths) {
+        if (!path || !path.waypoints || path.waypoints.length < 2) continue;
+
+        const current   = this._resolvePathCurrent(path, metrics);
+        const waypoints = path.waypoints;
+
+        for (let i = 0; i < waypoints.length - 1; i++) {
+          const a = waypoints[i];
+          const b = waypoints[i + 1];
+
+          this._drawPoint(a.x, a.y);
+
+          const dx  = b.x - a.x;
+          const dy  = b.y - a.y;
+          const len = Math.sqrt(dx * dx + dy * dy);
+
+          if (len > _MIN_SEGMENT_LEN) {
+            const mx = (a.x + b.x) / 2;
+            const my = (a.y + b.y) / 2;
+            const label = 'I=' + current.toFixed(2) + 'A';
+            this._drawLabel(mx, my - 14, label);
+            this._drawArrow(mx, my, dx / len, dy / len, 16);
+          }
+        }
+
+        const last = waypoints[waypoints.length - 1];
+        this._drawPoint(last.x, last.y);
+      }
+    }
+
+    _resolvePathCurrent(path, metrics) {
+      if (typeof path.current === 'number') return path.current;
+      const id = path.id || '';
+      if (id === 'r1' || id.includes('bulb1')) return metrics.i1 || 0;
+      if (id === 'r2' || id.includes('bulb2')) return metrics.i2 || 0;
+      return metrics.i_total || metrics.i1 || 0;
+    }
+
+    _clear() {
+      this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+    }
+
+    _drawPoint(x, y) {
+      const ctx = this._ctx;
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fillStyle   = 'rgba(255,255,0,0.4)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,0,0.7)';
+      ctx.lineWidth   = 1;
+      ctx.stroke();
+    }
+
+    _drawLabel(x, y, text) {
+      const ctx = this._ctx;
+      ctx.font = '10px monospace';
+      const w = ctx.measureText(text).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(x - w / 2 - 2, y - 10, w + 4, 13);
+      ctx.fillStyle     = '#FFFF00';
+      ctx.textAlign     = 'center';
+      ctx.textBaseline  = 'middle';
+      ctx.fillText(text, x, y - 3);
+      ctx.textAlign     = 'left';
+      ctx.textBaseline  = 'alphabetic';
+    }
+
+    _drawArrow(x, y, nx, ny, size) {
+      const ctx  = this._ctx;
+      const tipX = x + nx * size;
+      const tipY = y + ny * size;
+      const baseX = x - nx * (size * 0.5);
+      const baseY = y - ny * (size * 0.5);
+      const px = -ny;
+      const py =  nx;
+      const hw = size * 0.35;
+
+      ctx.beginPath();
+      ctx.moveTo(tipX, tipY);
+      ctx.lineTo(baseX + px * hw, baseY + py * hw);
+      ctx.lineTo(baseX - px * hw, baseY - py * hw);
+      ctx.closePath();
+      ctx.fillStyle   = '#00E5FF';
+      ctx.globalAlpha = 0.75;
+      ctx.fill();
+      ctx.globalAlpha = 1.0;
+    }
+  }
+
+  // ============================================================
+  // 17. MetricsPanel
+  // ============================================================
+  const METRICS_SECTIONS = [
+    {
+      id:    'section-fuente',
+      title: 'Fuente',
+      rows: [
+        { key: 'v_src',   label: 'V_src',   unit: 'V' },
+        { key: 'r_eq',    label: 'R_eq',    unit: 'Ω' },
+        { key: 'i_total', label: 'I_total', unit: 'A' },
+      ],
+    },
+    {
+      id:    'section-bulb1',
+      title: 'Bombilla 1',
+      rows: [
+        { key: 'v1', label: 'Voltaje',   unit: 'V' },
+        { key: 'i1', label: 'Corriente', unit: 'A' },
+        { key: 'p1', label: 'Potencia',  unit: 'W' },
+      ],
+    },
+    {
+      id:    'section-bulb2',
+      title: 'Bombilla 2',
+      rows: [
+        { key: 'v2', label: 'Voltaje',   unit: 'V' },
+        { key: 'i2', label: 'Corriente', unit: 'A' },
+        { key: 'p2', label: 'Potencia',  unit: 'W' },
+      ],
+    },
+  ];
+
+  class MetricsPanel {
+    constructor(parentEl) {
+      this._valueEls    = new Map();
+      this._bulb2Section = null;
+
+      const container = document.createElement('div');
+      container.id = 'metrics-panel';
+
+      for (const section of METRICS_SECTIONS) {
+        const sectionEl = document.createElement('div');
+        sectionEl.className = 'metrics-section';
+        sectionEl.id        = section.id;
+
+        const titleEl = document.createElement('div');
+        titleEl.className   = 'metrics-section-title';
+        titleEl.textContent = section.title;
+        sectionEl.appendChild(titleEl);
+
+        for (const row of section.rows) {
+          const rowEl = document.createElement('div');
+          rowEl.className = 'metric-row';
+
+          const labelEl = document.createElement('span');
+          labelEl.className   = 'metric-label';
+          labelEl.textContent = row.label;
+
+          const valueEl = document.createElement('span');
+          valueEl.className   = 'metric-value';
+          valueEl.id          = 'mv-' + row.key;
+          valueEl.textContent = '--';
+
+          const unitEl = document.createElement('span');
+          unitEl.className   = 'metric-unit';
+          unitEl.textContent = row.unit;
+
+          rowEl.appendChild(labelEl);
+          rowEl.appendChild(valueEl);
+          rowEl.appendChild(unitEl);
+          sectionEl.appendChild(rowEl);
+
+          this._valueEls.set(row.key, valueEl);
+        }
+
+        container.appendChild(sectionEl);
+
+        if (section.id === 'section-bulb2') {
+          this._bulb2Section = sectionEl;
+        }
+      }
+
+      parentEl.appendChild(container);
+
+      EventBus.on(EVENTS.METRICS_UPDATE, data => this._onMetricsUpdate(data));
+      EventBus.on(EVENTS.MODE_CHANGED,   ({ mode }) => this._onModeChanged(mode));
+
+      this._applyBulb2Visibility(GameState.currentMode);
+    }
+
+    _onMetricsUpdate(data) {
+      const isSingle = GameState.currentMode === 'SINGLE';
+
+      for (const [key, el] of this._valueEls) {
+        if (isSingle && (key === 'v2' || key === 'i2' || key === 'p2')) {
+          el.textContent = '--';
+          continue;
+        }
+        const val = data[key];
+        if (val === undefined || val === null) {
+          el.textContent = '--';
+        } else {
+          el.textContent = typeof val === 'number' ? val.toFixed(2) : String(val);
+        }
+      }
+    }
+
+    _onModeChanged(mode) {
+      this._applyBulb2Visibility(mode);
+    }
+
+    _applyBulb2Visibility(mode) {
+      if (!this._bulb2Section) return;
+      this._bulb2Section.style.display = (mode === 'SINGLE') ? 'none' : 'block';
+    }
+  }
+
+  // ============================================================
+  // 18. FormulaPanel
+  // ============================================================
+  const FORMULA_TEMPLATES = {
+    SINGLE: [
+      'V = I · R₁',
+      '{v_src} V = {i1} A · {r1_val} Ω',
+      '──────────────',
+      'P₁ = V · I',
+      'P₁ = {v_src} · {i1} = {p1} W',
+    ],
+    SERIES: [
+      'R_eq = R₁ + R₂',
+      'R_eq = {r1_val} + {r2_val} = {r_eq} Ω',
+      '──────────────',
+      'I = V / R_eq',
+      'I = {v_src} / {r_eq} = {i_total} A',
+      '──────────────',
+      'V₁ = {v1} V  |  V₂ = {v2} V',
+      'P₁ = {p1} W  |  P₂ = {p2} W',
+    ],
+    PARALLEL: [
+      'V₁ = V₂ = {v_src} V',
+      '──────────────',
+      'I₁ = V/R₁ = {v_src}/{r1_val} = {i1} A',
+      'I₂ = V/R₂ = {v_src}/{r2_val} = {i2} A',
+      'I_total = {i_total} A',
+      '──────────────',
+      'P₁ = {p1} W  |  P₂ = {p2} W',
+    ],
+  };
+
+  class FormulaPanel {
+    constructor(parentEl) {
+      this._lastMetrics  = {};
+      this._currentMode  = GameState.currentMode;
+
+      const container = document.createElement('div');
+      container.id    = 'formula-panel';
+
+      const ohm = document.createElement('div');
+      ohm.className = 'ohm-law';
+      ohm.innerHTML = '<span class="ohm-title">LEY DE OHM</span>' +
+                      '<span class="ohm-eq">V = I · R</span>';
+      container.appendChild(ohm);
+
+      const sep = document.createElement('hr');
+      sep.className = 'formula-sep';
+      container.appendChild(sep);
+
+      this._dynamic = document.createElement('div');
+      container.appendChild(this._dynamic);
+
+      parentEl.appendChild(container);
+      this._container = this._dynamic;
+
+      EventBus.on(EVENTS.MODE_CHANGED,   ({ mode }) => this._onModeChanged(mode));
+      EventBus.on(EVENTS.METRICS_UPDATE, data => this._onMetricsUpdate(data));
+
+      this._render();
+    }
+
+    _onModeChanged(mode) {
+      this._currentMode = mode;
+      this._render();
+    }
+
+    _onMetricsUpdate(data) {
+      this._lastMetrics = {
+        ...data,
+        r1_val: GameState.r1,
+        r2_val: GameState.r2,
+      };
+      this._render();
+    }
+
+    _render() {
+      const template = FORMULA_TEMPLATES[this._currentMode] || FORMULA_TEMPLATES.SINGLE;
+      const data     = this._lastMetrics;
+
+      this._container.innerHTML = '';
+
+      for (const line of template) {
+        if (line.startsWith('──')) {
+          const hr = document.createElement('hr');
+          hr.className = 'formula-sep';
+          this._container.appendChild(hr);
+          continue;
+        }
+
+        const lineEl = document.createElement('span');
+        lineEl.className = 'formula-line';
+
+        lineEl.innerHTML = line.replace(/\{(\w+)\}/g, (_, key) => {
+          const val = data[key];
+          if (val === undefined || val === null) {
+            return '<span class="formula-value">--</span>';
+          }
+          const formatted = typeof val === 'number' ? val.toFixed(2) : String(val);
+          return '<span class="formula-value">' + formatted + '</span>';
+        });
+
+        this._container.appendChild(lineEl);
+      }
+    }
+  }
+
+  // ============================================================
+  // 19. ModeButtons
+  // ============================================================
+  const BUTTON_DEFS = [
+    { label: '1 Bombilla', mode: 'SINGLE'   },
+    { label: 'Serie',      mode: 'SERIES'   },
+    { label: 'Paralelo',   mode: 'PARALLEL' },
+  ];
+
+  class ModeButtons {
+    constructor(parentEl) {
+      this._buttons = new Map();
+
+      const container = document.createElement('div');
+      container.id = 'mode-buttons';
+
+      for (const { label, mode } of BUTTON_DEFS) {
+        const btn = document.createElement('button');
+        btn.className      = 'mode-btn';
+        btn.textContent    = label;
+        btn.dataset.mode   = mode;
+
+        btn.addEventListener('click', () => this._handleClick(mode));
+
+        this._buttons.set(mode, btn);
+        container.appendChild(btn);
+      }
+
+      parentEl.appendChild(container);
+      this.setActive(GameState.currentMode);
+    }
+
+    _handleClick(mode) {
+      if (GameState.currentMode === mode) return;
+      GameState.currentMode = mode;
+      this.setActive(mode);
+      EventBus.emit(EVENTS.MODE_CHANGED, { mode });
+    }
+
+    setActive(mode) {
+      for (const [btnMode, btn] of this._buttons) {
+        btn.classList.toggle('active', btnMode === mode);
+      }
+    }
+  }
+
+  // ============================================================
+  // 20. SlidersPanel
+  // ============================================================
+  const SLIDER_DEFS = [
+    {
+      key:     'voltage',
+      label:   'Voltaje (V_src)',
+      min:     0,
+      max:     24,
+      step:    1,
+      default: 12,
+      unit:    'V',
+      wrapId:  'slider-voltage-wrap',
+    },
+    {
+      key:     'r1',
+      label:   'Resistencia R1',
+      min:     1,
+      max:     100,
+      step:    1,
+      default: 20,
+      unit:    'Ω',
+      wrapId:  'slider-r1-wrap',
+    },
+    {
+      key:     'r2',
+      label:   'Resistencia R2',
+      min:     1,
+      max:     100,
+      step:    1,
+      default: 20,
+      unit:    'Ω',
+      wrapId:  'slider-r2-wrap',
+    },
+  ];
+
+  class SlidersPanel {
+    constructor(parentEl) {
+      this._sliders = new Map();
+
+      const container = document.createElement('div');
+      container.id = 'sliders-panel';
+
+      for (const def of SLIDER_DEFS) {
+        const wrap = document.createElement('div');
+        wrap.className = 'slider-wrap';
+        wrap.id        = def.wrapId;
+
+        const header = document.createElement('div');
+        header.className = 'slider-header';
+
+        const labelEl = document.createElement('span');
+        labelEl.className   = 'slider-label';
+        labelEl.textContent = def.label;
+
+        const display = document.createElement('span');
+        display.className   = 'slider-display';
+        display.id          = 'sv-' + def.key;
+        display.textContent = def.default + ' ' + def.unit;
+
+        header.appendChild(labelEl);
+        header.appendChild(display);
+
+        const input   = document.createElement('input');
+        input.type    = 'range';
+        input.id      = 'si-' + def.key;
+        input.min     = def.min;
+        input.max     = def.max;
+        input.step    = def.step;
+        input.value   = def.default;
+
+        input.addEventListener('input', () => {
+          const val = parseFloat(input.value);
+          display.textContent = val + ' ' + def.unit;
+          this._onSliderChange(def.key, val);
+        });
+
+        wrap.appendChild(header);
+        wrap.appendChild(input);
+        container.appendChild(wrap);
+
+        this._sliders.set(def.key, { input, display, wrap, unit: def.unit });
+      }
+
+      parentEl.appendChild(container);
+
+      // SlidersPanel emits PARAMS_CHANGED — CircuitSolver listens PARAMS_CHANGED (correct)
+      EventBus.on(EVENTS.MODE_CHANGED, ({ mode }) => this._onModeChanged(mode));
+      this._applyR2Visibility(GameState.currentMode);
+    }
+
+    _onSliderChange(key, value) {
+      if (key === 'voltage') GameState.voltage = value;
+      else if (key === 'r1')  GameState.r1      = value;
+      else if (key === 'r2')  GameState.r2      = value;
+
+      // FIX verified: emits PARAMS_CHANGED (not SLIDER_CHANGED)
+      // CircuitSolver.js listens to PARAMS_CHANGED — signals are consistent
+      EventBus.emit(EVENTS.PARAMS_CHANGED, {
+        voltage: GameState.voltage,
+        r1:      GameState.r1,
+        r2:      GameState.r2,
+      });
+    }
+
+    _onModeChanged(mode) {
+      this._applyR2Visibility(mode);
+    }
+
+    _applyR2Visibility(mode) {
+      const r2Entry = this._sliders.get('r2');
+      if (!r2Entry) return;
+      r2Entry.wrap.style.display = (mode === 'SINGLE') ? 'none' : 'block';
+    }
+
+    getValue(key) {
+      const entry = this._sliders.get(key);
+      return entry ? parseFloat(entry.input.value) : 0;
+    }
+  }
+
+  // ============================================================
+  // 21. HUD
+  // ============================================================
+  class HUD {
+    constructor(hudEl) {
+      this._el = hudEl;
+
+      this._addTitle();
+      this._addSectionLabel('Modo de circuito');
+      this.modeButtons  = new ModeButtons(hudEl);
+      this._addSectionLabel('Parámetros');
+      this.slidersPanel = new SlidersPanel(hudEl);
+      this._addSectionLabel('Métricas');
+      this.metricsPanel = new MetricsPanel(hudEl);
+      this._addSectionLabel('Fórmulas activas');
+      this.formulaPanel = new FormulaPanel(hudEl);
+    }
+
+    _addTitle() {
+      const title = document.createElement('div');
+      title.className   = 'game-title';
+      title.textContent = '⚡ Circuito Vivo';
+      this._el.appendChild(title);
+    }
+
+    _addSectionLabel(text) {
+      const label = document.createElement('div');
+      label.className   = 'section-label';
+      label.textContent = text;
+      this._el.appendChild(label);
+    }
+  }
+
+  // ============================================================
+  // 22. Audio: createHum, playClick, playSpark
+  // ============================================================
+  function createHum(audioCtx) {
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 120;
+    gain.gain.value     = 0.025;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    return {
+      setIntensity(i_total) {
+        const freq = 120 + Math.min(5, i_total || 0) * 15;
+        osc.frequency.setTargetAtTime(freq, audioCtx.currentTime, 0.1);
+      }
+    };
+  }
+
+  function playClick(audioCtx) {
+    const bufLen = Math.floor(audioCtx.sampleRate * 0.04);
+    const buf    = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+    const data   = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) {
+      data[i] = (Math.random() * 2 - 1) * (1 - i / bufLen) * 0.3;
+    }
+    const src  = audioCtx.createBufferSource();
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
+    src.buffer = buf;
+    src.connect(gain);
+    gain.connect(audioCtx.destination);
+    src.start();
+  }
+
+  function playSpark(audioCtx) {
+    const bufLen = Math.floor(audioCtx.sampleRate * 0.12);
+    const buf    = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+    const data   = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) {
+      const env = Math.exp(-i / (audioCtx.sampleRate * 0.03));
+      data[i]   = (Math.random() * 2 - 1) * env;
+    }
+    const src  = audioCtx.createBufferSource();
+    const gain = audioCtx.createGain();
+    gain.gain.value = 0.2;
+    src.buffer = buf;
+    src.connect(gain);
+    gain.connect(audioCtx.destination);
+    src.start();
+  }
+
+  // ============================================================
+  // 23. main()
+  // ============================================================
+  function main() {
+    // Audio (unlock on first interaction)
+    let audioCtx = null;
+    let hum      = null;
+    const unlockAudio = () => {
+      if (audioCtx) return;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      hum      = createHum(audioCtx);
+      document.removeEventListener('click',   unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
+    document.addEventListener('click',   unlockAudio);
+    document.addEventListener('keydown', unlockAudio);
+
+    // Canvases
+    const circuitCanvas = document.getElementById('circuit-canvas');
+    const debugCanvas   = document.getElementById('debug-canvas');
+    const hudEl         = document.getElementById('hud');
+    const ctx           = circuitCanvas.getContext('2d');
+    const debugCtx      = debugCanvas.getContext('2d');
+
+    // Physics
+    const circuitPaths  = new CircuitPaths();
+    const circuitSolver = new CircuitSolver();
+    const electronPool  = new ElectronPool(300);
+    // FIX: ElectronFlow(pool) — second arg circuitPaths is accepted but ignored;
+    //      ElectronFlow uses global PATHS/PATH_LENGTHS directly.
+    const electronFlow  = new ElectronFlow(electronPool);
+
+    // Visuals
+    const bulbGlow1        = new BulbGlow();
+    const bulbGlow2        = new BulbGlow();
+    const electronRenderer = new ElectronRenderer();
+    const sparkEffect      = new SparkEffect();
+    const modeTransition   = new ModeTransition();
+    const circuitRenderer  = new CircuitRenderer({
+      circuitPaths, bulbGlow1, bulbGlow2,
+      electronRenderer, sparkEffect, modeTransition
+    });
+    circuitRenderer.setElectronFlow(electronFlow);
+
+    // UI
+    const debugDraw = new DebugDraw(debugCtx);
+    const hud       = new HUD(hudEl);
+
+    // Core
+    const inputManager = new InputManager();
+    inputManager.bind(); // FIX: bind() must be called to activate keyboard listeners
+    const circuitFSM   = new CircuitFSM();
+
+    // Electron-flow reset on mode change
+    EventBus.on(EVENTS.MODE_CHANGED, ({ mode }) => {
+      // Full reset of electron flow for the new circuit topology.
+      // CircuitSolver will emit METRICS_UPDATE right after MODE_CHANGED, so we
+      // use the solver's last known metrics (or fallback to current GameState values).
+      const m = circuitSolver.lastMetrics || {
+        mode, i_total: 0, i1: 0, i2: 0,
+        v_src: GameState.voltage, r1: GameState.r1, r2: GameState.r2,
+      };
+      electronFlow.setCircuit(mode, m);
+    });
+    EventBus.on(EVENTS.METRICS_UPDATE, (metrics) => {
+      if (hum) hum.setIntensity(metrics.i_total);
+      // BulbGlow targets already set by CircuitRenderer's own METRICS_UPDATE handler
+      // Update spawn rates without resetting in-flight electrons
+      electronFlow.updateMetrics(metrics);
+    });
+
+    // Resolver circuito inicial
+    const initialMetrics = circuitSolver.solve({
+      mode:    GameState.currentMode,
+      voltage: GameState.voltage,
+      r1:      GameState.r1,
+      r2:      GameState.r2,
+    });
+
+    // FIX: use lastMetrics fallback in case solve() returns null
+    const metricsForFlow = initialMetrics || circuitSolver.lastMetrics;
+    electronFlow.setCircuit(GameState.currentMode, metricsForFlow);
+
+    // FIX: emit CIRCUIT_READY so DebugDraw gets initial path data (listens CIRCUIT_READY)
+    // Build a simple paths structure DebugDraw can consume
+    function buildDebugPaths(mode) {
+      if (mode === 'PARALLEL') {
+        return [
+          { id: 'r1', waypoints: PATHS.PARALLEL[0] },
+          { id: 'r2', waypoints: PATHS.PARALLEL[1] },
+        ];
+      }
+      return [
+        { id: 'main', waypoints: PATHS[mode] },
+      ];
+    }
+
+    EventBus.emit(EVENTS.CIRCUIT_READY, {
+      mode:  GameState.currentMode,
+      paths: buildDebugPaths(GameState.currentMode),
+    });
+
+    // Re-emit CIRCUIT_READY when mode changes
+    EventBus.on(EVENTS.MODE_CHANGED, ({ mode }) => {
+      EventBus.emit(EVENTS.CIRCUIT_READY, {
+        mode,
+        paths: buildDebugPaths(mode),
+      });
+    });
+
+    // CircuitFSM initial transition now that all listeners are wired
+    // (avoid duplicate MODE_CHANGED from constructor transition)
+    // CircuitFSM constructor no longer auto-transitions; we call setMode here.
+    circuitFSM.setMode('SINGLE');
+
+    // Electron-count-based bulb brightness
+    // ratio 1.0 = BULB_REF_COUNT electrons in the bulb zone at once
+    let smoothRatio1 = 0;
+    let smoothRatio2 = 0;
+    const BULB_REF_COUNT = 20;
+    const BULB_DETECT_R  = 42;
+
+    // Game Loop
+    const gameLoop = new GameLoop({
+      fixedUpdate: (dt) => {
+        const time = performance.now() / 1000;
+        electronFlow.fixedUpdate(dt);
+        sparkEffect.fixedUpdate(dt);
+        modeTransition.update(dt);
+
+        // Brightness = electrons physically present inside each bulb zone
+        const _mode = GameState.currentMode;
+        const pos1 = _mode === 'SINGLE'   ? POSITIONS.BULB1_SINGLE
+                   : _mode === 'SERIES'   ? POSITIONS.BULB1_SERIES
+                   : POSITIONS.BULB1_PARALLEL;
+        const pos2 = _mode === 'SERIES'   ? POSITIONS.BULB2_SERIES
+                   : _mode === 'PARALLEL' ? POSITIONS.BULB2_PARALLEL
+                   : null;
+        const c1 = electronFlow.getElectronsNearBulb(pos1.x, pos1.y, BULB_DETECT_R);
+        const c2 = pos2 ? electronFlow.getElectronsNearBulb(pos2.x, pos2.y, BULB_DETECT_R) : 0;
+        smoothRatio1 += (c1 / BULB_REF_COUNT - smoothRatio1) * Math.min(1, dt * 2.0);
+        smoothRatio2 += (c2 / BULB_REF_COUNT - smoothRatio2) * Math.min(1, dt * 2.0);
+        bulbGlow1.setTarget(Math.min(1, Math.max(0, smoothRatio1)));
+        bulbGlow2.setTarget(Math.min(1, Math.max(0, smoothRatio2)));
+
+        bulbGlow1.update(dt);
+        bulbGlow2.update(dt);
+        circuitRenderer.updateTime(time);
+      },
+      draw: (ctx, alpha) => {
+        circuitRenderer.draw(ctx, alpha);
+        debugDraw.draw();  // FIX: debugDraw.draw() takes no args
+      }
+    });
+
+    gameLoop.start(ctx);
+  }
+
+  window.addEventListener('load', main);
+  </script>
+</body>
+</html>

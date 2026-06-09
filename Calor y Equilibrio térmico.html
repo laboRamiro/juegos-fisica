@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Calor y Equilibrio</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{background:#0d0d1a;display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:monospace;}
+    #game-container{position:relative;width:800px;height:500px;overflow:hidden;}
+    canvas{display:block;cursor:default;}
+    #ui-overlay{position:absolute;top:0;left:0;width:800px;height:500px;pointer-events:none;}
+    button{pointer-events:all;}
+    #panel-metrics{position:absolute;top:12px;left:12px;background:rgba(0,0,0,0.7);border:1px solid rgba(255,255,255,0.15);border-radius:6px;padding:10px 14px;min-width:210px;font-size:13px;pointer-events:none;}
+    .metric-row{display:flex;justify-content:space-between;gap:8px;margin:4px 0;}
+    .metric-label{color:#aaa;}
+    .metric-value{color:#4af;font-weight:bold;min-width:70px;text-align:right;}
+    /* ── Termómetro ── */
+    #thermometer{position:absolute;top:70px;right:18px;text-align:center;}
+    #thermo-wrap{position:relative;width:52px;height:200px;margin:0 auto;}
+    #thermo-tube{position:absolute;left:0;width:18px;height:200px;background:#222;border:2px solid #555;border-radius:9px;overflow:hidden;}
+    #thermo-fill{position:absolute;bottom:0;width:100%;background:#3a7fc1;transition:height .25s ease,background-color .4s ease;}
+    .tlbl{position:absolute;left:22px;font-size:9px;color:#888;font-family:monospace;white-space:nowrap;transform:translateY(-50%);}
+    #thermo-value{font-size:13px;font-weight:bold;color:#e8e8c0;margin-top:4px;}
+    /* ── Controles ── */
+    #panel-controls{position:absolute;bottom:20px;right:18px;display:flex;flex-direction:column;gap:6px;}
+    button{padding:9px 16px;font-family:monospace;font-size:13px;background:#444;color:#e8e8c0;border:1px solid #666;border-radius:4px;cursor:pointer;min-width:168px;}
+    button:hover{background:#555;}
+    #btn-equilibrium{background:#2a4060;border-color:#4488aa;}
+    #btn-equilibrium:hover{background:#345070;}
+    #drag-hint{font-size:10px;color:#666;text-align:center;padding:3px 0;pointer-events:none;}
+    /* ── Fórmula ── */
+    #panel-formula{position:absolute;bottom:20px;left:12px;background:rgba(0,0,0,0.6);border-left:3px solid #4af;padding:7px 12px;border-radius:0 4px 4px 0;pointer-events:none;line-height:1.8;}
+    .fml{display:block;font-size:13px;color:#4af;font-family:monospace;}
+    /* ── Estado bowl ── */
+    #bowl-status{position:absolute;top:12px;right:18px;font-size:11px;color:#f96;pointer-events:none;text-align:right;}
+  </style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="gameCanvas" width="800" height="500"></canvas>
+  <div id="ui-overlay">
+
+    <div id="panel-metrics">
+      <div class="metric-row"><span class="metric-label">Temperatura</span><span id="m-temp" class="metric-value">30.0 °C</span></div>
+      <div class="metric-row"><span class="metric-label">Agua</span><span id="m-agua" class="metric-value">500 g</span></div>
+      <div class="metric-row"><span class="metric-label">Hielo (−10 °C)</span><span id="m-hielo" class="metric-value">0 g</span></div>
+      <div class="metric-row"><span class="metric-label">Estado</span><span id="m-estado" class="metric-value">--</span></div>
+    </div>
+
+    <!-- Termómetro −10 → 100 °C -->
+    <div id="thermometer">
+      <div id="thermo-wrap">
+        <div id="thermo-tube"><div id="thermo-fill" style="height:60px"></div></div>
+        <!-- labels: rango 0..100 (100°, tubo 200px) · px_from_top = 200*(100−T)/100 -->
+        <span class="tlbl" style="top:0px">100°</span>
+        <span class="tlbl" style="top:100px">50°</span>
+        <span class="tlbl" style="top:200px">0°</span>
+      </div>
+      <div id="thermo-value">20.0°C</div>
+    </div>
+
+    <div id="panel-controls">
+      <button id="btn-equilibrium">⚡ Punto de Equilibrio</button>
+      <div id="drag-hint">arrastrá hielo desde el bowl izq.</div>
+    </div>
+
+    <div id="panel-formula">
+      <span class="fml">Q = m &middot; c &middot; &Delta;T</span>
+      <span class="fml">Q = m &middot; c<sub>h</sub> &middot; &Delta;T + m &middot; L<sub>f</sub></span>
+    </div>
+
+    <div id="bowl-status"></div>
+  </div>
+</div>
+<script>
+// ══════════════════════════════════════════════════════════════
+// 1. CONSTANTES FÍSICAS
+// ══════════════════════════════════════════════════════════════
+const C_AGUA        = 4186;    // J/(kg·°C)
+const C_HIELO       = 2090;    // J/(kg·°C)
+const L_FUSION      = 334000;  // J/kg
+const P_HORNALLA    = 15000;   // W
+const T_AMBIENTE    = 20;      // °C
+const K_ENFRIAM     = 0.01;    // s⁻¹  (Newton cooling)
+const T_HIELO_INIT  = -10;     // °C   temperatura del hielo al agregarlo
+const MASA_HIELO_ADD= 0.05;    // kg por drag
+const T_MIN         = 0;       // °C   mínimo del termómetro (agua siempre ≥ 0)
+const T_MAX         = 100;     // °C   máximo del termómetro
+const L_VAP         = 2260000; // J/kg  calor latente de vaporización
+const K_EVAP_FRAC   = 0.4;     // fracción de P_HORNALLA que va a evaporación >100°C
+
+// ══════════════════════════════════════════════════════════════
+// 2. COLOR AGUA (rango −10..100)
+// ══════════════════════════════════════════════════════════════
+function getWaterColor(){ return 'rgb(74,148,210)'; }
+
+// ══════════════════════════════════════════════════════════════
+// 3. EVENTBUS
+// ══════════════════════════════════════════════════════════════
+const EventBus={
+  _l:{},
+  on(e,f){(this._l[e]||(this._l[e]=[])).push(f);},
+  emit(e,d){(this._l[e]||[]).forEach(f=>f(d));}
+};
+
+// ══════════════════════════════════════════════════════════════
+// 4. STATE MACHINE
+// ══════════════════════════════════════════════════════════════
+class StateMachine{
+  constructor(){this._s=new Map();this._c=null;}
+  addState(n,s){this._s.set(n,s);return this;}
+  transition(n){
+    if(!this._s.has(n)||this._c===n)return;
+    const cur=this._s.get(this._c);if(cur&&cur.onExit)cur.onExit();
+    this._c=n;const nx=this._s.get(n);if(nx&&nx.onEnter)nx.onEnter();
+  }
+  update(dt){const c=this._s.get(this._c);if(c&&c.onUpdate)c.onUpdate(dt);}
+  get state(){return this._c;}
+}
+
+// ══════════════════════════════════════════════════════════════
+// 5. GAME LOOP
+// ══════════════════════════════════════════════════════════════
+class GameLoop{
+  constructor({hz=60}={}){this.dt=1/hz;this.max=.1;this._acc=0;this._t=0;this.onFixed=null;this.onDraw=null;}
+  start(){
+    const loop=ts=>{
+      requestAnimationFrame(loop);
+      const raw=Math.min((ts-this._t)/1000,this.max);
+      this._t=ts;this._acc+=raw;
+      while(this._acc>=this.dt){if(this.onFixed)this.onFixed(this.dt);this._acc-=this.dt;}
+      if(this.onDraw)this.onDraw();
+    };
+    requestAnimationFrame(ts=>{this._t=ts;requestAnimationFrame(loop);});
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 6. THERMAL ENGINE
+// ══════════════════════════════════════════════════════════════
+function calcEq(m1,T1,m2,T2){
+  const d=m1+m2; return d===0?T1:(m1*T1+m2*T2)/d;
+}
+
+class ThermalEngine{
+  constructor(){
+    this.masaAgua   = 0.5;
+    this.masaHielo  = 0;
+    this.tempAgua   = 30;
+    this.hornallaOn = false;
+    this.tempHielo  = T_HIELO_INIT; // °C — temperatura del hielo sólido en el bowl
+    this._fsm       = null;
+    this._silent    = false;  // suprime emit en fast-forward
+    this._skipNewton= false;  // suprime enfriamiento ambiental en fast-forward
+  }
+
+  update(dt){
+    // ── Sub-paso 0: intercambio pasivo agua→hielo (hornalla apagada)
+    if(!this.hornallaOn && this.masaHielo > 0 && this.masaAgua > 0 && this.tempAgua > 0){
+      const K_COND = 100; // W/°C  — conductancia efectiva agua↔hielo
+      const dTwi = this.tempAgua - this.tempHielo;
+      if(dTwi > 0){
+        let Qx = K_COND * dTwi * dt;
+        // Fase 1: calentar hielo de tempHielo a 0°C
+        if(this.tempHielo < 0){
+          const Q_warm = this.masaHielo * C_HIELO * (-this.tempHielo);
+          if(Qx <= Q_warm){
+            this.tempHielo += Qx / (this.masaHielo * C_HIELO);
+            this.tempAgua  -= Qx / (this.masaAgua * C_AGUA);
+            Qx = 0;
+          } else {
+            this.tempAgua  -= Q_warm / (this.masaAgua * C_AGUA);
+            this.tempHielo  = 0;
+            Qx -= Q_warm;
+          }
+        }
+        // Fase 2: fundir hielo a 0°C
+        if(Qx > 0 && this.masaHielo > 0){
+          const melt = Math.min(Qx / L_FUSION, this.masaHielo);
+          this.masaHielo -= melt;
+          this.masaAgua  += melt;
+          this.tempAgua  -= (melt * L_FUSION) / (this.masaAgua * C_AGUA);
+          if(this.tempAgua < 0) this.tempAgua = 0;
+          if(this.masaHielo <= 0){ this.masaHielo = 0; this.tempHielo = 0; }
+        }
+      }
+    }
+
+    let Q = this.hornallaOn ? P_HORNALLA * dt : 0;
+
+    // ── Sub-paso A: si hay hielo y T < 0°C, primero calentar hielo (calor sensible)
+    if(Q > 0 && this.masaHielo > 0 && this.tempAgua < 0){
+      const Q_to_zero = this.masaHielo * C_HIELO * Math.abs(this.tempAgua);
+      if(Q <= Q_to_zero){
+        this.tempAgua += Q / (this.masaHielo * C_HIELO);
+        Q = 0;
+      } else {
+        Q -= Q_to_zero;
+        this.tempAgua = 0;
+        // Q restante sigue al siguiente sub-paso (fusión)
+      }
+    }
+
+    // ── Sub-paso B: distribuir Q con hielo a 0°C o agua
+    if(Q > 0){
+      if(this.masaHielo > 0){
+        const Qa = this.masaHielo * L_FUSION;
+        if(Q >= Qa){
+          const mf=this.masaHielo, ma=this.masaAgua;
+          this.masaAgua += mf; this.masaHielo = 0;
+          this.tempAgua  = calcEq(ma, this.tempAgua, mf, 0);
+          if(this.masaAgua > 0) this.tempAgua += (Q-Qa)/(this.masaAgua*C_AGUA);
+        } else {
+          const mf=Q/L_FUSION, ma=this.masaAgua;
+          this.masaHielo -= mf; this.masaAgua += mf;
+          this.tempAgua   = calcEq(ma, this.tempAgua, mf, 0);
+        }
+      } else if(this.masaAgua > 0){
+        this.tempAgua += Q / (this.masaAgua * C_AGUA);
+      }
+    }
+
+    // ── Sub-paso C: Newton cooling — solo cuando no hay hielo y no es fast-forward
+    if(this.masaHielo === 0 && !this._skipNewton){
+      this.tempAgua += -K_ENFRIAM * (this.tempAgua - T_AMBIENTE) * dt;
+    }
+
+    // ── Evaporación: >100°C el agua pierde masa
+    if(this.tempAgua > 100 && this.masaAgua > 0 && this.hornallaOn){
+      const evapM = (P_HORNALLA * K_EVAP_FRAC * dt) / L_VAP;
+      this.masaAgua = Math.max(0, this.masaAgua - evapM);
+      if(this.masaAgua === 0){ this.tempAgua = 100; this.hornallaOn = false; }
+    }
+
+    // ── Clamp temperatura
+    this.tempAgua = Math.max(0, Math.min(T_MAX, this.tempAgua));
+
+    if(!this._silent) this._emit();
+  }
+
+  _emit(){
+    EventBus.emit('thermal:update',{
+      tempAgua:   this.tempAgua,
+      masaAgua:   this.masaAgua,
+      masaHielo:  this.masaHielo,
+      hornallaOn: this.hornallaOn,
+      hayVapor:   this.tempAgua > 80,
+      estado:     this._fsm ? this._fsm.state : '--'
+    });
+  }
+
+  // ── Agregar hielo a −10°C — temperatura baja gradualmente vía update()
+  addIce(){
+    const mn = MASA_HIELO_ADD;
+    if(this.masaHielo > 0){
+      // Mezclar temperaturas del hielo ya existente con el nuevo
+      this.tempHielo = (this.masaHielo * this.tempHielo + mn * T_HIELO_INIT) / (this.masaHielo + mn);
+    } else {
+      this.tempHielo = T_HIELO_INIT;
+    }
+    this.masaHielo += mn;
+    if(!this._silent) EventBus.emit('ice:added',{masaHielo:this.masaHielo});
+  }
+
+  setHornalla(v){
+    this.hornallaOn = v;
+    EventBus.emit('hornalla:toggle',{on:v});
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 7. FAST-FORWARD AL EQUILIBRIO
+// ══════════════════════════════════════════════════════════════
+function fastForwardEquilibrium(eng, fsm){
+  eng._silent      = true;
+  eng._skipNewton  = true;
+  const DT = 1/60;
+
+  // Caso trivial: sin hornalla, sin hielo → equilibrio puro (sin ambiente)
+  if(!eng.hornallaOn && eng.masaHielo <= 0){
+    // No hay nada que intercambiar — la temperatura ya es el equilibrio
+    eng._silent      = false;
+    eng._skipNewton  = false;
+    fsm.update(DT);
+    eng._emit();
+    EventBus.emit('state:changed',{state:fsm.state});
+    return;
+  }
+
+  // Caso general: simular hasta estabilización
+  const MAX = 18000; // ~300 s simulados
+  let stable = 0, prevT = eng.tempAgua;
+  for(let i=0; i<MAX; i++){
+    eng.update(DT);
+    fsm.update(DT);
+    const d = Math.abs(eng.tempAgua - prevT);
+    prevT = eng.tempAgua;
+    if(d < 0.0002){ if(++stable > 90) break; }
+    else stable = 0;
+  }
+
+  eng._silent     = false;
+  eng._skipNewton = false;
+  eng._emit();
+  EventBus.emit('state:changed',{state:fsm.state});
+}
+
+// ══════════════════════════════════════════════════════════════
+// 8. THERMAL FSM
+// ══════════════════════════════════════════════════════════════
+const ST={EQ:'EQUILIBRIO',HOT:'CALENTANDO',COOL:'ENFRIANDO',MELT:'DERRITIENDO HIELO'};
+class ThermalFSM{
+  constructor(eng){
+    this.eng=eng; this.sm=new StateMachine();
+    const e=eng, emit=s=>EventBus.emit('state:changed',{state:s});
+    this.sm.addState(ST.EQ,{onEnter:()=>emit(ST.EQ),onUpdate:()=>{
+      if(e.masaHielo>0)this.sm.transition(ST.MELT);
+      else if(e.hornallaOn)this.sm.transition(ST.HOT);
+    }});
+    this.sm.addState(ST.HOT,{onEnter:()=>emit(ST.HOT),onUpdate:()=>{
+      if(e.masaHielo>0)this.sm.transition(ST.MELT);
+      else if(!e.hornallaOn)this.sm.transition(e.tempAgua>T_AMBIENTE?ST.COOL:ST.EQ);
+    }});
+    this.sm.addState(ST.COOL,{onEnter:()=>emit(ST.COOL),onUpdate:()=>{
+      if(e.masaHielo>0)this.sm.transition(ST.MELT);
+      else if(e.hornallaOn)this.sm.transition(ST.HOT);
+      else if(e.tempAgua<=T_AMBIENTE+0.05)this.sm.transition(ST.EQ);
+    }});
+    this.sm.addState(ST.MELT,{onEnter:()=>emit(ST.MELT),onUpdate:()=>{
+      if(e.masaHielo<=0)this.sm.transition(e.hornallaOn?ST.HOT:e.tempAgua>T_AMBIENTE?ST.COOL:ST.EQ);
+    }});
+    this.sm.transition(ST.EQ);
+  }
+  update(dt){this.sm.update(dt);}
+  get state(){return this.sm.state;}
+}
+
+// ══════════════════════════════════════════════════════════════
+// 9. STEAM PARTICLES
+// ══════════════════════════════════════════════════════════════
+class SteamParticles{
+  constructor(){this.p=[];}
+  update(dt,active,cx,rimY,rx){
+    if(active&&this.p.length<20)
+      for(let i=0;i<2;i++) this.p.push({
+        x:cx-rx+12+Math.random()*(rx*2-24), y:rimY-8,
+        vx:(Math.random()-.5)*18, vy:-(28+Math.random()*38),
+        life:1+Math.random()*.5, maxLife:1.5, size:3+Math.random()*3
+      });
+    for(const p of this.p){p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt;p.size+=dt*2.5;}
+    this.p=this.p.filter(p=>p.life>0);
+  }
+  draw(ctx){
+    for(const p of this.p){
+      ctx.save();ctx.globalAlpha=(p.life/p.maxLife)*.45;ctx.fillStyle='#c8dcff';
+      ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();ctx.restore();
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 10. MELTING ICE PIECE (animación)
+// ══════════════════════════════════════════════════════════════
+class MeltingIcePiece{
+  constructor(cx,rimY,rx){
+    const ry=Math.round(rx*.28);
+    const a=Math.random()*Math.PI*2, dist=Math.random()*(rx*.38);
+    this.x=cx+Math.cos(a)*dist; this.y=rimY+Math.sin(a)*(ry*.5)+1;
+    this.rot=Math.random()*Math.PI;
+    this.rx0=8+Math.random()*7;
+    this.life=3+Math.random()*1.5; this.maxLife=this.life;
+  }
+  update(dt){this.life-=dt;}
+  draw(ctx){
+    if(this.life<=0)return;
+    const frac=this.life/this.maxLife, curRx=this.rx0*frac;
+    if(curRx<.3)return;
+    const alpha=Math.min(1,frac*2)*.88;
+    ctx.save();ctx.globalAlpha=alpha;
+    ctx.fillStyle='#ddf4ff';
+    ctx.beginPath();ctx.ellipse(this.x,this.y,curRx,curRx*.52,this.rot,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='#90c0e0';ctx.lineWidth=1;
+    ctx.beginPath();ctx.ellipse(this.x,this.y,curRx,curRx*.52,this.rot,0,Math.PI*2);ctx.stroke();
+    ctx.fillStyle='rgba(255,255,255,.55)';
+    ctx.beginPath();ctx.ellipse(this.x-curRx*.25,this.y-curRx*.15,curRx*.35,curRx*.2,this.rot-.3,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+  isDead(){return this.life<=0;}
+}
+
+// ══════════════════════════════════════════════════════════════
+// 11. SCREEN FLASH
+// ══════════════════════════════════════════════════════════════
+class ScreenFlash{
+  constructor(){this._a=0;this._c='#fff';this._d=3;}
+  trigger(c,i,d){this._c=c;this._a=i;this._d=d;}
+  update(dt){this._a=Math.max(0,this._a-this._d*dt);}
+  draw(ctx,w,h){if(this._a<.01)return;ctx.save();ctx.globalAlpha=this._a;ctx.fillStyle=this._c;ctx.fillRect(0,0,w,h);ctx.restore();}
+}
+
+// ══════════════════════════════════════════════════════════════
+// 12. BOWL DRAWING (perspectiva caballero)
+// ══════════════════════════════════════════════════════════════
+function drawBowl(ctx,cx,rimY,rx,depth,waterColor,iceCount){
+  const ry=Math.round(rx*.28),bRx=Math.round(rx*.72),bRy=Math.round(ry*.75),botY=rimY+depth;
+  ctx.save();ctx.globalAlpha=.22;ctx.fillStyle='#000';
+  ctx.beginPath();ctx.ellipse(cx+5,botY+7,bRx,bRy,0,0,Math.PI*2);ctx.fill();ctx.restore();
+  ctx.fillStyle='#4a3220';
+  ctx.beginPath();ctx.moveTo(cx-rx,rimY);ctx.lineTo(cx-bRx,botY);ctx.lineTo(cx+bRx,botY);ctx.lineTo(cx+rx,rimY);ctx.closePath();ctx.fill();
+  ctx.fillStyle='#3a2510';ctx.beginPath();ctx.ellipse(cx,botY,bRx,bRy,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle='#6a5030';ctx.beginPath();ctx.ellipse(cx,rimY,rx,ry,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=waterColor||'#1a0e06';ctx.beginPath();ctx.ellipse(cx,rimY+2,rx-5,ry-1,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#8a7050';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(cx,rimY,rx,ry,0,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='rgba(255,220,160,.18)';ctx.beginPath();ctx.ellipse(cx-rx*.3,rimY-ry*.15,rx*.45,ry*.38,-.4,0,Math.PI*2);ctx.fill();
+  if(iceCount>0){
+    const n=Math.min(iceCount,5);
+    for(let i=0;i<n;i++){
+      const a=(i/n)*Math.PI*2-Math.PI/2,ix=cx+Math.cos(a)*rx*.42,iy=rimY+Math.sin(a)*(ry*.5),iR=a*.3;
+      ctx.fillStyle='#ddf0ff';ctx.beginPath();ctx.ellipse(ix,iy,10,5.5,iR,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle='#8ac8e8';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(ix,iy,10,5.5,iR,0,Math.PI*2);ctx.stroke();
+      ctx.fillStyle='rgba(255,255,255,.65)';ctx.beginPath();ctx.ellipse(ix-2,iy-1,4,2,iR-.3,0,Math.PI*2);ctx.fill();
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 13. STOVE DRAWING (cavalière 3D + llamas en hilera)
+// ══════════════════════════════════════════════════════════════
+const SF={FX:554,FY:288,FW:154,FH:70,DX:-22,DY:-54};
+const STOVE_CX   = Math.round(SF.FX+SF.FW*.5+SF.DX*.5);
+const STOVE_RIMY = Math.round(SF.FY+SF.DY*.5-4) - 40;
+const STOVE_ZONE = {x1:SF.FX+SF.DX-4, y1:SF.FY+SF.DY-10, x2:SF.FX+SF.FW+4, y2:SF.FY+SF.FH+4};
+
+function drawStove(ctx,fc){
+  const{FX,FY,FW,FH,DX,DY}=SF, TY=358;
+  // Cara lateral izquierda
+  ctx.fillStyle='#1c1c1c';
+  ctx.beginPath();ctx.moveTo(FX,FY);ctx.lineTo(FX+DX,FY+DY);ctx.lineTo(FX+DX,TY);ctx.lineTo(FX,TY);ctx.closePath();ctx.fill();
+  // Cara superior (grill)
+  ctx.fillStyle='#272727';
+  ctx.beginPath();ctx.moveTo(FX,FY);ctx.lineTo(FX+FW,FY);ctx.lineTo(FX+FW+DX,FY+DY);ctx.lineTo(FX+DX,FY+DY);ctx.closePath();ctx.fill();
+  // Barras longitudinales del grill
+  ctx.strokeStyle='#484848';ctx.lineWidth=4;
+  for(let i=0;i<=6;i++){const t=i/6;ctx.beginPath();ctx.moveTo(FX+t*FW,FY);ctx.lineTo(FX+t*FW+DX,FY+DY);ctx.stroke();}
+  // Barras transversales
+  ctx.strokeStyle='#3a3a3a';ctx.lineWidth=2;
+  for(let j=0;j<=3;j++){const t=j/3;ctx.beginPath();ctx.moveTo(FX+t*DX,FY+t*DY);ctx.lineTo(FX+FW+t*DX,FY+t*DY);ctx.stroke();}
+  // Cara frontal
+  ctx.fillStyle='#222';ctx.fillRect(FX,FY,FW,FH);
+  ctx.strokeStyle='#333';ctx.lineWidth=1;ctx.strokeRect(FX+8,FY+8,FW-16,FH-14);
+  // Zócalo de base
+  ctx.fillStyle='#141414';ctx.fillRect(FX+DX-2,TY-4,FW+6,8);
+  // Llamas: 6 jets en hilera horizontal
+  const ph=Math.floor(fc/4)%2;
+  for(let fi=0;fi<6;fi++){
+    const t=(fi+.5)/6, flX=FX+t*FW+DX*.5, flY=FY+DY*.5;
+    const h=20+(fi%3)*8+(ph?6:-6);
+    const og=ctx.createLinearGradient(flX,flY+3,flX,flY-h);
+    og.addColorStop(0,'rgba(255,65,0,.95)');og.addColorStop(.55,'rgba(255,130,0,.75)');og.addColorStop(1,'rgba(255,200,60,0)');
+    ctx.fillStyle=og;ctx.beginPath();
+    ctx.moveTo(flX-8,flY+4);ctx.bezierCurveTo(flX-11,flY-h*.35,flX-5,flY-h*.75,flX,flY-h);
+    ctx.bezierCurveTo(flX+5,flY-h*.75,flX+11,flY-h*.35,flX+8,flY+4);ctx.closePath();ctx.fill();
+    const ig=ctx.createLinearGradient(flX,flY+3,flX,flY-h*.7);
+    ig.addColorStop(0,'rgba(255,235,50,.9)');ig.addColorStop(1,'rgba(255,200,100,0)');
+    ctx.fillStyle=ig;ctx.beginPath();
+    ctx.moveTo(flX-4,flY+4);ctx.bezierCurveTo(flX-5,flY-h*.3,flX-2,flY-h*.55,flX,flY-h*.65);
+    ctx.bezierCurveTo(flX+2,flY-h*.55,flX+5,flY-h*.3,flX+4,flY+4);ctx.closePath();ctx.fill();
+  }
+  ctx.save();ctx.globalAlpha=.1+.04*Math.sin(fc*.18);
+  const grd=ctx.createRadialGradient(FX+FW*.5+DX*.5,FY+DY*.5,8,FX+FW*.5+DX*.5,FY+DY*.5,72);
+  grd.addColorStop(0,'#ff6600');grd.addColorStop(1,'rgba(255,80,0,0)');
+  ctx.fillStyle=grd;ctx.beginPath();ctx.moveTo(FX,FY);ctx.lineTo(FX+FW,FY);ctx.lineTo(FX+FW+DX,FY+DY);ctx.lineTo(FX+DX,FY+DY);ctx.closePath();ctx.fill();
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════════════
+// 14. TABLE
+// ══════════════════════════════════════════════════════════════
+function drawTable(ctx,W,H){
+  const Y=358;
+  ctx.fillStyle='#5a3f28';ctx.fillRect(0,Y,W,H-Y);
+  ctx.fillStyle='#7a5538';ctx.fillRect(0,Y,W,5);
+  ctx.strokeStyle='rgba(0,0,0,.12)';ctx.lineWidth=2;
+  for(let gx=0;gx<W;gx+=38){ctx.beginPath();ctx.moveTo(gx,Y);ctx.lineTo(gx+12,H);ctx.stroke();}
+}
+
+// ══════════════════════════════════════════════════════════════
+// 15. ICE DRAG CURSOR
+// ══════════════════════════════════════════════════════════════
+function drawIceDrag(ctx,x,y){
+  ctx.save();ctx.globalAlpha=.25;ctx.fillStyle='#000';ctx.beginPath();ctx.ellipse(x+4,y+6,16,9,0,0,Math.PI*2);ctx.fill();ctx.restore();
+  ctx.fillStyle='#ddf4ff';ctx.beginPath();ctx.ellipse(x,y,16,9,0,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle='#90c0e0';ctx.lineWidth=1.5;ctx.beginPath();ctx.ellipse(x,y,16,9,0,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,.6)';ctx.beginPath();ctx.ellipse(x-4,y-2.5,6,3,-.3,0,Math.PI*2);ctx.fill();
+}
+
+// ══════════════════════════════════════════════════════════════
+// 16. GLOBAL STATE (drag + animaciones)
+// ══════════════════════════════════════════════════════════════
+let _bCX=390, _bRimY=322, _bOnStove=false;
+const HOME_CX=390, HOME_RIMY=322;
+let _iceDrag={active:false,x:0,y:0};
+let _meltPieces=[];
+window._dragging=false;
+window._iceDragging=false;
+
+function hitBowl(mx,my){return Math.abs(mx-_bCX)<72&&my>=_bRimY-22&&my<=_bRimY+45;}
+function hitIceSrc(mx,my){return Math.abs(mx-140)<72&&my>=300&&my<=368;}
+function hitWaterBowl(mx,my){return Math.abs(mx-_bCX)<72&&my>=_bRimY-22&&my<=_bRimY+45;}
+
+// ══════════════════════════════════════════════════════════════
+// 17. RENDERER
+// ══════════════════════════════════════════════════════════════
+class Renderer{
+  constructor(canvas,steam){
+    this.canvas=canvas;this.ctx=canvas.getContext('2d');
+    this.W=canvas.width;this.H=canvas.height;
+    this.steam=steam;this.flash=new ScreenFlash();this.fc=0;
+    this._s={tempAgua:20,masaAgua:.2,masaHielo:0,hornallaOn:false,hayVapor:false};
+    this._boilFlash=false;
+    EventBus.on('thermal:update',d=>{
+      this._s=d;
+      if(d.tempAgua>=99.5&&!this._boilFlash){this._boilFlash=true;this.flash.trigger('#ff3300',.4,3);}
+      if(d.tempAgua<95)this._boilFlash=false;
+    });
+    EventBus.on('ice:added',()=>this.flash.trigger('#a8d8ff',.25,4));
+  }
+  draw(){
+    const ctx=this.ctx,s=this._s; this.fc++;
+    ctx.fillStyle='#1a1a2e';ctx.fillRect(0,0,this.W,this.H);
+    drawTable(ctx,this.W,this.H);
+    drawStove(ctx,this.fc);
+    // Bowl fuente de hielo
+    drawBowl(ctx,140,322,68,40,'rgb(42,105,170)',4);
+    ctx.fillStyle='rgba(0,0,0,.5)';ctx.beginPath();ctx.roundRect(80,372,120,18,3);ctx.fill();
+    ctx.fillStyle='#9cc8e8';ctx.font='10px monospace';ctx.textAlign='center';ctx.fillText('fuente de hielo',140,384);
+    // Bowl de agua
+    const iceN=s.masaHielo>0?Math.min(5,Math.ceil(s.masaHielo/.05)):0;
+    const wColor=s.masaAgua>0?getWaterColor(s.tempAgua):null;
+    const bowlRx=_bOnStove?Math.round(SF.FW*5/12):68;
+    drawBowl(ctx,_bCX,_bRimY,bowlRx,40,wColor,iceN);
+    // Vapor en superficie del agua
+    if(s.masaAgua>0&&s.tempAgua>65){
+      const sA=Math.min(1,(s.tempAgua-65)/35)*0.22*(0.75+0.25*Math.sin(this.fc*.12));
+      const srx=bowlRx-5,sry=Math.round(bowlRx*.28)-1;
+      ctx.save();ctx.globalAlpha=sA;
+      const sg=ctx.createRadialGradient(_bCX,_bRimY+2,2,_bCX,_bRimY+2,srx);
+      sg.addColorStop(0,'rgba(220,240,255,0.9)');sg.addColorStop(1,'rgba(200,230,255,0)');
+      ctx.fillStyle=sg;ctx.beginPath();ctx.ellipse(_bCX,_bRimY+2,srx,sry,0,0,Math.PI*2);ctx.fill();
+      ctx.restore();
+    }
+    // Piezas de hielo derritiéndose
+    for(const p of _meltPieces)p.draw(ctx);
+    // Label bowl de agua
+    if(!_bOnStove){
+      ctx.fillStyle='rgba(0,0,0,.5)';ctx.beginPath();ctx.roundRect(_bCX-58,_bRimY+50,116,18,3);ctx.fill();
+      ctx.fillStyle='#e8e8c0';ctx.font='10px monospace';ctx.textAlign='center';ctx.fillText('bowl de agua',_bCX,_bRimY+62);
+    }
+    // Brillo rim cuando ice drag hover
+    if(window._iceDragging&&hitWaterBowl(_iceDrag.x,_iceDrag.y)){
+      const rx=68,ry=Math.round(68*.28);
+      ctx.save();ctx.shadowColor='#6af';ctx.shadowBlur=14;ctx.strokeStyle='rgba(120,190,255,.7)';ctx.lineWidth=4;
+      ctx.beginPath();ctx.ellipse(_bCX,_bRimY,rx,ry,0,0,Math.PI*2);ctx.stroke();ctx.restore();
+    }
+    // Drop zone stove al arrastrar bowl
+    if(window._dragging){
+      ctx.save();ctx.strokeStyle='rgba(255,160,50,.4)';ctx.lineWidth=2;ctx.setLineDash([6,4]);
+      ctx.strokeRect(STOVE_ZONE.x1,STOVE_ZONE.y1,STOVE_ZONE.x2-STOVE_ZONE.x1,STOVE_ZONE.y2-STOVE_ZONE.y1);
+      ctx.restore();
+    }
+    this.steam.draw(ctx);
+    this.flash.draw(ctx,this.W,this.H);
+    if(window._iceDragging&&_iceDrag.active)drawIceDrag(ctx,_iceDrag.x,_iceDrag.y);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 18. METRICS PANEL
+// ══════════════════════════════════════════════════════════════
+class MetricsPanel{
+  constructor(){
+    this._r={
+      tempAgua: {el:document.getElementById('m-temp'), dec:1, suf:' °C'},
+      masaAgua: {el:document.getElementById('m-agua'), dec:0, suf:' g'},
+      masaHielo:{el:document.getElementById('m-hielo'),dec:0, suf:' g'},
+      estado:   {el:document.getElementById('m-estado'),dec:null,suf:''},
+    };
+    EventBus.on('thermal:update',d=>this._upd({
+      tempAgua:d.tempAgua, masaAgua:d.masaAgua*1000,
+      masaHielo:d.masaHielo*1000, estado:d.estado||'--'
+    }));
+  }
+  _upd(v){
+    for(const[k,c]of Object.entries(this._r)){
+      if(v[k]===undefined)continue;
+      c.el.textContent=c.dec===null?v[k]:(typeof v[k]==='number'?v[k].toFixed(c.dec):v[k])+c.suf;
+    }
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 19. UI CONTROLS
+// ══════════════════════════════════════════════════════════════
+class UIControls{
+  constructor(eng, fsm){
+    // Punto de Equilibrio
+    document.getElementById('btn-equilibrium').addEventListener('click',()=>{
+      fastForwardEquilibrium(eng, fsm);
+    });
+    // Termómetro  (rango −10..100)
+    EventBus.on('thermal:update',d=>{
+      const pct=Math.max(0,Math.min(1,(d.tempAgua-T_MIN)/(T_MAX-T_MIN)));
+      const fill=document.getElementById('thermo-fill');
+      fill.style.height=(pct*200)+'px';
+      fill.style.backgroundColor=getWaterColor(d.tempAgua);
+      document.getElementById('thermo-value').textContent=d.tempAgua.toFixed(1)+'°C';
+    });
+    // Fórmulas son estáticas — no se actualiza dinámicamente
+    EventBus.on('hornalla:toggle',d=>{
+      document.getElementById('bowl-status').textContent=d.on?'🔥 calentando...':'';
+    });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// 20. DRAG SETUP
+// ══════════════════════════════════════════════════════════════
+function setupDrag(canvas,eng){
+  let bOffX=0,bOffY=0;
+  function xy(e){const r=canvas.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};}
+  function inStove(x,y){return x>=STOVE_ZONE.x1&&x<=STOVE_ZONE.x2&&y>=STOVE_ZONE.y1&&y<=STOVE_ZONE.y2;}
+
+  function onDown(e){
+    e.preventDefault();
+    const{x,y}=xy(e);
+    if(hitIceSrc(x,y)&&!window._dragging){
+      window._iceDragging=true;_iceDrag.active=true;_iceDrag.x=x;_iceDrag.y=y;
+      canvas.style.cursor='grabbing';return;
+    }
+    if(hitBowl(x,y)&&!window._iceDragging){
+      window._dragging=true;bOffX=x-_bCX;bOffY=y-_bRimY;
+      if(_bOnStove){_bOnStove=false;eng.setHornalla(false);}
+      canvas.style.cursor='grabbing';
+    }
+  }
+  function onMove(e){
+    if(!window._dragging&&!window._iceDragging){
+      const{x,y}=xy(e);canvas.style.cursor=(hitBowl(x,y)||hitIceSrc(x,y))?'grab':'default';return;
+    }
+    e.preventDefault();
+    const{x,y}=xy(e);
+    if(window._iceDragging){_iceDrag.x=x;_iceDrag.y=y;}
+    else{_bCX=x-bOffX;_bRimY=y-bOffY;}
+  }
+  function onUp(e){
+    const{x,y}=xy(e||{touches:[{clientX:_bCX,clientY:_bRimY}]});
+    if(window._iceDragging){
+      window._iceDragging=false;_iceDrag.active=false;
+      if(hitWaterBowl(x,y)){
+        eng.addIce();
+        for(let i=0;i<3;i++)_meltPieces.push(new MeltingIcePiece(_bCX,_bRimY,68));
+      }
+      canvas.style.cursor='default';return;
+    }
+    if(window._dragging){
+      window._dragging=false;
+      if(inStove(x,y)){_bCX=STOVE_CX;_bRimY=STOVE_RIMY;_bOnStove=true;eng.setHornalla(true);}
+      else{_bCX=HOME_CX;_bRimY=HOME_RIMY;_bOnStove=false;eng.setHornalla(false);}
+      canvas.style.cursor='default';
+    }
+  }
+  function onLeave(){
+    if(window._iceDragging){window._iceDragging=false;_iceDrag.active=false;canvas.style.cursor='default';}
+    if(window._dragging){window._dragging=false;_bCX=HOME_CX;_bRimY=HOME_RIMY;_bOnStove=false;eng.setHornalla(false);canvas.style.cursor='default';}
+  }
+  canvas.addEventListener('mousedown',onDown);
+  canvas.addEventListener('mousemove',onMove);
+  canvas.addEventListener('mouseup',onUp);
+  canvas.addEventListener('mouseleave',onLeave);
+  canvas.addEventListener('touchstart',onDown,{passive:false});
+  canvas.addEventListener('touchmove',onMove,{passive:false});
+  canvas.addEventListener('touchend',onUp);
+}
+
+// ══════════════════════════════════════════════════════════════
+// 21. INIT
+// ══════════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded',()=>{
+  const canvas=document.getElementById('gameCanvas');
+  const eng=new ThermalEngine();
+  const fsm=new ThermalFSM(eng);
+  eng._fsm=fsm;
+  const steam=new SteamParticles();
+  const renderer=new Renderer(canvas,steam);
+  new MetricsPanel();
+  new UIControls(eng,fsm);
+  setupDrag(canvas,eng);
+
+  const loop=new GameLoop({hz:60});
+  loop.onFixed=dt=>{
+    eng.update(dt);
+    fsm.update(dt);
+    steam.update(dt,eng.tempAgua>80,_bCX,_bRimY,68);
+    renderer.flash.update(dt);
+    _meltPieces=_meltPieces.filter(p=>!p.isDead());
+    for(const p of _meltPieces)p.update(dt);
+  };
+  loop.onDraw=()=>renderer.draw();
+  loop.start();
+});
+</script>
+</body>
+</html>
