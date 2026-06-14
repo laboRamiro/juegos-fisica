@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chladni — Cosmos</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --space:      #020208;
+  --panel:      rgba(6, 8, 28, 0.90);
+  --border:     rgba(80, 130, 255, 0.22);
+  --border-hi:  rgba(120, 170, 255, 0.50);
+  --text:       #C0D4F8;
+  --text-dim:   rgba(140, 170, 220, 0.55);
+  --accent:     #6888FF;
+  --accent-hi:  #A0C0FF;
+  --nebula:     #7848C8;
+  --star-cold:  #D0E8FF;
+  --star-warm:  #FFE8B0;
+  --val-color:  #90C8FF;
+}
+
+body {
+  background: radial-gradient(ellipse at 40% 35%, #0A0620 0%, #030310 45%, #010106 100%);
+  display: flex; flex-direction: column; align-items: center;
+  min-height: 100vh; padding: 14px;
+  font-family: 'Exo 2', sans-serif;
+}
+
+/* ── TITLE ── */
+h1 {
+  font-family: 'Orbitron', monospace;
+  font-size: 13px; font-weight: 700;
+  color: #D0E4FF;
+  text-shadow: 0 0 30px rgba(100,150,255,0.7), 0 0 60px rgba(80,120,255,0.3);
+  letter-spacing: 6px;
+  margin-bottom: 4px; text-align: center;
+}
+.subtitle {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 8px; font-weight: 300;
+  color: var(--text-dim);
+  letter-spacing: 4px;
+  margin-bottom: 14px; text-align: center;
+}
+
+#layout { display: flex; gap: 10px; align-items: flex-start; }
+
+/* ── PANELS ── */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow:
+    0 0 0 1px rgba(5,8,25,0.8),
+    0 8px 32px rgba(0,0,0,0.6),
+    inset 0 0 40px rgba(10,15,60,0.5),
+    0 0 20px rgba(60,90,200,0.06);
+  padding: 14px 12px;
+  width: 192px; min-height: 510px;
+}
+.panel-title {
+  font-family: 'Orbitron', monospace;
+  font-size: 6.5px; font-weight: 400;
+  color: var(--accent);
+  text-align: center;
+  letter-spacing: 4px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  opacity: 0.8;
+}
+.section-lbl {
+  display: block;
+  font-size: 6.5px; font-weight: 300;
+  letter-spacing: 3px;
+  color: var(--text-dim);
+  margin-top: 10px; margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+/* ── BUTTONS ── */
+.btn {
+  display: block; width: 100%; margin-bottom: 6px;
+  background: rgba(20, 30, 90, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'Exo 2', sans-serif; font-size: 7.5px; font-weight: 400;
+  letter-spacing: 1.5px;
+  padding: 9px 6px; cursor: pointer; text-align: center;
+  transition: background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.btn:hover {
+  background: rgba(40, 60, 160, 0.55);
+  border-color: var(--border-hi);
+  box-shadow: 0 0 12px rgba(80,130,255,0.2), inset 0 0 8px rgba(80,130,255,0.05);
+}
+.btn:active { opacity: 0.7; }
+.btn.sel {
+  background: rgba(60, 90, 220, 0.40);
+  border-color: rgba(140, 180, 255, 0.7);
+  color: var(--accent-hi);
+  box-shadow: 0 0 16px rgba(80,130,255,0.25);
+}
+.btn.info-btn {
+  background: rgba(60, 20, 100, 0.45);
+  border-color: rgba(160, 80, 255, 0.3);
+  color: rgba(180, 130, 255, 0.9);
+}
+.btn.info-btn:hover {
+  background: rgba(80, 30, 130, 0.55);
+  border-color: rgba(180, 100, 255, 0.5);
+  box-shadow: 0 0 12px rgba(140,80,255,0.2);
+}
+
+.toggle-row { display: flex; gap: 5px; margin-bottom: 4px; }
+.toggle-row .btn { flex:1; font-size: 6.5px; padding: 8px 2px; }
+
+/* ── SLIDER ── */
+.slider-wrap { margin-bottom: 8px; }
+.val-display {
+  display: block;
+  font-family: 'Orbitron', monospace;
+  font-size: 15px; font-weight: 400;
+  color: var(--val-color);
+  text-shadow: 0 0 12px rgba(100,160,255,0.5);
+  text-align: center;
+  margin: 3px 0;
+  letter-spacing: 1px;
+}
+input[type=range] {
+  width: 100%; height: 4px; -webkit-appearance: none;
+  background: rgba(30, 50, 130, 0.5);
+  border: 1px solid rgba(60, 100, 200, 0.3);
+  border-radius: 4px; cursor: pointer;
+  margin: 4px 0;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px;
+  background: radial-gradient(circle at 40% 35%, #C8DEFF, #5878E8);
+  border: 1px solid rgba(150,190,255,0.6);
+  border-radius: 50%; cursor: pointer;
+  box-shadow: 0 0 8px rgba(80,130,255,0.7);
+}
+
+/* ── MODE DISPLAY ── */
+.mode-display {
+  background: rgba(8, 12, 50, 0.7);
+  border: 1px solid rgba(80, 130, 255, 0.25);
+  border-radius: 10px;
+  padding: 8px 6px;
+  margin-bottom: 10px;
+  text-align: center;
+  box-shadow: inset 0 0 15px rgba(30,50,150,0.2);
+}
+.mode-display-name {
+  font-family: 'Orbitron', monospace;
+  font-size: 13px; font-weight: 700;
+  color: var(--accent-hi);
+  text-shadow: 0 0 12px rgba(100,160,255,0.6);
+  display: block; line-height: 1.3;
+}
+.mode-display-params {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 9px; font-weight: 300;
+  color: rgba(160, 200, 255, 0.6);
+  display: block; margin-top: 2px;
+  letter-spacing: 1px;
+}
+
+/* ── CANVAS ── */
+#canvas-wrap {
+  position: relative;
+  border: 1px solid rgba(60, 100, 200, 0.25);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow:
+    0 0 40px rgba(40,70,180,0.12),
+    0 0 0 1px rgba(5,8,25,0.9),
+    inset 0 0 60px rgba(5,8,30,0.4);
+}
+#c { display: block; border-radius: 11px; }
+#caption {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 7px; font-weight: 300;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 6px;
+  background: rgba(2, 3, 12, 0.95);
+  letter-spacing: 2px;
+}
+#stable {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  font-family: 'Orbitron', monospace;
+  font-size: 11px; font-weight: 700;
+  color: #C0D8FF;
+  text-shadow: 0 0 20px rgba(100,160,255,0.9), 0 0 40px rgba(80,130,255,0.5);
+  text-align: center; pointer-events: none; display: none; line-height: 2;
+  letter-spacing: 3px;
+}
+
+/* ── METRICS ── */
+.metric {
+  margin-bottom: 8px; padding-bottom: 7px;
+  border-bottom: 1px solid rgba(60,100,200,0.15);
+}
+.m-lbl {
+  display: block;
+  font-size: 6px; letter-spacing: 3px;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+  text-transform: uppercase;
+}
+.m-val {
+  display: block;
+  font-family: 'Orbitron', monospace;
+  font-size: 20px; font-weight: 400;
+  color: var(--val-color);
+  text-shadow: 0 0 10px rgba(100,160,255,0.35);
+  line-height: 1;
+}
+.m-val.sm { font-size: 13px; letter-spacing: 1px; }
+.m-val.name {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 12px; font-weight: 300;
+  color: rgba(160,200,255,0.7);
+  letter-spacing: 1px;
+}
+.bar-row { display: flex; gap: 2px; flex-wrap: wrap; margin-top: 5px; }
+.bar-blk {
+  width: 9px; height: 5px;
+  border-radius: 2px;
+  background: rgba(30,50,130,0.5);
+}
+.bar-blk.on {
+  background: var(--accent);
+  box-shadow: 0 0 4px rgba(80,130,255,0.5);
+}
+.formula-box {
+  background: rgba(5,8,30,0.7);
+  border: 1px solid rgba(60,100,200,0.2);
+  border-radius: 6px;
+  padding: 6px 8px; margin-top: 5px;
+}
+.formula-txt {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 8.5px; font-weight: 300;
+  color: rgba(140,190,255,0.7);
+  line-height: 1.7; letter-spacing: 0.3px;
+}
+
+/* ── MODAL ── */
+#modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(1,1,8,0.85);
+  backdrop-filter: blur(6px);
+  z-index: 100; align-items: center; justify-content: center;
+}
+#modal.show { display: flex; }
+#mbox {
+  background: rgba(6,8,30,0.97);
+  border: 1px solid rgba(80,130,255,0.3);
+  border-radius: 20px;
+  box-shadow: 0 0 60px rgba(60,100,200,0.2), 0 0 0 1px rgba(4,6,20,0.9);
+  padding: 28px 26px; max-width: 460px; width: 90%;
+}
+#mbox h2 {
+  font-family: 'Orbitron', monospace;
+  font-size: 10px; color: var(--accent-hi);
+  text-shadow: 0 0 20px rgba(100,160,255,0.5);
+  margin-bottom: 14px; text-align: center; letter-spacing: 3px;
+}
+#mbox p {
+  font-family: 'Exo 2', sans-serif;
+  font-size: 11px; font-weight: 300;
+  color: rgba(180,210,255,0.8);
+  line-height: 1.8; margin-bottom: 12px;
+}
+.mf {
+  background: rgba(5,8,35,0.8);
+  border: 1px solid rgba(80,130,255,0.2);
+  border-radius: 8px;
+  padding: 10px 12px; margin: 8px 0;
+  font-family: 'Exo 2', sans-serif;
+  font-size: 9px; font-weight: 300;
+  color: rgba(140,200,255,0.75);
+  line-height: 1.8; letter-spacing: 0.4px;
+}
+</style>
+</head>
+<body>
+
+<h1>FIGURAS DE CHLADNI</h1>
+<div class="subtitle">vibración · patrones · cosmos</div>
+
+<div id="layout">
+
+  <!-- LEFT -->
+  <div class="panel">
+    <div class="panel-title">CONTROLES</div>
+
+    <span class="section-lbl">Tipo de placa</span>
+    <div class="toggle-row">
+      <button class="btn sel" id="b-sq" onclick="setType('square')">▢ Cuadrada</button>
+      <button class="btn"     id="b-ci" onclick="setType('circle')">○ Circular</button>
+    </div>
+
+    <div class="slider-wrap">
+      <span class="section-lbl">Frecuencia</span>
+      <span class="val-display" id="fv">440 Hz</span>
+      <input type="range" id="fslider" min="50" max="2000" value="440"
+             oninput="setFreq(this.value)">
+    </div>
+
+    <div class="slider-wrap">
+      <span class="section-lbl">Velocidad</span>
+      <span class="val-display" id="sv">5 / 10</span>
+      <input type="range" id="sslider" min="1" max="10" value="5"
+             oninput="setSpeed(this.value)">
+    </div>
+
+    <span class="section-lbl">Modo activo</span>
+    <div class="mode-display">
+      <span class="mode-display-name" id="mode-disp-name">—</span>
+      <span class="mode-display-params" id="mode-disp-params">—</span>
+    </div>
+
+    <button class="btn" onclick="throwSand()">✦ Dispersar estrellas</button>
+    <button class="btn info-btn" onclick="document.getElementById('modal').classList.add('show')">◎ Info</button>
+  </div>
+
+  <!-- CANVAS -->
+  <div id="canvas-wrap">
+    <canvas id="c" width="500" height="500"></canvas>
+    <div id="caption">las estrellas reposan donde la vibración enmudece — líneas nodales</div>
+    <div id="stable">PATRÓN<br>ESTABLE</div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="panel">
+    <div class="panel-title">DATOS</div>
+
+    <div class="metric">
+      <span class="m-lbl">Modo</span>
+      <span class="m-val sm" id="m-mode">—</span>
+      <span class="m-val name" id="m-name">—</span>
+    </div>
+    <div class="metric">
+      <span class="m-lbl">Frecuencia</span>
+      <span class="m-val" id="m-freq">440 Hz</span>
+    </div>
+    <div class="metric">
+      <span class="m-lbl">Armonía</span>
+      <span class="m-val" id="m-harm">0%</span>
+      <div class="bar-row" id="m-bar"></div>
+    </div>
+    <div class="metric">
+      <span class="m-lbl">En nodo</span>
+      <span class="m-val sm" id="m-nodal">0 / 10000</span>
+    </div>
+    <div>
+      <span class="m-lbl">Fórmula</span>
+      <div class="formula-box">
+        <span class="formula-txt" id="m-formula">W = cos(mπx)·cos(nπy)<br>± cos(nπx)·cos(mπy)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="modal" onclick="if(event.target===this)this.classList.remove('show')">
+  <div id="mbox">
+    <h2>EXPERIMENTO DE CHLADNI</h2>
+    <p>Ernst Chladni descubrió en 1787 que al hacer vibrar una placa metálica y esparcir arena, ésta migra hacia las líneas nodales — los lugares donde la vibración es nula.</p>
+    <div class="mf">Ecuación biarmónica:<br>ρh · ∂²w/∂t² + D · ∇⁴w = 0 &nbsp;|&nbsp; D = Eh³/[12(1−ν²)]</div>
+    <div class="mf">Placa cuadrada:<br>W = cos(mπx)·cos(nπy) ± cos(nπx)·cos(mπy)</div>
+    <div class="mf">Placa circular:<br>W = J_n(α_ns · r/R) · cos(nθ)</div>
+    <p>La partícula siente F ∝ −∇(W²) y migra hacia los mínimos. Deslizá la Frecuencia para revelar distintos patrones.</p>
+    <button class="btn" style="margin-top:8px;border-radius:8px" onclick="document.getElementById('modal').classList.remove('show')">✕  Cerrar</button>
+  </div>
+</div>
+
+<script>
+// ── CONSTANTS ─────────────────────────────────────────────────────
+const W = 500, H = 500, CX = 250, CY = 250;
+const PSIZE = 420, PHALF = 210;
+const N_PART = 10000;
+const NODAL_THRESH = 0.09;
+const TRANSITION_FRAMES = 110;
+
+const BZEROS = {
+  0:[2.405,5.520,8.654], 1:[3.832,7.016,10.173],
+  2:[5.136,8.417,11.620], 3:[6.380,9.761,13.015],
+  4:[7.588,11.065,14.373]
+};
+
+const SQ_MODES = [
+  {label:'Cruz',     m:1,n:1,sym:true},
+  {label:'Escalera', m:2,n:1,sym:true},
+  {label:'Aspa',     m:2,n:1,sym:false},
+  {label:'Cuadrado', m:2,n:2,sym:true},
+  {label:'Diamante', m:3,n:1,sym:false},
+  {label:'Flor 4',   m:3,n:2,sym:false},
+  {label:'Estrella', m:3,n:3,sym:true},
+  {label:'Red',      m:4,n:3,sym:false},
+];
+const CI_MODES = [
+  {label:'Anillo',    n:0,s:1}, {label:'Cruz+aro',  n:1,s:1},
+  {label:'Estrella4', n:2,s:1}, {label:'2 Anillos', n:0,s:2},
+  {label:'Flor 6',    n:3,s:1}, {label:'Rueda',     n:2,s:2},
+  {label:'Estrella8', n:4,s:1}, {label:'3 Anillos', n:0,s:3},
+];
+
+// ── STATE ─────────────────────────────────────────────────────────
+let ptype = 'square', mode = SQ_MODES[1], selIdx = 1, freq = 440;
+let t = 0, harmPct = 0, speed = 1.0;
+let parts = [];
+let prevMode = null, transitionProg = 1.0;
+
+// ── CANVAS ────────────────────────────────────────────────────────
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+const offCurr = document.createElement('canvas');
+offCurr.width = W; offCurr.height = H;
+const octxCurr = offCurr.getContext('2d');
+
+const offPrev = document.createElement('canvas');
+offPrev.width = W; offPrev.height = H;
+const octxPrev = offPrev.getContext('2d');
+
+// ── BACKGROUND STARFIELD (static) ────────────────────────────────
+const BG_STARS = [];
+for (let i = 0; i < 280; i++) {
+  BG_STARS.push({
+    x: Math.random() * W,
+    y: Math.random() * H,
+    r: 0.3 + Math.random() * 0.9,
+    a: 0.08 + Math.random() * 0.28,
+    warm: Math.random() < 0.25
+  });
+}
+
+// ── BESSEL ────────────────────────────────────────────────────────
+function bj0(x) {
+  const ax=Math.abs(x); let y,a1,a2;
+  if (ax<8){y=x*x;a1=57568490574+y*(-13362590354+y*(651619640.7+y*(-11214424.18+y*(77392.33017+y*(-184.9052456)))));a2=57568490411+y*(1029532985+y*(9494680.718+y*(59272.64853+y*(267.8532712+y))));return a1/a2;}
+  const z=8/ax,y2=z*z,xx=ax-0.785398164;
+  a1=1+y2*(-1.098628627e-3+y2*(2.734510407e-5+y2*(-2.073370639e-6+y2*2.093887211e-7)));
+  a2=-1.562499995e-2+y2*(1.430488765e-4+y2*(-6.911147651e-6+y2*(7.621095161e-7-9.34945152e-8*y2)));
+  return Math.sqrt(0.636619772/ax)*(Math.cos(xx)*a1-z*Math.sin(xx)*a2);
+}
+function bj1(x) {
+  const ax=Math.abs(x); let y,a1,a2;
+  if (ax<8){y=x*x;a1=x*(72362614232+y*(-7895059235+y*(242396853.1+y*(-2972611.439+y*(15704.4826+y*(-30.16036606))))));a2=144725228442+y*(2300535178+y*(18583304.74+y*(99447.43394+y*(376.9991397+y))));return a1/a2;}
+  const z=8/ax,y2=z*z,xx=ax-2.356194491;
+  a1=1+y2*(1.83105e-3+y2*(-3.516396496e-5+y2*(2.457520174e-6-2.40337019e-7*y2)));
+  a2=4.687499995e-2+y2*(-2.002690873e-4+y2*(8.449199096e-6+y2*(-8.8228987e-7+1.05787412e-7*y2)));
+  const ans=Math.sqrt(0.636619772/ax)*(Math.cos(xx)*a1-z*Math.sin(xx)*a2);
+  return x<0?-ans:ans;
+}
+function besselJ(n,x){
+  if(n===0)return bj0(x);if(n===1)return bj1(x);if(x===0)return 0;
+  let jm=bj0(x),j=bj1(x),jp;
+  for(let k=1;k<n;k++){jp=(2*k/x)*j-jm;jm=j;j=jp;}return j;
+}
+
+// ── AMP ───────────────────────────────────────────────────────────
+function squareAmp(cx,cy,mo){
+  const xn=(cx-(CX-PHALF))/PSIZE,yn=(cy-(CY-PHALF))/PSIZE;
+  if(xn<0||xn>1||yn<0||yn>1)return null;
+  const A=Math.cos(mo.m*Math.PI*xn)*Math.cos(mo.n*Math.PI*yn);
+  const B=Math.cos(mo.n*Math.PI*xn)*Math.cos(mo.m*Math.PI*yn);
+  return mo.sym?A+B:A-B;
+}
+function circleAmp(cx,cy,mo){
+  const dx=cx-CX,dy=cy-CY,r=Math.sqrt(dx*dx+dy*dy)/PHALF;
+  if(r>1)return null;
+  return besselJ(mo.n,BZEROS[mo.n][mo.s-1]*r)*Math.cos(mo.n*Math.atan2(dy,dx));
+}
+function rawAmp(cx,cy,mo){return ptype==='square'?squareAmp(cx,cy,mo):circleAmp(cx,cy,mo);}
+function amp(cx,cy){
+  const a2=rawAmp(cx,cy,mode);
+  if(!prevMode||transitionProg>=1.0)return a2;
+  const a1=rawAmp(cx,cy,prevMode);
+  if(a1===null)return a2;if(a2===null)return a1;
+  const e=transitionProg*transitionProg*(3-2*transitionProg);
+  return a1*(1-e)+a2*e;
+}
+
+function inside(cx,cy){
+  if(ptype==='square')return cx>=CX-PHALF&&cx<=CX+PHALF&&cy>=CY-PHALF&&cy<=CY+PHALF;
+  const dx=cx-CX,dy=cy-CY;return dx*dx+dy*dy<=PHALF*PHALF;
+}
+function randOnPlate(){
+  for(let i=0;i<300;i++){
+    const x=CX+(Math.random()*2-1)*PHALF*0.95,y=CY+(Math.random()*2-1)*PHALF*0.95;
+    if(inside(x,y))return{x,y};
+  }return{x:CX,y:CY};
+}
+
+// ── PARTICLES ─────────────────────────────────────────────────────
+function initParts(){
+  parts=[];
+  for(let i=0;i<N_PART;i++){
+    const p=randOnPlate();
+    parts.push({
+      x:p.x,y:p.y,
+      vx:(Math.random()-0.5)*2,vy:(Math.random()-0.5)*2,
+      r: 0.6+Math.random()*1.4,
+      warm: Math.random()<0.28
+    });
+  }
+}
+function throwSand(){
+  parts.forEach(p=>{
+    const np=randOnPlate();p.x=np.x;p.y=np.y;
+    p.vx=(Math.random()-0.5)*2.5;p.vy=(Math.random()-0.5)*2.5;
+  });
+}
+function updateParts(){
+  const str=(freq/500)*0.13*speed;
+  const maxSpd=1.5+speed*1.5;
+  const damp=Math.max(0.80,0.92-speed*0.015);
+  const STEP=3; let nodalN=0;
+  parts.forEach(p=>{
+    const w=amp(p.x,p.y);
+    if(w===null){const np=randOnPlate();p.x=np.x;p.y=np.y;p.vx=0;p.vy=0;return;}
+    if(Math.abs(w)<NODAL_THRESH)nodalN++;
+    const wx=amp(p.x+STEP,p.y)??w,wmx=amp(p.x-STEP,p.y)??w;
+    const wy=amp(p.x,p.y+STEP)??w,wmy=amp(p.x,p.y-STEP)??w;
+    p.vx-=(wx*wx-wmx*wmx)/(2*STEP)*str;p.vy-=(wy*wy-wmy*wmy)/(2*STEP)*str;
+    p.vx*=damp;p.vy*=damp;
+    const spd=Math.sqrt(p.vx*p.vx+p.vy*p.vy);
+    if(spd>maxSpd){p.vx*=maxSpd/spd;p.vy*=maxSpd/spd;}
+    p.x+=p.vx;p.y+=p.vy;
+    if(!inside(p.x,p.y)){
+      p.x-=p.vx*2;p.y-=p.vy*2;p.vx*=-0.4;p.vy*=-0.4;
+      if(!inside(p.x,p.y)){const np=randOnPlate();p.x=np.x;p.y=np.y;p.vx=0;p.vy=0;}
+    }
+  });
+  harmPct=Math.round(nodalN/N_PART*100);
+}
+
+// ── HEATMAP (nebula: dark→blue-purple) ───────────────────────────
+function buildHeatmapInto(targetCtx,mo){
+  const S=2,img=targetCtx.createImageData(W,H),d=img.data;
+  const fn=ptype==='square'?(x,y)=>squareAmp(x,y,mo):(x,y)=>circleAmp(x,y,mo);
+  let mx=0;
+  for(let y=0;y<H;y+=S)for(let x=0;x<W;x+=S){const v=fn(x,y);if(v!==null&&Math.abs(v)>mx)mx=Math.abs(v);}
+  if(mx===0)mx=1;
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){
+    const i=(y*W+x)*4,v=fn(x,y);
+    if(v===null){d[i]=2;d[i+1]=2;d[i+2]=8;d[i+3]=255;continue;}
+    const tv=Math.abs(v)/mx;
+    // dark space → nebula purple → bright blue-white
+    if(tv<0.5){
+      const t2=tv*2;
+      d[i]  =Math.round(4  +t2*(60-4));
+      d[i+1]=Math.round(4  +t2*(20-4));
+      d[i+2]=Math.round(18 +t2*(110-18));
+    } else {
+      const t2=(tv-0.5)*2;
+      d[i]  =Math.round(60 +t2*(100-60));
+      d[i+1]=Math.round(20 +t2*(130-20));
+      d[i+2]=Math.round(110+t2*(255-110));
+    }
+    d[i+3]=Math.round(140+tv*100);
+  }
+  targetCtx.putImageData(img,0,0);
+}
+
+// ── RENDER ────────────────────────────────────────────────────────
+function render(){
+  // Deep space background
+  ctx.fillStyle='#020208';ctx.fillRect(0,0,W,H);
+
+  // Background starfield
+  BG_STARS.forEach(s=>{
+    ctx.globalAlpha=s.a;
+    ctx.fillStyle=s.warm?'#FFE8C0':'#D0E8FF';
+    ctx.fillRect(s.x-s.r,s.y-s.r,s.r*2,s.r*2);
+  });
+  ctx.globalAlpha=1;
+
+  const vib=Math.sin(t*0.1)*1.5;
+  ctx.save();ctx.translate(0,vib);
+
+  // plate
+  if(ptype==='square'){
+    const g=ctx.createLinearGradient(CX-PHALF,CY-PHALF,CX+PHALF,CY+PHALF);
+    g.addColorStop(0,'#060820');g.addColorStop(0.5,'#0A0E30');g.addColorStop(1,'#060820');
+    ctx.fillStyle=g;
+    ctx.fillRect(CX-PHALF,CY-PHALF,PSIZE,PSIZE);
+    // glow border
+    ctx.shadowColor='rgba(80,130,255,0.6)';ctx.shadowBlur=12;
+    ctx.strokeStyle='rgba(80,130,255,0.25)';ctx.lineWidth=1;
+    ctx.strokeRect(CX-PHALF,CY-PHALF,PSIZE,PSIZE);
+    ctx.shadowBlur=0;
+  } else {
+    const g=ctx.createRadialGradient(CX,CY,0,CX,CY,PHALF);
+    g.addColorStop(0,'#0C1040');g.addColorStop(0.6,'#080828');g.addColorStop(1,'#040415');
+    ctx.beginPath();ctx.arc(CX,CY,PHALF,0,Math.PI*2);
+    ctx.fillStyle=g;ctx.fill();
+    ctx.shadowColor='rgba(80,130,255,0.5)';ctx.shadowBlur=10;
+    ctx.strokeStyle='rgba(80,130,255,0.22)';ctx.lineWidth=1;ctx.stroke();
+    ctx.shadowBlur=0;
+  }
+
+  // heatmap blend
+  const tp=transitionProg,ease=tp*tp*(3-2*tp);
+  if(prevMode&&ease<1.0){
+    ctx.globalAlpha=0.78*(1-ease);ctx.drawImage(offPrev,0,0);
+    ctx.globalAlpha=0.78*ease;ctx.drawImage(offCurr,0,0);
+  } else {
+    ctx.globalAlpha=0.78;ctx.drawImage(offCurr,0,0);
+  }
+  ctx.globalAlpha=1;
+
+  // ── STARS (particles) ──
+  // Pass 1: non-nodal — dim scattered stars (normal blend)
+  ctx.globalCompositeOperation='source-over';
+  parts.forEach(p=>{
+    const w=amp(p.x,p.y);
+    if(w===null||Math.abs(w)<NODAL_THRESH)return;
+    ctx.globalAlpha=0.28+Math.random()*0.12;
+    ctx.fillStyle=p.warm?'#FFE8C0':'#C0D8FF';
+    const s=p.r*0.6;
+    ctx.fillRect(p.x-s,p.y-s,s*2,s*2);
+  });
+  ctx.globalAlpha=1;
+
+  // Pass 2: nodal — bright stars (additive blend → cluster glow)
+  ctx.globalCompositeOperation='lighter';
+  parts.forEach(p=>{
+    const w=amp(p.x,p.y);
+    if(w===null||Math.abs(w)>=NODAL_THRESH)return;
+    const brightness=0.55+Math.random()*0.35;
+    ctx.globalAlpha=brightness;
+    ctx.fillStyle=p.warm?'rgba(255,240,180,0.9)':'rgba(160,200,255,0.9)';
+    const s=p.r*1.4;
+    ctx.fillRect(p.x-s,p.y-s,s*2,s*2);
+  });
+  ctx.globalCompositeOperation='source-over';
+  ctx.globalAlpha=1;
+
+  // ── PULSAR (center exciter) ──
+  const pulse=1+Math.sin(t*0.25)*0.4;
+  const glowR=12+Math.sin(t*0.1)*3;
+  // outer rings
+  for(let ring=3;ring>=1;ring--){
+    ctx.beginPath();ctx.arc(CX,CY,(8+ring*7)*pulse,0,Math.PI*2);
+    ctx.strokeStyle=`rgba(100,160,255,${0.07/ring})`;ctx.lineWidth=1;ctx.stroke();
+  }
+  ctx.shadowColor='#90B8FF';ctx.shadowBlur=glowR;
+  ctx.beginPath();ctx.arc(CX,CY,4*pulse,0,Math.PI*2);
+  ctx.fillStyle='#E0EEFF';ctx.fill();
+  // cross sparkle
+  ctx.strokeStyle='rgba(180,210,255,0.6)';ctx.lineWidth=0.8;
+  const sp=10*pulse;
+  ctx.beginPath();ctx.moveTo(CX-sp,CY);ctx.lineTo(CX+sp,CY);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(CX,CY-sp);ctx.lineTo(CX,CY+sp);ctx.stroke();
+  ctx.shadowBlur=0;
+
+  ctx.restore();
+
+  const s=document.getElementById('stable');
+  if(harmPct>=90){s.style.display='block';s.style.opacity=String(0.5+Math.sin(t*0.15)*0.5);}
+  else{s.style.display='none';}
+}
+
+// ── METRICS UI ────────────────────────────────────────────────────
+function updateUI(){
+  const ml=ptype==='square'?`(m=${mode.m}, n=${mode.n})`:`(n=${mode.n}, s=${mode.s})`;
+  document.getElementById('m-mode').textContent=ml;
+  document.getElementById('m-name').textContent=mode.label;
+  document.getElementById('m-freq').textContent=`${freq} Hz`;
+  document.getElementById('m-harm').textContent=`${harmPct}%`;
+  const nc=Math.round(harmPct*N_PART/100);
+  document.getElementById('m-nodal').textContent=`${nc.toLocaleString()} / ${N_PART.toLocaleString()}`;
+  const bar=document.getElementById('m-bar');
+  const filled=Math.round(harmPct/100*16);
+  bar.innerHTML='';
+  for(let i=0;i<16;i++){const b=document.createElement('div');b.className='bar-blk'+(i<filled?' on':'');bar.appendChild(b);}
+  const fe=document.getElementById('m-formula');
+  if(ptype==='square'){fe.textContent=`W = cos(mπx)·cos(nπy) ${mode.sym?'+':'−'} cos(nπx)·cos(mπy)`;}
+  else{fe.textContent=`W = J${mode.n}(α·r) · cos(${mode.n===0?'0':mode.n+'·'}θ)`;}
+}
+function updateModeLabel(){
+  const ml=ptype==='square'?`(m=${mode.m}, n=${mode.n})`:`(n=${mode.n}, s=${mode.s})`;
+  document.getElementById('mode-disp-name').textContent=mode.label;
+  document.getElementById('mode-disp-params').textContent=ml;
+}
+
+// ── FREQ → MODE + TRANSITION ─────────────────────────────────────
+function freqToModeIdx(f){
+  const n=(ptype==='square'?SQ_MODES:CI_MODES).length;
+  return Math.max(0,Math.min(Math.floor((f-50)/(2000-50)*n),n-1));
+}
+function startModeTransition(newMode){
+  if(transitionProg<1.0){
+    const e=transitionProg*transitionProg*(3-2*transitionProg);
+    octxPrev.clearRect(0,0,W,H);
+    octxPrev.globalAlpha=1-e;octxPrev.drawImage(offPrev,0,0);
+    octxPrev.globalAlpha=e;octxPrev.drawImage(offCurr,0,0);
+    octxPrev.globalAlpha=1;
+  } else {
+    octxPrev.drawImage(offCurr,0,0);
+  }
+  prevMode=mode;mode=newMode;transitionProg=0;
+  buildHeatmapInto(octxCurr,newMode);
+  updateModeLabel();
+}
+
+// ── CONTROLS ─────────────────────────────────────────────────────
+function setType(type){
+  ptype=type;
+  document.getElementById('b-sq').classList.toggle('sel',type==='square');
+  document.getElementById('b-ci').classList.toggle('sel',type==='circle');
+  selIdx=freqToModeIdx(freq);
+  prevMode=null;transitionProg=1.0;
+  mode=(type==='square'?SQ_MODES:CI_MODES)[selIdx];
+  buildHeatmapInto(octxCurr,mode);
+  initParts();updateModeLabel();updateUI();
+}
+function setFreq(v){
+  freq=parseInt(v);
+  document.getElementById('fv').textContent=`${freq} Hz`;
+  const ni=freqToModeIdx(freq);
+  const modes=ptype==='square'?SQ_MODES:CI_MODES;
+  if(ni!==selIdx){selIdx=ni;startModeTransition(modes[ni]);}
+  updateUI();
+}
+function setSpeed(v){
+  const val=parseInt(v);
+  speed=0.2+(val-1)/9*2.8;
+  document.getElementById('sv').textContent=val+' / 10';
+}
+
+// ── LOOP ──────────────────────────────────────────────────────────
+function loop(){
+  t++;
+  if(transitionProg<1.0){
+    transitionProg=Math.min(1.0,transitionProg+1/TRANSITION_FRAMES);
+    if(transitionProg>=1.0)prevMode=null;
+  }
+  updateParts();render();updateUI();
+  requestAnimationFrame(loop);
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+selIdx=freqToModeIdx(freq);
+mode=SQ_MODES[selIdx];
+buildHeatmapInto(octxCurr,mode);
+initParts();updateModeLabel();updateUI();loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Orbital Flight Simulator</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000010; overflow:hidden; font-family:'Courier New',monospace; }
+canvas { display:block; }
+#overlay {
+  position:fixed; top:0; left:0; right:0; bottom:0;
+  display:flex; justify-content:center; align-items:center;
+  background:rgba(0,0,0,0.88); z-index:10; color:#4fc3f7;
+}
+.panel { background:#0a141e; border:1px solid #1e5f80; border-radius:10px; padding:40px; max-width:520px; text-align:center; }
+.panel h1 { color:#ff6b35; font-size:30px; margin-bottom:8px; letter-spacing:3px; }
+.subtitle { color:#4a8fa8; font-size:13px; margin-bottom:24px; }
+.controls-grid { text-align:left; background:#060d14; border:1px solid #1a3d52; border-radius:6px; padding:18px 24px; margin:0 0 18px; line-height:2.1; }
+.key { color:#ff6b35; font-weight:bold; display:inline-block; width:80px; }
+.hint { color:#b0bec5; font-size:12px; margin-bottom:16px; line-height:1.7; }
+.btn { background:#ff6b35; border:none; color:#fff; font-family:'Courier New',monospace; font-size:17px; padding:13px 44px; border-radius:5px; cursor:pointer; letter-spacing:2px; }
+.btn:hover { background:#ff8850; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="overlay">
+  <div class="panel">
+    <h1>ORBITAL FLIGHT</h1>
+    <div class="subtitle">Simulador de Mecanica Orbital - Planeta Kerra</div>
+    <div class="controls-grid">
+      <div><span class="key">W</span> Motor principal</div>
+      <div><span class="key">S</span> Retrocohete</div>
+      <div><span class="key">A / D</span> Rotar nave</div>
+      <div><span class="key">M</span> Vista mapa</div>
+      <div><span class="key">Rueda</span> Zoom en mapa</div>
+    </div>
+    <div class="hint">
+      Para orbitar necesitas velocidad <em>tangencial</em>.<br>
+      Lanza verticalmente, gira y quema hasta ~7800 m/s.<br>
+      <strong style="color:#ffcc00">Objetivo: apoapsis y periapsis &gt; 500 km</strong><br>
+      <strong style="color:#aaddff">Bonus: orbita la Luna</strong>
+    </div>
+    <button class="btn" onclick="startGame()">INICIAR MISION</button>
+  </div>
+</div>
+<script>
+// ================================================================
+// ORBITAL FLIGHT SIMULATOR
+// Coords mundo: origen=centro planeta, Y positivo=arriba
+// Fisica: gravedad 1/r^2, arrastre atm, mecanica kepleriana
+// ================================================================
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+let W = canvas.width  = window.innerWidth;
+let H = canvas.height = window.innerHeight;
+window.addEventListener('resize', () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; });
+
+// -- Constantes --------------------------------------------------
+const R_PLANET   = 200;
+const G_SURFACE  = 20;
+const GM         = G_SURFACE * R_PLANET * R_PLANET; // 800000
+const ATMO_H     = 80;
+const ATMO_R     = R_PLANET + ATMO_H;
+const ATMO_SCALE = 22;
+const DRAG_CD    = 0.09;
+const THRUST     = 55;
+const RETRO      = 22;
+const ROT_SPEED  = 2.3;
+const FUEL_MAX   = 300;   // tanque reducido: ~10s de quema
+const FUEL_RATE  = 30;    // consumo motor [unid/s]
+const FUEL_RETRO = 12;    // consumo retro
+const CRASH_SPD  = 35;
+const SCALE_KM   = 10;    // 1 wu = 10 km
+const SCALE_MS   = 100;   // 1 wu/s = 100 m/s
+
+// -- Luna --------------------------------------------------------
+const MOON_ORBIT = 750;
+const MOON_VIS   = 32;
+const MOON_GM    = 12000; // suficiente para orbitar alrededor de ella
+const MOON_CRASH = 35;
+const MOON_PERIOD = 2*Math.PI * Math.sqrt(MOON_ORBIT*MOON_ORBIT*MOON_ORBIT / GM);
+let moonAngle = 0.9;
+
+function moonPos() { return { x: MOON_ORBIT*Math.cos(moonAngle), y: MOON_ORBIT*Math.sin(moonAngle) }; }
+function moonVel() {
+  const w = 2*Math.PI / MOON_PERIOD;
+  return { vx: -MOON_ORBIT*w*Math.sin(moonAngle), vy: MOON_ORBIT*w*Math.cos(moonAngle) };
+}
+
+// -- Estrellas ---------------------------------------------------
+const STARS = Array.from({length:400}, () => ({
+  wx:(Math.random()-0.5)*14000, wy:(Math.random()-0.5)*14000,
+  r:Math.random()*1.6+0.2, a:0.35+Math.random()*0.65
+}));
+
+// -- Estado del juego --------------------------------------------
+let gameStarted=false, mapView=false, missionWon=false, mapZoom=1.0;
+let restartBtnY=0;
+
+function makeRocket() {
+  return { x:R_PLANET+2, y:0, vx:0, vy:0, angle:0,
+           fuel:FUEL_MAX, crashed:false, landed:true, thrustOn:false, retroOn:false };
+}
+let rocket=makeRocket(), cam={x:R_PLANET+2,y:0,zoom:1.5};
+let particles=[], trail=[], gForce=1;
+
+// Click -> boton reiniciar en canvas
+canvas.addEventListener('click', e => {
+  if (!gameStarted) return;
+  const rc=canvas.getBoundingClientRect(), mx=e.clientX-rc.left, my=e.clientY-rc.top;
+  if (mx>=10&&mx<=248&&my>=restartBtnY&&my<=restartBtnY+44) restartGame();
+});
+canvas.addEventListener('mousemove', e => {
+  if (!gameStarted) return;
+  const rc=canvas.getBoundingClientRect(), mx=e.clientX-rc.left, my=e.clientY-rc.top;
+  canvas.style.cursor=(mx>=10&&mx<=248&&my>=restartBtnY&&my<=restartBtnY+44)?'pointer':'default';
+});
+
+// -- Input -------------------------------------------------------
+const keys={};
+document.addEventListener('keydown', e => {
+  keys[e.code]=true;
+  if (e.code==='KeyM'&&gameStarted) mapView=!mapView;
+  if (['KeyW','KeyS','KeyA','KeyD','KeyM','Space'].includes(e.code)) e.preventDefault();
+});
+document.addEventListener('keyup', e => { keys[e.code]=false; });
+window.addEventListener('wheel', e => {
+  if (!mapView) return;
+  e.preventDefault();
+  mapZoom *= e.deltaY>0 ? 0.85 : 1.18;
+  mapZoom = Math.max(0.04, Math.min(5.0, mapZoom));
+}, {passive:false});
+
+// -- Fisica ------------------------------------------------------
+function getRadius(rk) { return Math.hypot(rk.x,rk.y); }
+function getAlt(rk)    { return getRadius(rk)-R_PLANET; }
+function getSpeed(rk)  { return Math.hypot(rk.vx,rk.vy); }
+function atmoDensity(alt) {
+  if (alt<=0) return 1; if (alt>=ATMO_H) return 0;
+  return Math.exp(-alt/ATMO_SCALE);
+}
+
+// Elementos orbitales keplerianos alrededor del planeta
+function orbElements(rk) {
+  const r=getRadius(rk), v2=rk.vx*rk.vx+rk.vy*rk.vy;
+  const E=0.5*v2-GM/r; if (E>=0) return null;
+  const L=rk.x*rk.vy-rk.y*rk.vx, a=-GM/(2*E);
+  const ecc=Math.sqrt(Math.max(0, 1+2*E*L*L/(GM*GM)));
+  return { a, ecc, apoapsis:a*(1+ecc)-R_PLANET, periapsis:a*(1-ecc)-R_PLANET,
+           period:2*Math.PI*Math.sqrt(a*a*a/GM) };
+}
+
+// Elementos orbitales alrededor de un cuerpo arbitrario (para luna)
+function orbElementsAround(rk, bx, by, bvx, bvy, bGM) {
+  const rx=rk.x-bx, ry=rk.y-by, vx=rk.vx-bvx, vy=rk.vy-bvy;
+  const r=Math.hypot(rx,ry); if (r<1) return null;
+  const v2=vx*vx+vy*vy, E=0.5*v2-bGM/r; if (E>=0) return null;
+  const L=rx*vy-ry*vx, a=-bGM/(2*E);
+  const ecc=Math.sqrt(Math.max(0, 1+2*E*L*L/(bGM*bGM)));
+  return { a, ecc, apoapsis:a*(1+ecc)-MOON_VIS, periapsis:a*(1-ecc)-MOON_VIS,
+           period:2*Math.PI*Math.sqrt(a*a*a/bGM) };
+}
+
+// Simular orbita (trayectoria predicha)
+function predictOrbit(x,y,vx,vy,steps,dt) {
+  const pts=[[x,y]]; let px=x,py=y,pvx=vx,pvy=vy;
+  const mp0=moonPos();
+  for (let i=0;i<steps;i++) {
+    const r2=px*px+py*py, r=Math.sqrt(r2);
+    if (r<R_PLANET||r2===0) break;
+    pvx -= GM/r2*px/r*dt; pvy -= GM/r2*py/r*dt;
+    const mdx=mp0.x-px, mdy=mp0.y-py, mr2=mdx*mdx+mdy*mdy;
+    if (mr2>1) { const mr=Math.sqrt(mr2),mg=MOON_GM/mr2; pvx+=mg*mdx/mr*dt; pvy+=mg*mdy/mr*dt; }
+    px+=pvx*dt; py+=pvy*dt;
+    pts.push([px,py]);
+    if (Math.hypot(px-mp0.x,py-mp0.y)<MOON_VIS) break;
+  }
+  return pts;
+}
+
+// -- Update ------------------------------------------------------
+let prevTs=0;
+function update(dt) {
+  if (!gameStarted||rocket.crashed) return;
+  dt=Math.min(dt,0.04);
+
+  moonAngle += (2*Math.PI/MOON_PERIOD)*dt;
+
+  if (keys['KeyA']) rocket.angle+=ROT_SPEED*dt;
+  if (keys['KeyD']) rocket.angle-=ROT_SPEED*dt;
+
+  rocket.thrustOn=false; rocket.retroOn=false;
+  if (keys['KeyW']&&rocket.fuel>0) {
+    rocket.vx+=Math.cos(rocket.angle)*THRUST*dt;
+    rocket.vy+=Math.sin(rocket.angle)*THRUST*dt;
+    rocket.fuel-=FUEL_RATE*dt;
+    rocket.thrustOn=true; rocket.landed=false;
+    for (let i=0;i<3;i++) spawnExhaust();
+  }
+  if (keys['KeyS']&&rocket.fuel>0&&!rocket.landed) {
+    rocket.vx-=Math.cos(rocket.angle)*RETRO*dt;
+    rocket.vy-=Math.sin(rocket.angle)*RETRO*dt;
+    rocket.fuel-=FUEL_RETRO*dt; rocket.retroOn=true;
+  }
+  rocket.fuel=Math.max(0,rocket.fuel);
+
+  if (!rocket.landed) {
+    const r=getRadius(rocket), alt=r-R_PLANET;
+    // Gravedad planeta
+    const grav=GM/(r*r), gax=-grav*rocket.x/r, gay=-grav*rocket.y/r;
+    // Gravedad luna
+    const mp=moonPos(), mdx=mp.x-rocket.x, mdy=mp.y-rocket.y;
+    const mr2=mdx*mdx+mdy*mdy, mr=Math.sqrt(mr2), mgrav=MOON_GM/mr2;
+    const max2=mgrav*mdx/mr, may2=mgrav*mdy/mr;
+    // Arrastre
+    const rho=atmoDensity(alt), spd=getSpeed(rocket), drag=0.5*rho*DRAG_CD*spd*spd;
+    const dax=spd>0.001?-drag*rocket.vx/spd:0, day=spd>0.001?-drag*rocket.vy/spd:0;
+    // Fuerza G sentida
+    const thx=rocket.thrustOn?Math.cos(rocket.angle)*THRUST:0;
+    const thy=rocket.thrustOn?Math.sin(rocket.angle)*THRUST:0;
+    gForce=Math.hypot(dax+thx,day+thy)/G_SURFACE;
+    // Integracion
+    rocket.vx+=(gax+max2+dax)*dt; rocket.vy+=(gay+may2+day)*dt;
+    rocket.x+=rocket.vx*dt;       rocket.y+=rocket.vy*dt;
+
+    trail.push([rocket.x,rocket.y]); if (trail.length>1200) trail.shift();
+    for (let i=particles.length-1;i>=0;i--) {
+      const p=particles[i]; p.x+=p.vx*dt; p.y+=p.vy*dt; p.life-=dt;
+      if (p.life<=0) particles.splice(i,1);
+    }
+    // Colision planeta
+    const nr=getRadius(rocket);
+    if (nr<=R_PLANET+0.8) {
+      if (getSpeed(rocket)>CRASH_SPD) { rocket.crashed=true; spawnBoom(rocket.x,rocket.y); }
+      else { const n=nr; rocket.x=(R_PLANET+1)*rocket.x/n; rocket.y=(R_PLANET+1)*rocket.y/n; rocket.vx=0; rocket.vy=0; rocket.landed=true; trail=[]; }
+    }
+    // Colision luna
+    if (!rocket.crashed) {
+      const lp=moonPos(), ld=Math.hypot(rocket.x-lp.x,rocket.y-lp.y);
+      if (ld<=MOON_VIS+1) {
+        if (getSpeed(rocket)>MOON_CRASH) { rocket.crashed=true; spawnBoom(rocket.x,rocket.y); }
+        else { const ldx=rocket.x-lp.x,ldy=rocket.y-lp.y; rocket.x=lp.x+(MOON_VIS+1)*ldx/ld; rocket.y=lp.y+(MOON_VIS+1)*ldy/ld; rocket.vx=0; rocket.vy=0; rocket.landed=true; trail=[]; }
+      }
+    }
+    // Mision
+    if (!missionWon) { const orb=orbElements(rocket); if (orb&&orb.periapsis>ATMO_H+5&&orb.apoapsis>ATMO_H+5) missionWon=true; }
+  }
+
+  // Camara
+  let tx,ty,tz;
+  if (mapView) { tx=0;ty=0;tz=Math.min(W,H)/(R_PLANET*5.0)*mapZoom; }
+  else { tx=rocket.x;ty=rocket.y; const a2=getAlt(rocket); tz=a2<150?1.5:Math.max(0.15,1.5*150/a2); }
+  cam.x+=(tx-cam.x)*Math.min(1,5*dt); cam.y+=(ty-cam.y)*Math.min(1,5*dt); cam.zoom+=(tz-cam.zoom)*Math.min(1,3*dt);
+}
+
+// -- Particulas --------------------------------------------------
+function spawnExhaust() {
+  const sp=(Math.random()-0.5)*0.65, spd=55+Math.random()*55, ba=rocket.angle+Math.PI+sp, life=0.25+Math.random()*0.25;
+  particles.push({x:rocket.x-Math.cos(rocket.angle)*7,y:rocket.y-Math.sin(rocket.angle)*7,vx:rocket.vx+Math.cos(ba)*spd,vy:rocket.vy+Math.sin(ba)*spd,life,maxLife:life,size:2+Math.random()*3,type:'exhaust'});
+}
+function spawnBoom(ex,ey) {
+  for (let i=0;i<70;i++) { const ang=Math.random()*Math.PI*2,spd=15+Math.random()*90,life=1.2+Math.random()*2; particles.push({x:ex,y:ey,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd,life,maxLife:life,size:1.5+Math.random()*5,type:'debris'}); }
+}
+
+// -- Transform mundo->canvas -------------------------------------
+function wx(worldX) { return W/2+(worldX-cam.x)*cam.zoom; }
+function wy(worldY) { return H/2-(worldY-cam.y)*cam.zoom; }
+function ws(v)      { return v*cam.zoom; }
+
+// -- Render ------------------------------------------------------
+function render() {
+  ctx.fillStyle='#000010'; ctx.fillRect(0,0,W,H);
+  // Estrellas
+  ctx.save();
+  for (const s of STARS) {
+    const sx=wx(s.wx),sy=wy(s.wy); if (sx<-5||sx>W+5||sy<-5||sy>H+5) continue;
+    ctx.globalAlpha=s.a; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(sx,sy,s.r,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+  const pcx=wx(0),pcy=wy(0),pr=ws(R_PLANET),ar=ws(ATMO_R);
+
+  // Orbita de la luna
+  if (ws(MOON_ORBIT)>10) {
+    ctx.strokeStyle='rgba(180,210,255,0.10)'; ctx.lineWidth=1; ctx.setLineDash([4,8]);
+    ctx.beginPath(); ctx.arc(pcx,pcy,ws(MOON_ORBIT),0,Math.PI*2); ctx.stroke(); ctx.setLineDash([]);
+  }
+
+  // Atmosfera exterior
+  if (ar>8) {
+    const ag=ctx.createRadialGradient(pcx,pcy,pr*0.82,pcx,pcy,ar*1.25);
+    ag.addColorStop(0,'rgba(110,210,255,0.22)'); ag.addColorStop(0.4,'rgba(80,160,255,0.12)'); ag.addColorStop(1,'rgba(30,60,200,0)');
+    ctx.fillStyle=ag; ctx.beginPath(); ctx.arc(pcx,pcy,ar*1.25,0,Math.PI*2); ctx.fill();
+  }
+  // Planeta
+  const pg=ctx.createRadialGradient(pcx-pr*0.32,pcy-pr*0.32,pr*0.04,pcx,pcy,pr);
+  pg.addColorStop(0,'#3d8a60'); pg.addColorStop(0.28,'#226040'); pg.addColorStop(0.55,'#134428'); pg.addColorStop(0.85,'#071f12'); pg.addColorStop(1,'#040f09');
+  ctx.fillStyle=pg; ctx.beginPath(); ctx.arc(pcx,pcy,pr,0,Math.PI*2); ctx.fill();
+  // Continentes
+  ctx.save(); ctx.globalAlpha=0.17; ctx.fillStyle='#5aaa70';
+  [[0.15,0.3,0.18,0.12,-0.4],[-0.3,-0.2,0.12,0.08,0.8],[0.05,-0.5,0.22,0.1,0.2],[-0.18,0.5,0.14,0.09,-0.6],[0.55,0.1,0.1,0.14,1.1]].forEach(([ox,oy,rx2,ry2,rot]) => {
+    ctx.save(); ctx.translate(pcx+ox*pr,pcy+oy*pr); ctx.rotate(rot); ctx.beginPath(); ctx.ellipse(0,0,rx2*pr,ry2*pr,0,0,Math.PI*2); ctx.fill(); ctx.restore();
+  }); ctx.restore();
+  // Atmosfera interior
+  if (ar>8) {
+    const ig=ctx.createRadialGradient(pcx,pcy,pr*0.93,pcx,pcy,ar);
+    ig.addColorStop(0,'rgba(140,220,255,0.20)'); ig.addColorStop(0.5,'rgba(100,180,255,0.08)'); ig.addColorStop(1,'rgba(60,120,255,0)');
+    ctx.fillStyle=ig; ctx.beginPath(); ctx.arc(pcx,pcy,ar,0,Math.PI*2); ctx.fill();
+  }
+  // Luna
+  drawMoon();
+  // Estela
+  if (trail.length>1) {
+    ctx.beginPath(); let first=true;
+    for (const [tx2,ty2] of trail) { const cx2=wx(tx2),cy2=wy(ty2); if(first){ctx.moveTo(cx2,cy2);first=false;}else ctx.lineTo(cx2,cy2); }
+    ctx.strokeStyle='rgba(79,195,247,0.22)'; ctx.lineWidth=1; ctx.stroke();
+  }
+  // Trayectoria predicha
+  const alt=getAlt(rocket);
+  if (!rocket.crashed&&!rocket.landed&&alt>ATMO_H) {
+    const path=predictOrbit(rocket.x,rocket.y,rocket.vx,rocket.vy,700,1.0);
+    if (path.length>2) {
+      ctx.beginPath(); let first=true;
+      for (const [px2,py2] of path) { const cx2=wx(px2),cy2=wy(py2); if(first){ctx.moveTo(cx2,cy2);first=false;}else ctx.lineTo(cx2,cy2); }
+      ctx.strokeStyle='rgba(255,205,50,0.65)'; ctx.lineWidth=1.5; ctx.setLineDash([6,5]); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+  // Particulas
+  for (const p of particles) {
+    const t=p.life/p.maxLife, px2=wx(p.x),py2=wy(p.y);
+    ctx.globalAlpha=t*0.9;
+    ctx.fillStyle=p.type==='exhaust'?`rgb(255,${Math.floor(180*t)},${Math.floor(40*t)})`:t>0.6?'#ffcc00':t>0.3?'#ff6b35':'#ff3333';
+    ctx.beginPath(); ctx.arc(px2,py2,Math.max(0.8,p.size*cam.zoom*(p.type==='exhaust'?t:1)),0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  // Marcadores orbitales en mapa
+  if (mapView&&!rocket.crashed&&!rocket.landed&&alt>ATMO_H) { const orb=orbElements(rocket); if(orb) drawOrbMarkers(orb); }
+  if (!rocket.crashed) drawRocket();
+  if (gameStarted) drawHUD();
+}
+
+// -- Luna --------------------------------------------------------
+function drawMoon() {
+  const mp=moonPos(), mx2=wx(mp.x),my2=wy(mp.y),mvr=ws(MOON_VIS);
+  if (mvr<1) return;
+  const sg=ctx.createRadialGradient(mx2,my2,mvr*0.5,mx2,my2,mvr*1.8);
+  sg.addColorStop(0,'rgba(150,170,200,0.05)'); sg.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=sg; ctx.beginPath(); ctx.arc(mx2,my2,mvr*1.8,0,Math.PI*2); ctx.fill();
+  const mg=ctx.createRadialGradient(mx2-mvr*0.3,my2-mvr*0.3,mvr*0.05,mx2,my2,mvr);
+  mg.addColorStop(0,'#c8c8c8'); mg.addColorStop(0.5,'#888898'); mg.addColorStop(0.8,'#505060'); mg.addColorStop(1,'#2a2a35');
+  ctx.fillStyle=mg; ctx.beginPath(); ctx.arc(mx2,my2,mvr,0,Math.PI*2); ctx.fill();
+  ctx.save(); ctx.globalAlpha=0.25; ctx.fillStyle='#405060';
+  [[0.3,0.2,0.15],[-0.25,-0.3,0.12],[0.1,-0.4,0.09],[-0.4,0.1,0.1]].forEach(([cx3,cy3,cr]) => {
+    ctx.beginPath(); ctx.arc(mx2+cx3*mvr,my2+cy3*mvr,cr*mvr,0,Math.PI*2); ctx.fill();
+  }); ctx.restore();
+  if (mapView&&mvr>4) { ctx.fillStyle='rgba(180,210,255,0.7)'; ctx.font=`${Math.max(9,Math.min(13,mvr*0.5))}px Courier New`; ctx.fillText('LUNA',mx2+mvr+4,my2+4); }
+}
+
+// -- Cohete ------------------------------------------------------
+function drawRocket() {
+  const cx=wx(rocket.x),cy=wy(rocket.y),sz=Math.max(6,ws(11));
+  // ca = PI/2 - angle: correccion por Y invertido en canvas
+  const ca=Math.PI/2-rocket.angle;
+  ctx.save(); ctx.translate(cx,cy); ctx.rotate(ca);
+  // Llama principal (sale por la cola=abajo en local)
+  if (rocket.thrustOn) {
+    const fl=sz*(1.6+Math.random()*0.5);
+    const fg=ctx.createLinearGradient(0,sz*0.65,0,sz*0.65+fl);
+    fg.addColorStop(0,'rgba(255,130,20,0.95)'); fg.addColorStop(0.25,'rgba(255,230,60,0.85)'); fg.addColorStop(0.6,'rgba(255,80,10,0.5)'); fg.addColorStop(1,'rgba(255,40,0,0)');
+    ctx.fillStyle=fg; ctx.beginPath(); ctx.moveTo(-sz*0.2,sz*0.65); ctx.quadraticCurveTo(-sz*0.05,sz*0.65+fl*0.55,0,sz*0.65+fl); ctx.quadraticCurveTo(sz*0.05,sz*0.65+fl*0.55,sz*0.2,sz*0.65); ctx.fill();
+  }
+  // Llama retro (sale por nariz=arriba en local)
+  if (rocket.retroOn) {
+    const fg=ctx.createLinearGradient(0,-sz*0.9,0,-sz*1.6);
+    fg.addColorStop(0,'rgba(80,180,255,0.9)'); fg.addColorStop(1,'rgba(80,180,255,0)');
+    ctx.fillStyle=fg; ctx.beginPath(); ctx.moveTo(-sz*0.12,-sz*0.9); ctx.lineTo(0,-sz*1.6); ctx.lineTo(sz*0.12,-sz*0.9); ctx.fill();
+  }
+  // Cuerpo
+  ctx.fillStyle='#b0bec5'; ctx.strokeStyle='#4fc3f7'; ctx.lineWidth=Math.max(1,sz*0.07);
+  ctx.beginPath(); ctx.moveTo(0,-sz); ctx.lineTo(sz*0.42,sz*0.25); ctx.lineTo(sz*0.28,sz*0.65); ctx.lineTo(-sz*0.28,sz*0.65); ctx.lineTo(-sz*0.42,sz*0.25); ctx.closePath(); ctx.fill(); ctx.stroke();
+  // Reflejo
+  ctx.fillStyle='#cfd8dc'; ctx.beginPath(); ctx.moveTo(0,-sz); ctx.lineTo(sz*0.18,sz*0.08); ctx.lineTo(-sz*0.04,sz*0.08); ctx.closePath(); ctx.fill();
+  // Ventana
+  ctx.fillStyle='#1a8ec8'; ctx.strokeStyle='#80d8ff'; ctx.lineWidth=Math.max(0.5,sz*0.05);
+  ctx.beginPath(); ctx.arc(0,-sz*0.18,sz*0.17,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.arc(-sz*0.05,-sz*0.24,sz*0.07,0,Math.PI*2); ctx.fill();
+  // Aletas
+  ctx.fillStyle='#78909c'; ctx.strokeStyle='#546e7a'; ctx.lineWidth=Math.max(0.5,sz*0.05);
+  [[1],[-1]].forEach(([s]) => { ctx.beginPath(); ctx.moveTo(s*sz*0.33,sz*0.35); ctx.lineTo(s*sz*0.78,sz*0.88); ctx.lineTo(s*sz*0.28,sz*0.65); ctx.closePath(); ctx.fill(); ctx.stroke(); });
+  ctx.restore();
+}
+
+// -- Marcadores orbitales ----------------------------------------
+function drawOrbMarkers(orb) {
+  const r=getRadius(rocket), L=rocket.x*rocket.vy-rocket.y*rocket.vx;
+  const ex=(rocket.vy*L/GM)-rocket.x/r, ey=(-rocket.vx*L/GM)-rocket.y/r;
+  const emag=Math.hypot(ex,ey)||0.001, enx=ex/emag, eny=ey/emag;
+  const raApo=orb.a*(1+orb.ecc), raPer=orb.a*(1-orb.ecc);
+  function mark(wx2,wy2,lbl,col,km) {
+    ctx.save(); ctx.fillStyle=col; ctx.strokeStyle=col; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.arc(wx2,wy2,5,0,Math.PI*2); ctx.fill();
+    ctx.font='11px Courier New'; ctx.fillText(lbl,wx2+8,wy2-5);
+    ctx.fillStyle='rgba(255,255,255,0.65)'; ctx.fillText(km+' km',wx2+8,wy2+9); ctx.restore();
+  }
+  mark(wx(enx*raApo),wy(eny*raApo),'Ap','#ffcc00',(orb.apoapsis*SCALE_KM).toFixed(0));
+  if (raPer>R_PLANET) mark(wx(-enx*raPer),wy(-eny*raPer),'Pe',orb.periapsis>0?'#00ff88':'#ff6b35',(orb.periapsis*SCALE_KM).toFixed(0));
+}
+
+// -- HUD ---------------------------------------------------------
+function drawHUD() {
+  const r=getRadius(rocket), alt=r-R_PLANET, spd=getSpeed(rocket);
+  const rx=rocket.x/r, ry=rocket.y/r;
+  const vRad=rocket.vx*rx+rocket.vy*ry;
+  const vTang=Math.sqrt(Math.max(0,spd*spd-vRad*vRad));
+  const orb=(!rocket.landed&&alt>0)?orbElements(rocket):null;
+  const fp=rocket.fuel/FUEL_MAX, fpN=(fp*100).toFixed(0);
+  const mp=moonPos(), mv=moonVel();
+  const moonDist=Math.hypot(rocket.x-mp.x,rocket.y-mp.y)-MOON_VIS;
+  const nearMoon=moonDist<400;
+  const moonOrb=(!rocket.landed&&nearMoon)?orbElementsAround(rocket,mp.x,mp.y,mv.vx,mv.vy,MOON_GM):null;
+
+  let status='EN TIERRA', sc='#4fc3f7';
+  if (rocket.crashed)     { status='DESTRUIDO';    sc='#ff4444'; }
+  else if (rocket.landed) { status='EN TIERRA';    sc='#4fc3f7'; }
+  else if (alt<ATMO_H)    { status='ATMOSFERA';    sc='#ffcc00'; }
+  else if (moonOrb&&moonOrb.periapsis>0&&moonOrb.apoapsis>0) { status='ORBITA LUNAR'; sc='#aaddff'; }
+  else if (orb&&orb.periapsis>ATMO_H&&orb.apoapsis>ATMO_H)  { status='EN ORBITA';   sc='#00ff88'; }
+  else if (orb)           { status='VACIO';        sc='#b0bec5'; }
+  else                    { status='ESCAPE';       sc='#ff6b35'; }
+
+  const rows=[
+    ['ESTADO',    status,                               sc],
+    ['ALTITUD',   (alt*SCALE_KM).toFixed(1)+' km',     '#e0e0e0'],
+    ['VEL.TOTAL', (spd*SCALE_MS).toFixed(0)+' m/s',    '#e0e0e0'],
+    ['V.RADIAL',  (vRad*SCALE_MS).toFixed(0)+' m/s',   vRad>0?'#00d480':'#ff6b35'],
+    ['V.TANGENC', (vTang*SCALE_MS).toFixed(0)+' m/s',  '#4fc3f7'],
+    ['FUERZA-G',  gForce.toFixed(2)+' g',              gForce>5?'#ff4444':gForce>2.5?'#ffcc00':'#e0e0e0'],
+    ['LUNA (alt)',(moonDist*SCALE_KM).toFixed(0)+' km','#aaddff'],
+  ];
+  if (orb&&!moonOrb) {
+    rows.push(['APOAPSIS',(orb.apoapsis*SCALE_KM).toFixed(0)+' km','#ffcc00']);
+    rows.push(['PERIAPSIS',(orb.periapsis*SCALE_KM).toFixed(0)+' km',orb.periapsis>0?'#00d480':'#ff4444']);
+    rows.push(['EXCENTRIC.',orb.ecc.toFixed(4),'#8aaabb']);
+    rows.push(['PERIODO',(orb.period/60).toFixed(1)+' min','#8aaabb']);
+  }
+  if (moonOrb) {
+    rows.push(['-- ORBITA LUNAR --','','#aaddff']);
+    rows.push(['Ap.LUNAR',(moonOrb.apoapsis*SCALE_KM).toFixed(0)+' km','#aaddff']);
+    rows.push(['Pe.LUNAR',(moonOrb.periapsis*SCALE_KM).toFixed(0)+' km',moonOrb.periapsis>0?'#00d480':'#ff4444']);
+    rows.push(['Ecc.LUNAR',moonOrb.ecc.toFixed(4),'#8aaabb']);
+  }
+
+  const panH=40+rows.length*19+20;
+  rRect(10,10,238,panH,7); ctx.fillStyle='rgba(8,16,26,0.88)'; ctx.fill(); ctx.strokeStyle='#1e5f80'; ctx.lineWidth=1; ctx.stroke();
+  ctx.font='10px Courier New'; ctx.fillStyle='#1e5f80'; ctx.fillText('-- TELEMETRIA --',18,28);
+  let yy=46; ctx.font='11px Courier New';
+  for (const [lbl,val,col] of rows) {
+    if (lbl.startsWith('--')) { ctx.fillStyle=col; ctx.fillText(lbl,18,yy); }
+    else { ctx.fillStyle='#38768e'; ctx.fillText(lbl+':',18,yy); ctx.fillStyle=col; ctx.fillText(val,138,yy); }
+    yy+=19;
+  }
+
+  // Barra combustible grande
+  const barY=yy+6;
+  ctx.font='bold 11px Courier New';
+  ctx.fillStyle=fp>0.2?'#00d480':'#ff4444';
+  ctx.fillText('COMBUSTIBLE: '+fpN+'%',18,barY);
+  ctx.fillStyle='#060e16'; ctx.fillRect(18,barY+4,202,14);
+  ctx.fillStyle=fp>0.5?'#00d480':fp>0.2?'#ffcc00':'#ff3300';
+  ctx.fillRect(18,barY+4,202*fp,14);
+  if (rocket.thrustOn||rocket.retroOn) {
+    ctx.globalAlpha=0.4+0.3*Math.sin(Date.now()/80);
+    ctx.fillStyle='#ffffff'; ctx.fillRect(18,barY+4,202*fp,14); ctx.globalAlpha=1;
+  }
+  ctx.strokeStyle='#1e5f80'; ctx.lineWidth=1; ctx.strokeRect(18,barY+4,202,14);
+
+  // Boton REINICIAR (en canvas, grande, naranja brillante)
+  const btnY=panH+barY-yy+yy+32;
+  restartBtnY=btnY;
+  rRect(10,btnY,238,44,7);
+  ctx.fillStyle=rocket.crashed?'#cc1100':'#e63000'; ctx.fill();
+  ctx.strokeStyle='#ff6600'; ctx.lineWidth=2; ctx.stroke();
+  ctx.fillStyle='#ffffff'; ctx.font='bold 15px Courier New'; ctx.textAlign='center';
+  ctx.fillText('REINICIAR MISION',10+119,btnY+27); ctx.textAlign='left';
+
+  // Navball
+  drawNavball(W-90,90,68);
+
+  // Barra velocidad orbital
+  if (!rocket.landed&&!rocket.crashed&&alt>5&&alt<ATMO_H+60) {
+    const vOrb=Math.sqrt(GM/r)*SCALE_MS, pct=Math.min(1,(vTang*SCALE_MS)/vOrb);
+    rRect(10,H-105,238,48,5); ctx.fillStyle='rgba(8,16,26,0.75)'; ctx.fill(); ctx.strokeStyle='#1e5f80'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='#38768e'; ctx.font='10px Courier New'; ctx.fillText('V.ORBITAL: '+vOrb.toFixed(0)+' m/s',18,H-87);
+    ctx.fillStyle='#060e16'; ctx.fillRect(18,H-79,202,7);
+    ctx.fillStyle=pct>=1?'#00d480':'#4fc3f7'; ctx.fillRect(18,H-79,202*pct,7);
+    ctx.strokeStyle='#1e5f80'; ctx.lineWidth=0.5; ctx.strokeRect(18,H-79,202,7);
+  }
+
+  // Controles
+  rRect(10,H-50,380,38,5); ctx.fillStyle='rgba(8,16,26,0.75)'; ctx.fill(); ctx.strokeStyle='#1e5f80'; ctx.lineWidth=1; ctx.stroke();
+  ctx.fillStyle='#38768e'; ctx.font='11px Courier New'; ctx.fillText('W:Motor  S:Retro  A/D:Rotar  M:Mapa  Rueda:Zoom',18,H-28);
+
+  if (mapView) { ctx.fillStyle='rgba(255,200,50,0.9)'; ctx.font='bold 13px Courier New'; ctx.textAlign='center'; ctx.fillText('[ VISTA MAPA -- Rueda: zoom -- M: salir ]',W/2,22); ctx.textAlign='left'; }
+
+  if (missionWon) {
+    ctx.save(); rRect(W/2-220,H/2-55,440,90,10); ctx.fillStyle='rgba(0,18,10,0.88)'; ctx.fill(); ctx.strokeStyle='#00ff88'; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle='#00ff88'; ctx.font='bold 20px Courier New'; ctx.textAlign='center'; ctx.fillText('ORBITA ESTABLE ALCANZADA',W/2,H/2-12);
+    ctx.font='13px Courier New'; ctx.fillStyle='#b0bec5'; ctx.fillText('Apoapsis y periapsis sobre la atmosfera!',W/2,H/2+14); ctx.textAlign='left'; ctx.restore();
+  }
+  if (rocket.crashed) {
+    ctx.save(); rRect(W/2-185,H/2-48,370,84,10); ctx.fillStyle='rgba(20,0,0,0.88)'; ctx.fill(); ctx.strokeStyle='#ff4444'; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle='#ff4444'; ctx.font='bold 22px Courier New'; ctx.textAlign='center'; ctx.fillText('COHETE DESTRUIDO',W/2,H/2-10);
+    ctx.font='13px Courier New'; ctx.fillStyle='#b0bec5'; ctx.fillText('Usa el boton REINICIAR para volver a intentar',W/2,H/2+17); ctx.textAlign='left'; ctx.restore();
+  }
+  if (!rocket.crashed&&!rocket.landed&&rocket.fuel<=0) {
+    if (Math.sin(Date.now()/350)>0) { ctx.fillStyle='#ff3300'; ctx.font='bold 16px Courier New'; ctx.textAlign='center'; ctx.fillText('SIN COMBUSTIBLE',W/2,56); ctx.textAlign='left'; }
+  }
+}
+
+// -- Navball -----------------------------------------------------
+function drawNavball(cx,cy,r) {
+  ctx.save(); ctx.translate(cx,cy);
+  ctx.fillStyle='rgba(8,16,26,0.88)'; ctx.strokeStyle='#1e5f80'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle='rgba(79,195,247,0.2)'; ctx.lineWidth=0.5;
+  [0.4,0.7,1].forEach(f => { ctx.beginPath(); ctx.arc(0,0,r*f,0,Math.PI*2); ctx.stroke(); });
+  ctx.beginPath(); ctx.moveTo(-r,0); ctx.lineTo(r,0); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,-r); ctx.lineTo(0,r); ctx.stroke();
+  const spd2=getSpeed(rocket);
+  if (spd2>0.5) {
+    const va=Math.atan2(-rocket.vy,rocket.vx), vr=r*0.82, vpx=Math.cos(va)*vr, vpy=Math.sin(va)*vr;
+    ctx.strokeStyle='#00ff88'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(vpx,vpy); ctx.stroke();
+    ctx.beginPath(); ctx.arc(vpx,vpy,4,0,Math.PI*2); ctx.stroke();
+  }
+  const ha=Math.PI/2-rocket.angle, hr=r*0.82, hpx=Math.cos(ha)*hr, hpy=Math.sin(ha)*hr;
+  ctx.strokeStyle='#ff6b35'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(hpx,hpy); ctx.stroke();
+  ctx.fillStyle='#ff6b35'; ctx.beginPath(); ctx.arc(hpx,hpy,4,0,Math.PI*2); ctx.fill();
+  ctx.font='9px Courier New'; ctx.fillStyle='#38768e'; ctx.textAlign='center'; ctx.fillText('NAVBALL',0,r+13); ctx.textAlign='left'; ctx.restore();
+  ctx.fillStyle='#ff6b35'; ctx.font='9px Courier New'; ctx.fillText('Nave',cx+r+6,cy-8);
+  ctx.fillStyle='#00ff88'; ctx.fillText('Progrado',cx+r+6,cy+6);
+}
+
+// -- Rect redondeado ---------------------------------------------
+function rRect(x,y,w,h,r) {
+  ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r); ctx.lineTo(x+r,y+h);
+  ctx.arcTo(x,y+h,x,y+h-r,r); ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r); ctx.closePath();
+}
+
+// -- Loop --------------------------------------------------------
+function loop(ts) { const dt=Math.min((ts-prevTs)/1000,0.05); prevTs=ts; update(dt); render(); requestAnimationFrame(loop); }
+
+function restartGame() {
+  rocket=makeRocket(); cam={x:R_PLANET+2,y:0,zoom:1.5};
+  particles=[]; trail=[]; gForce=1; missionWon=false; mapView=false; mapZoom=1.0; moonAngle=0.9;
+}
+function startGame() {
+  document.getElementById('overlay').style.display='none';
+  gameStarted=true;
+  requestAnimationFrame(ts => { prevTs=ts; requestAnimationFrame(loop); });
+}
+</script>
+</body>
+</html>
