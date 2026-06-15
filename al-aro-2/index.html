@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>¡Al Aro! — Movimiento Proyectil</title>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:wght@300;400;600&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:       #050810;
+      --panel-bg: #090f1e;
+      --panel-bd: #1e3a5f;
+      --accent:   #3b82f6;
+      --gold:     #f59e0b;
+      --red:      #ef4444;
+      --green:    #22c55e;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+    }
+
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      background: var(--bg);
+      background-image: radial-gradient(ellipse at 50% -10%, #0f1e3a 0%, #050810 55%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+      font-family: 'Inter', sans-serif;
+      color: var(--text);
+    }
+
+    h1 {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: 22px;
+      color: var(--gold);
+      text-shadow: 0 0 30px rgba(245,158,11,0.45), 0 0 60px rgba(245,158,11,0.2);
+      margin-bottom: 4px;
+      text-align: center;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+    }
+
+    .formula-title {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 12px;
+      color: #60a5fa;
+      text-align: center;
+      margin-bottom: 16px;
+      opacity: 0.75;
+      letter-spacing: 0.5px;
+    }
+
+    .game-wrapper { display: flex; gap: 16px; align-items: flex-start; }
+
+    #gameCanvas {
+      border-radius: 14px;
+      box-shadow:
+        0 0 0 1px rgba(59,130,246,0.15),
+        0 0 40px rgba(59,130,246,0.1),
+        0 24px 60px rgba(0,0,0,0.6);
+      display: block;
+    }
+
+    /* ── PANEL ── */
+    .panel {
+      width: 256px;
+      background: var(--panel-bg);
+      border: 1px solid var(--panel-bd);
+      border-radius: 16px;
+      box-shadow:
+        0 0 0 1px rgba(59,130,246,0.08),
+        0 20px 50px rgba(0,0,0,0.5);
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .panel-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--accent);
+      text-align: center;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(59,130,246,0.18);
+    }
+
+    .row { display: flex; gap: 8px; }
+    .mbox {
+      flex: 1;
+      background: rgba(10,16,35,0.9);
+      border: 1px solid rgba(59,130,246,0.18);
+      border-radius: 10px;
+      padding: 8px 4px;
+      text-align: center;
+    }
+    .mbox-val {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--gold);
+      display: block;
+      line-height: 1.3;
+    }
+    .mbox-lbl {
+      font-size: 8px;
+      color: var(--muted);
+      display: block;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-top: 3px;
+    }
+
+    .stars {
+      text-align: center;
+      font-size: 20px;
+      letter-spacing: 8px;
+      color: var(--gold);
+      filter: drop-shadow(0 0 6px rgba(245,158,11,0.4));
+    }
+
+    .slider-group { display: flex; flex-direction: column; gap: 5px; }
+    .slider-head { display: flex; justify-content: space-between; align-items: center; }
+    .slider-lbl {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .slider-lbl .sym {
+      font-family: 'Roboto Mono', monospace;
+      color: var(--accent);
+      font-weight: 400;
+      font-size: 14px;
+    }
+    .slider-num {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+    .sn-blue   { color:#93c5fd; background:rgba(59,130,246,0.12); border:1px solid rgba(59,130,246,0.28); }
+    .sn-orange { color:#fdba74; background:rgba(249,115,22,0.12);  border:1px solid rgba(249,115,22,0.28); }
+
+    input[type="range"] {
+      width: 100%;
+      height: 5px;
+      -webkit-appearance: none;
+      outline: none;
+      cursor: pointer;
+      border-radius: 3px;
+      background: rgba(20,35,65,0.9);
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px; height: 18px;
+      background: var(--accent);
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(59,130,246,0.55);
+      transition: transform 0.12s, box-shadow 0.12s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      transform: scale(1.25);
+      box-shadow: 0 0 14px rgba(59,130,246,0.75);
+    }
+    input[type="range"]:disabled { opacity: 0.3; cursor: not-allowed; }
+
+    .divider { border:none; border-top:1px solid rgba(59,130,246,0.12); margin:2px 0; }
+
+    .physics-box {
+      background: rgba(8,14,30,0.85);
+      border: 1px solid rgba(59,130,246,0.18);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.9;
+    }
+    .physics-box .v { color: var(--gold); font-weight: 500; }
+    .physics-box .f { color: #60a5fa; font-size: 10px; display:block; margin-top:3px; }
+
+    .btn {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      padding: 10px 4px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+      text-transform: uppercase;
+      transition: all 0.15s ease;
+    }
+    .btn:active:not(:disabled) { transform: translateY(1px) scale(0.98); }
+    .btn:disabled { opacity: 0.28; cursor: not-allowed; }
+
+    .btn-launch {
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(34,197,94,0.28);
+    }
+    .btn-launch:hover:not(:disabled) {
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      box-shadow: 0 4px 20px rgba(34,197,94,0.42);
+    }
+    .btn-reset {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #1a0800;
+      box-shadow: 0 4px 14px rgba(245,158,11,0.22);
+    }
+    .btn-reset:hover { background: linear-gradient(135deg, #d97706, #b45309); }
+    .btn-hint {
+      background: rgba(59,130,246,0.1);
+      color: #93c5fd;
+      border: 1px solid rgba(59,130,246,0.28);
+    }
+    .btn-hint:hover { background: rgba(59,130,246,0.2); }
+    .btn-next {
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      color: #fff;
+      display: none;
+      box-shadow: 0 4px 18px rgba(245,158,11,0.28);
+    }
+    .btn-next:hover { background: linear-gradient(135deg, #d97706, #dc2626); }
+
+    .msg-box {
+      background: rgba(8,14,30,0.7);
+      border: 1px solid rgba(59,130,246,0.18);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 12px;
+      color: #60a5fa;
+      min-height: 54px;
+      line-height: 1.55;
+    }
+
+    .keys {
+      font-size: 10px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.9;
+    }
+    .key {
+      display: inline-block;
+      background: rgba(59,130,246,0.1);
+      border: 1px solid rgba(59,130,246,0.2);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 9px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🏀 AL ARO</h1>
+<div class="formula-title">x = v₀·cos(θ)·t &nbsp;|&nbsp; y = v₀·sin(θ)·t − ½g·t²</div>
+
+<div class="game-wrapper">
+  <canvas id="gameCanvas" width="580" height="430"></canvas>
+
+  <div class="panel">
+    <div class="panel-title">⚡ Lanzamiento</div>
+
+    <div class="row">
+      <div class="mbox">
+        <span class="mbox-val" id="elNivel">1</span>
+        <span class="mbox-lbl">Nivel</span>
+      </div>
+      <div class="mbox">
+        <span class="mbox-val" id="elScore">0</span>
+        <span class="mbox-lbl">Puntos</span>
+      </div>
+      <div class="mbox">
+        <span class="mbox-val" id="elIntentos">0</span>
+        <span class="mbox-lbl">Int.</span>
+      </div>
+    </div>
+
+    <div class="stars" id="elEstrellas">☆☆☆</div>
+
+    <hr class="divider">
+
+    <div class="slider-group">
+      <div class="slider-head">
+        <span class="slider-lbl"><span class="sym">θ</span> Ángulo</span>
+        <span class="slider-num sn-blue" id="lblAngulo">45°</span>
+      </div>
+      <input type="range" id="sldAngulo" min="5" max="85" value="45" step="1">
+    </div>
+
+    <div class="slider-group">
+      <div class="slider-head">
+        <span class="slider-lbl"><span class="sym">v₀</span> Velocidad</span>
+        <span class="slider-num sn-orange" id="lblV0">9.0 m/s</span>
+      </div>
+      <input type="range" id="sldV0" min="3" max="15" value="9" step="0.5">
+    </div>
+
+    <hr class="divider">
+
+    <div class="physics-box">
+      vₓ = <span class="v" id="fVx">6.4</span> m/s &nbsp;·&nbsp; vy = <span class="v" id="fVy">6.4</span> m/s<br>
+      g &nbsp;= <span class="v">9.8</span> m/s²
+      <span class="f">x = v₀·cos(θ)·t</span>
+      <span class="f">y = v₀·sin(θ)·t − ½g·t²</span>
+    </div>
+
+    <hr class="divider">
+
+    <button class="btn btn-launch" id="btnLanzar">▶ Lanzar [Space]</button>
+    <button class="btn btn-reset"  id="btnReset">↺ Reiniciar [R]</button>
+    <button class="btn btn-hint"   id="btnPista">💡 Pista [H]</button>
+    <button class="btn btn-next"   id="btnNext">➤ Siguiente [Enter]</button>
+
+    <div class="msg-box" id="elMsg">Ajustá θ y v₀, luego lanzá la pelota.</div>
+
+    <div class="keys">
+      <span class="key">↑↓</span> ángulo &nbsp;·&nbsp; <span class="key">←→</span> velocidad<br>
+      <span class="key">Space</span> lanzar &nbsp;·&nbsp; <span class="key">R</span> reset &nbsp;·&nbsp; <span class="key">H</span> pista
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// CONSTANTES
+// ═══════════════════════════════════════════════
+const G      = 9.8;
+const SCALE  = 60;
+const R_BALL = 11;
+
+const canvas = document.getElementById('gameCanvas');
+const ctx    = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+const GROUND_Y  = H - 75;
+const PLAYER_X  = 52;
+const HAND_DX   = 28;
+const HAND_DY   = 68;
+const BALL_X0   = PLAYER_X + HAND_DX;   // 80
+const BALL_Y0   = GROUND_Y - HAND_DY;   // mano del jugador
+
+// roundRect polyfill
+function rRect(x, y, w, h, r) {
+  const R = typeof r === 'number' ? r : (Array.isArray(r) ? r[0] : 4);
+  ctx.moveTo(x + R, y);
+  ctx.lineTo(x + w - R, y);
+  ctx.arcTo(x + w, y, x + w, y + R, R);
+  ctx.lineTo(x + w, y + h - R);
+  ctx.arcTo(x + w, y + h, x + w - R, y + h, R);
+  ctx.lineTo(x + R, y + h);
+  ctx.arcTo(x, y + h, x, y + h - R, R);
+  ctx.lineTo(x, y + R);
+  ctx.arcTo(x, y, x + R, y, R);
+  ctx.closePath();
+}
+
+// ═══════════════════════════════════════════════
+// NIVELES (ajustados al nuevo punto de lanzamiento)
+// ═══════════════════════════════════════════════
+const LEVELS = [
+  { id:1, label:'Tiro Libre',    hoopX:410, hoopY:192, hoopW:38,
+    desc: 'El aro está cerca. ¡Explorá ángulo y velocidad desde la mano!',
+    h1:  'Con θ≈40° la pelota llega bien a esta distancia.',
+    h2:  'Probá v₀ ≈ 9 m/s con θ ≈ 40°.' },
+  { id:2, label:'Más Distancia', hoopX:460, hoopY:182, hoopW:34,
+    desc: 'El aro está más lejos. Aumentá la velocidad.',
+    h1:  'Necesitás más velocidad. Probá v₀ ≈ 11 m/s.',
+    h2:  'Con θ≈42° y v₀≈11 m/s deberías llegar.' },
+  { id:3, label:'Aro Alto',      hoopX:438, hoopY:155, hoopW:32,
+    desc: 'El aro está elevado. Aumentá el arco del tiro.',
+    h1:  'Para aro alto, ángulos > 55° funcionan mejor.',
+    h2:  'Probá θ=58°, v₀≈10 m/s.' },
+  { id:4, label:'Largo Alcance', hoopX:502, hoopY:182, hoopW:30,
+    desc: '¡Máxima distancia! Encontrá el equilibrio perfecto.',
+    h1:  'θ≈42° maximiza el alcance horizontal.',
+    h2:  'v₀≈12 m/s con θ≈42° debería llegar.' },
+  { id:5, label:'Maestría',      hoopX:488, hoopY:158, hoopW:26,
+    desc: 'Aro mínimo. ¡Precisión quirúrgica!',
+    h1:  'Combiná ángulo 50-55° con v₀ alta.',
+    h2:  'θ=52°, v₀≈12 m/s como punto de partida.' },
+];
+
+// ═══════════════════════════════════════════════
+// ESTADO
+// ═══════════════════════════════════════════════
+const gs = {
+  phase: 'SETUP',
+  level: 0, score: 0, intentos: 0, pistas: 0,
+  angle: 45, v0: 9,
+  ball: null,
+  trail: [],
+  particles: [],
+  floaters: [],
+  shake: 0,
+};
+
+// ═══════════════════════════════════════════════
+// FÍSICA
+// ═══════════════════════════════════════════════
+function launch() {
+  if (gs.phase !== 'SETUP') return;
+  const rad = gs.angle * Math.PI / 180;
+  gs.ball = {
+    x: BALL_X0, y: BALL_Y0,
+    vx:  gs.v0 * Math.cos(rad) * SCALE,
+    vy: -gs.v0 * Math.sin(rad) * SCALE,
+    spin: 0,
+  };
+  gs.trail = [];
+  gs.phase = 'FLYING';
+  gs.intentos++;
+  updateUI();
+}
+
+function stepBall(dt) {
+  const b  = gs.ball;
+  const ay = G * SCALE;
+  b.vy += ay * dt;
+  b.x  += b.vx * dt;
+  b.y  += b.vy * dt;
+  const speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+  b.spin += speed * dt * 0.016;
+
+  const last = gs.trail[gs.trail.length - 1];
+  if (!last || Math.hypot(b.x - last.x, b.y - last.y) > 7) {
+    gs.trail.push({ x: b.x, y: b.y });
+    if (gs.trail.length > 65) gs.trail.shift();
+  }
+}
+
+function checkHoop() {
+  const b = gs.ball, lvl = LEVELS[gs.level];
+  if (b.vy > 0 && Math.abs(b.y - lvl.hoopY) < 22)
+    if (Math.abs(b.x - lvl.hoopX) < lvl.hoopW / 2 - R_BALL * 0.35)
+      return true;
+  return false;
+}
+
+function checkRimHit() {
+  const b = gs.ball, lvl = LEVELS[gs.level];
+  const hw  = lvl.hoopW / 2;
+  const rimL = lvl.hoopX - hw - 5;
+  const rimR = lvl.hoopX + hw + 5;
+  if (Math.hypot(b.x - rimL, b.y - lvl.hoopY) < R_BALL + 4) {
+    b.vx =  Math.abs(b.vx) * 0.6;
+    b.vy *= 0.7;
+    b.x  = rimL + R_BALL + 5;
+  }
+  if (Math.hypot(b.x - rimR, b.y - lvl.hoopY) < R_BALL + 4) {
+    b.vx = -Math.abs(b.vx) * 0.6;
+    b.vy *= 0.7;
+    b.x  = rimR - R_BALL - 5;
+  }
+}
+
+function oob() {
+  return gs.ball.y > H + 50 || gs.ball.x > W + 50 || gs.ball.x < -50;
+}
+
+function buildTrajectory() {
+  const rad = gs.angle * Math.PI / 180;
+  let x = BALL_X0, y = BALL_Y0;
+  let vx = gs.v0 * Math.cos(rad) * SCALE;
+  let vy = -gs.v0 * Math.sin(rad) * SCALE;
+  const pts = [];
+  const dt  = 1/60;
+  for (let f = 0; f < 700; f++) {
+    if (f % 3 === 0) pts.push({ x, y });
+    vy += G * SCALE * dt;
+    x  += vx * dt;
+    y  += vy * dt;
+    if (y > H || x > W || x < 0) break;
+  }
+  return pts;
+}
+
+// ═══════════════════════════════════════════════
+// PARTÍCULAS
+// ═══════════════════════════════════════════════
+function spawnParticles(cx, cy) {
+  const cols = ['#f59e0b','#22c55e','#ef4444','#60a5fa','#a78bfa','#f472b6','#ffffff','#fde68a'];
+  for (let i = 0; i < 55; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = 80 + Math.random() * 220;
+    gs.particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s - 120,
+      life: 1,
+      decay: 0.7 + Math.random() * 0.5,
+      color: cols[Math.floor(Math.random() * cols.length)],
+      sz: 3 + Math.random() * 5,
+      rot: Math.random() * Math.PI * 2,
+      rotV: (Math.random() - 0.5) * 8,
+    });
+  }
+}
+
+function spawnFloater(x, y, text, color) {
+  gs.floaters.push({ x, y, text, color, life: 1.6, vy: -70 });
+}
+
+function tickParticles(dt) {
+  gs.particles = gs.particles.filter(p => {
+    p.x   += p.vx * dt;
+    p.y   += p.vy * dt;
+    p.vy  += 320 * dt;
+    p.rot += p.rotV * dt;
+    p.life -= dt * p.decay;
+    return p.life > 0;
+  });
+  gs.floaters = gs.floaters.filter(f => {
+    f.y    += f.vy * dt;
+    f.life -= dt;
+    return f.life > 0;
+  });
+  if (gs.shake > 0) gs.shake = Math.max(0, gs.shake - dt * 3);
+}
+
+// ═══════════════════════════════════════════════
+// FONDO — ARENA NBA INDOOR
+// ═══════════════════════════════════════════════
+function drawBG() {
+  // Cielo de arena
+  const bgGrad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+  bgGrad.addColorStop(0,   '#03060e');
+  bgGrad.addColorStop(0.5, '#07101e');
+  bgGrad.addColorStop(1,   '#0c1a30');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, GROUND_Y);
+
+  // Conos de luz de estadio
+  [W*0.18, W*0.5, W*0.82].forEach(lx => {
+    const g = ctx.createLinearGradient(lx, 0, lx, GROUND_Y * 0.8);
+    g.addColorStop(0,   'rgba(210,225,255,0.07)');
+    g.addColorStop(0.7, 'rgba(180,200,255,0.02)');
+    g.addColorStop(1,   'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(lx, 0);
+    ctx.lineTo(lx - 75, GROUND_Y * 0.8);
+    ctx.lineTo(lx + 75, GROUND_Y * 0.8);
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  // Lamparas en el techo
+  [W*0.18, W*0.5, W*0.82].forEach(lx => {
+    ctx.fillStyle = '#d4e0ff';
+    ctx.beginPath();
+    ctx.ellipse(lx, 4, 18, 5, 0, 0, Math.PI*2);
+    ctx.fill();
+    const glow = ctx.createRadialGradient(lx, 4, 0, lx, 4, 35);
+    glow.addColorStop(0,   'rgba(200,215,255,0.18)');
+    glow.addColorStop(1,   'rgba(200,215,255,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(lx, 4, 35, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // Siluetas del público (3 filas)
+  const rows = [
+    { y: GROUND_Y - 85, h: 30, color: '#06101e', headCol: '#07121f', scale: 0.85 },
+    { y: GROUND_Y - 60, h: 28, color: '#07121f', headCol: '#09162a', scale: 1.0  },
+    { y: GROUND_Y - 38, h: 25, color: '#09162a', headCol: '#0b1a30', scale: 1.1  },
+  ];
+  rows.forEach(row => {
+    ctx.fillStyle = row.color;
+    ctx.fillRect(0, row.y, W, row.h);
+    ctx.fillStyle = row.headCol;
+    for (let i = 0; i < W; i += Math.round(14 * row.scale)) {
+      const seed = i * 13 + row.y;
+      const hh = 7 + ((seed * 17 + 5) % 8);
+      ctx.beginPath();
+      ctx.ellipse(i + 7, row.y + 2, 5 * row.scale, hh * row.scale, 0, 0, Math.PI*2);
+      ctx.fill();
+    }
+  });
+
+  // ── SUELO HARDWOOD ──
+  const floorGrad = ctx.createLinearGradient(0, GROUND_Y, 0, H);
+  floorGrad.addColorStop(0,   '#c88a30');
+  floorGrad.addColorStop(0.25,'#b87820');
+  floorGrad.addColorStop(0.8, '#8c5c14');
+  floorGrad.addColorStop(1,   '#6a4010');
+  ctx.fillStyle = floorGrad;
+  ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+
+  // Vetas de madera horizontales
+  ctx.strokeStyle = 'rgba(0,0,0,0.07)';
+  ctx.lineWidth = 1;
+  for (let y = GROUND_Y + 5; y < H; y += 9) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(W, y);
+    ctx.stroke();
+  }
+  // Vetas verticales tenues
+  ctx.strokeStyle = 'rgba(200,140,40,0.06)';
+  for (let x = 0; x < W; x += 38) {
+    ctx.beginPath();
+    ctx.moveTo(x, GROUND_Y);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  }
+
+  // Líneas de cancha (blancas)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255,255,255,0.38)';
+  ctx.lineWidth   = 2;
+  // Zona pintada
+  ctx.strokeRect(BALL_X0 - 10, GROUND_Y, 280, 22);
+  // Línea de tiro libre
+  ctx.beginPath();
+  ctx.moveTo(BALL_X0 + 250, GROUND_Y);
+  ctx.lineTo(BALL_X0 + 250, GROUND_Y + 22);
+  ctx.stroke();
+  ctx.restore();
+
+  // Línea de borde del suelo con brillo
+  const edgeGrad = ctx.createLinearGradient(0, GROUND_Y - 3, 0, GROUND_Y + 8);
+  edgeGrad.addColorStop(0, 'rgba(255,200,80,0.2)');
+  edgeGrad.addColorStop(1, 'rgba(255,200,80,0)');
+  ctx.fillStyle = edgeGrad;
+  ctx.fillRect(0, GROUND_Y - 3, W, 11);
+  ctx.strokeStyle = 'rgba(255,210,100,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, GROUND_Y); ctx.lineTo(W, GROUND_Y); ctx.stroke();
+}
+
+// ═══════════════════════════════════════════════
+// JUGADOR (smooth, sin pixelado)
+// ═══════════════════════════════════════════════
+function drawPlayer() {
+  const px = PLAYER_X;
+  const gy = GROUND_Y;
+  ctx.save();
+
+  // Sombra en el suelo
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(px + 8, gy + 7, 24, 6, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // ── Zapatillas ──
+  const shoeG = ctx.createLinearGradient(0, gy-7, 0, gy);
+  shoeG.addColorStop(0, '#1c1c2e'); shoeG.addColorStop(1, '#0d0d1a');
+  ctx.fillStyle = shoeG;
+  ctx.beginPath(); rRect(px-18, gy-7, 15, 8, [4,4,6,6]); ctx.fill();
+  ctx.beginPath(); rRect(px+3,  gy-7, 15, 8, [4,4,6,6]); ctx.fill();
+  // Suela blanca
+  ctx.fillStyle = '#e0e0f0';
+  ctx.beginPath(); rRect(px-19, gy-3, 17, 3, [0,0,4,4]); ctx.fill();
+  ctx.beginPath(); rRect(px+2,  gy-3, 17, 3, [0,0,4,4]); ctx.fill();
+  // Detalle rojo
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(px-17, gy-6, 11, 2);
+  ctx.fillRect(px+4,  gy-6, 11, 2);
+
+  // ── Medias ──
+  ctx.fillStyle = '#f0f0f0';
+  ctx.beginPath(); rRect(px-14, gy-18, 10, 12, 2); ctx.fill();
+  ctx.beginPath(); rRect(px+4,  gy-18, 10, 12, 2); ctx.fill();
+  ctx.fillStyle = '#ef4444';
+  ctx.fillRect(px-14, gy-19, 10, 3);
+  ctx.fillRect(px+4,  gy-19, 10, 3);
+
+  // ── Short (azul NBA) ──
+  const shortG = ctx.createLinearGradient(px-14, gy-44, px+14, gy-16);
+  shortG.addColorStop(0, '#2563eb'); shortG.addColorStop(1, '#1d4ed8');
+  ctx.fillStyle = shortG;
+  // piernas
+  ctx.beginPath();
+  ctx.moveTo(px-2, gy-41); ctx.bezierCurveTo(px-2, gy-30, px-8, gy-22, px-12, gy-18);
+  ctx.lineTo(px-4, gy-18); ctx.bezierCurveTo(px-2, gy-22, px+0, gy-30, px+0, gy-41);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(px+2, gy-41); ctx.bezierCurveTo(px+2, gy-30, px+8, gy-22, px+12, gy-18);
+  ctx.lineTo(px+4, gy-18); ctx.bezierCurveTo(px+2, gy-22, px+0, gy-30, px+0, gy-41);
+  ctx.closePath(); ctx.fill();
+  // cuerpo del short
+  const shortBodyG = ctx.createLinearGradient(px-14, 0, px+14, 0);
+  shortBodyG.addColorStop(0, '#1e3a8a'); shortBodyG.addColorStop(0.5, '#2563eb'); shortBodyG.addColorStop(1, '#1e3a8a');
+  ctx.fillStyle = shortBodyG;
+  ctx.beginPath(); rRect(px-14, gy-46, 28, 14, 3); ctx.fill();
+  // franja lateral
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.fillRect(px-14, gy-46, 28, 2);
+
+  // ── Camiseta (roja) ──
+  const jerseyG = ctx.createLinearGradient(px-14, gy-74, px+14, gy-42);
+  jerseyG.addColorStop(0, '#dc2626'); jerseyG.addColorStop(0.6, '#ef4444'); jerseyG.addColorStop(1, '#b91c1c');
+  ctx.fillStyle = jerseyG;
+  ctx.beginPath(); rRect(px-14, gy-74, 28, 32, [6,6,2,2]); ctx.fill();
+  // paneles laterales
+  ctx.fillStyle = 'rgba(0,0,0,0.1)';
+  ctx.fillRect(px-14, gy-74, 6, 32);
+  ctx.fillRect(px+8,  gy-74, 6, 32);
+  // número
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = 'bold 14px Inter, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('8', px, gy-52);
+  ctx.textAlign = 'left';
+  // cuello
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.arc(px, gy-74, 5, Math.PI, 0);
+  ctx.fill();
+
+  // ── Brazos (piel) ──
+  const skin = '#d4945a';
+  // Brazo izquierdo (relajado, abajo)
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.moveTo(px-10, gy-72);
+  ctx.bezierCurveTo(px-19, gy-62, px-21, gy-50, px-19, gy-41);
+  ctx.lineTo(px-14, gy-41);
+  ctx.bezierCurveTo(px-16, gy-50, px-14, gy-62, px-6, gy-68);
+  ctx.closePath(); ctx.fill();
+  // mano izquierda
+  ctx.beginPath(); ctx.arc(px-17, gy-40, 4, 0, Math.PI*2); ctx.fill();
+
+  // Brazo derecho (lanzando — extendido hacia arriba y adelante)
+  ctx.fillStyle = skin;
+  ctx.beginPath();
+  ctx.moveTo(px+10, gy-72);
+  ctx.bezierCurveTo(px+17, gy-74, px+24, gy-73, px+30, gy-68);
+  ctx.lineTo(px+28, gy-63);
+  ctx.bezierCurveTo(px+22, gy-68, px+15, gy-69, px+8, gy-67);
+  ctx.closePath(); ctx.fill();
+  // mano derecha (donde está la pelota)
+  ctx.beginPath(); ctx.arc(px + HAND_DX, BALL_Y0, 5, 0, Math.PI*2); ctx.fill();
+
+  // ── Cuello ──
+  ctx.fillStyle = skin;
+  ctx.beginPath(); rRect(px-5, gy-82, 10, 10, 3); ctx.fill();
+
+  // ── Cabeza ──
+  const headG = ctx.createRadialGradient(px-4, gy-90, 2, px, gy-86, 14);
+  headG.addColorStop(0, '#e0a870'); headG.addColorStop(1, skin);
+  ctx.fillStyle = headG;
+  ctx.beginPath(); ctx.arc(px, gy-86, 14, 0, Math.PI*2); ctx.fill();
+
+  // cabello
+  ctx.fillStyle = '#1a0800';
+  ctx.beginPath();
+  ctx.arc(px, gy-90, 14, Math.PI * 1.05, Math.PI * 1.95);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(px, gy-90, 12, Math.PI * 0.9, Math.PI * 2.1);
+  ctx.fill();
+
+  // ojos blancos
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.ellipse(px-4, gy-85, 2.8, 2.2, 0, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(px+4, gy-85, 2.8, 2.2, 0, 0, Math.PI*2); ctx.fill();
+  // pupila
+  ctx.fillStyle = '#1a0800';
+  ctx.beginPath(); ctx.arc(px-3.5, gy-85, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(px+4.5, gy-85, 1.5, 0, Math.PI*2); ctx.fill();
+
+  // cejas
+  ctx.strokeStyle = '#3d1a00';
+  ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(px-6.5, gy-89); ctx.lineTo(px-1.5, gy-88); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(px+1.5, gy-88); ctx.lineTo(px+6.5, gy-89); ctx.stroke();
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// ARO + TABLERO (glass + metal)
+// ═══════════════════════════════════════════════
+function drawHoop() {
+  const { hoopX: hx, hoopY: hy, hoopW } = LEVELS[gs.level];
+  const hw  = hoopW / 2;
+  const rimT = 6;
+  const bx   = hx + hw + rimT + 14;
+  const bW   = 14;
+  const bH   = 85;
+  const by   = hy - 52;
+
+  // ── Poste metálico ──
+  const poleG = ctx.createLinearGradient(bx + bW + 2, 0, bx + bW + 10, 0);
+  poleG.addColorStop(0, '#3d4a56'); poleG.addColorStop(0.4, '#6b7a88'); poleG.addColorStop(1, '#2a333d');
+  ctx.fillStyle = poleG;
+  ctx.beginPath(); rRect(bx + bW + 2, by, 8, GROUND_Y - by + 30, 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.fillRect(bx + bW + 3, by, 2, GROUND_Y - by + 30);
+  // base
+  const baseG = ctx.createLinearGradient(0, GROUND_Y+20, 0, GROUND_Y+34);
+  baseG.addColorStop(0, '#3d4a56'); baseG.addColorStop(1, '#1e2530');
+  ctx.fillStyle = baseG;
+  ctx.beginPath(); rRect(bx + bW, GROUND_Y + 20, 14, 12, 4); ctx.fill();
+
+  // brazo de soporte
+  ctx.fillStyle = '#4a5568';
+  ctx.beginPath(); rRect(hx + hw + rimT, hy - 2, bx - (hx + hw + rimT), 5, 2); ctx.fill();
+
+  // ── Tablero de vidrio ──
+  // vidrio tintado
+  ctx.fillStyle = 'rgba(140,185,255,0.08)';
+  ctx.beginPath(); rRect(bx, by, bW, bH, 3); ctx.fill();
+  // borde azul
+  ctx.strokeStyle = 'rgba(147,197,253,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); rRect(bx, by, bW, bH, 3); ctx.stroke();
+  // cuadrado objetivo rojo
+  ctx.strokeStyle = 'rgba(239,68,68,0.85)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); rRect(bx + 2, hy - 13, bW - 4, 26, 1); ctx.stroke();
+  // reflejo
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(bx + 1, by + 1, 3, bH - 2);
+
+  // ── Sombra del aro en el suelo (proyección) ──
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.beginPath();
+  ctx.ellipse(hx, GROUND_Y + 3, hoopW/2 + rimT + 3, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // ── Aro (naranja metálico 3D) ──
+  const rimG = ctx.createLinearGradient(0, hy - rimT, 0, hy + rimT);
+  rimG.addColorStop(0, '#ff6020'); rimG.addColorStop(0.45, '#ff4400'); rimG.addColorStop(1, '#aa2000');
+  ctx.fillStyle = rimG;
+  ctx.beginPath(); rRect(hx - hw - rimT, hy - rimT, hoopW + rimT*2, rimT*2, rimT * 0.4); ctx.fill();
+  // brillo superior
+  ctx.fillStyle = 'rgba(255,160,80,0.45)';
+  ctx.beginPath(); rRect(hx - hw - rimT + 1, hy - rimT + 1, hoopW + rimT*2 - 2, 3, 1); ctx.fill();
+  // sombra inferior
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(hx - hw - rimT, hy + rimT - 2, hoopW + rimT*2, 3);
+  // contorno
+  ctx.strokeStyle = 'rgba(80,15,0,0.45)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); rRect(hx - hw - rimT, hy - rimT, hoopW + rimT*2, rimT*2, rimT * 0.4); ctx.stroke();
+
+  // ── Red (bezier curves) ──
+  const netY0   = hy + rimT;
+  const netYBot = hy + 34;
+  const netLX   = hx - hw + 2;
+  const netRX   = hx + hw - 2;
+  const segments = 5;
+  ctx.strokeStyle = 'rgba(235,225,200,0.72)';
+  ctx.lineWidth   = 1.1;
+  // líneas verticales de la red
+  for (let i = 0; i <= segments; i++) {
+    const t  = i / segments;
+    const sx = netLX + t * (netRX - netLX);
+    const bx2 = hx + (sx - hx) * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(sx, netY0);
+    ctx.bezierCurveTo(sx, netY0 + 12, bx2, netYBot - 10, bx2, netYBot);
+    ctx.stroke();
+  }
+  // bandas horizontales de la red
+  [0.28, 0.56, 0.85].forEach(t => {
+    const ny     = netY0 + t * (netYBot - netY0);
+    const spread = 1 - t * 0.4;
+    const lx2    = hx - hw * spread + 2;
+    const rx2    = hx + hw * spread - 2;
+    ctx.beginPath();
+    ctx.moveTo(lx2, ny);
+    ctx.lineTo(rx2, ny);
+    ctx.stroke();
+  });
+}
+
+// ═══════════════════════════════════════════════
+// PELOTA (gradient sphere suave)
+// ═══════════════════════════════════════════════
+function drawBallAt(x, y, spin) {
+  ctx.save();
+
+  // Sombra elíptica
+  ctx.fillStyle = 'rgba(0,0,0,0.22)';
+  ctx.beginPath();
+  ctx.ellipse(x + 3, y + R_BALL * 0.7 + 5, R_BALL * 0.9, R_BALL * 0.3, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.translate(x, y);
+  ctx.rotate(spin);
+
+  // Cuerpo con gradiente radial
+  const ballG = ctx.createRadialGradient(-R_BALL*0.32, -R_BALL*0.32, 1, 0, 0, R_BALL);
+  ballG.addColorStop(0,   '#ff9a3c');
+  ballG.addColorStop(0.38,'#e86820');
+  ballG.addColorStop(0.78,'#c04408');
+  ballG.addColorStop(1,   '#7a2000');
+  ctx.fillStyle = ballG;
+  ctx.beginPath(); ctx.arc(0, 0, R_BALL, 0, Math.PI*2); ctx.fill();
+
+  // Costuras
+  ctx.strokeStyle = 'rgba(70,18,0,0.65)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(0, 0, R_BALL * 0.93, 0, Math.PI); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, R_BALL * 0.93, Math.PI, Math.PI*2); ctx.stroke();
+  ctx.beginPath(); ctx.arc( R_BALL*0.28, 0, R_BALL * 0.82, -Math.PI*0.52, Math.PI*0.52); ctx.stroke();
+  ctx.beginPath(); ctx.arc(-R_BALL*0.28, 0, R_BALL * 0.82,  Math.PI*0.48, Math.PI*1.52); ctx.stroke();
+
+  // Highlight (brillo superior izquierdo)
+  const hlG = ctx.createRadialGradient(-R_BALL*0.38, -R_BALL*0.38, 0, -R_BALL*0.22, -R_BALL*0.22, R_BALL*0.52);
+  hlG.addColorStop(0, 'rgba(255,205,130,0.65)');
+  hlG.addColorStop(1, 'rgba(255,140,50,0)');
+  ctx.fillStyle = hlG;
+  ctx.beginPath(); ctx.arc(0, 0, R_BALL, 0, Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// FLECHA DE DIRECCIÓN
+// ═══════════════════════════════════════════════
+function drawArrow() {
+  const rad = gs.angle * Math.PI / 180;
+  const len = 32 + (gs.v0 - 3) / 12 * 62;
+  const ex = BALL_X0 + Math.cos(rad) * len;
+  const ey = BALL_Y0 - Math.sin(rad) * len;
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(245,158,11,0.55)';
+  ctx.shadowBlur  = 9;
+  ctx.strokeStyle = '#f59e0b';
+  ctx.lineWidth   = 2.5;
+  ctx.lineCap     = 'round';
+  ctx.beginPath();
+  ctx.moveTo(BALL_X0, BALL_Y0);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Punta de flecha
+  const ha = Math.atan2(ey - BALL_Y0, ex - BALL_X0);
+  ctx.fillStyle = '#f59e0b';
+  ctx.beginPath();
+  ctx.moveTo(ex, ey);
+  ctx.lineTo(ex - 13*Math.cos(ha-0.4), ey - 13*Math.sin(ha-0.4));
+  ctx.lineTo(ex - 13*Math.cos(ha+0.4), ey - 13*Math.sin(ha+0.4));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// TRAYECTORIA PREDICTIVA
+// ═══════════════════════════════════════════════
+function drawTrajectory() {
+  if (gs.phase !== 'SETUP') return;
+  const pts = buildTrajectory();
+  if (pts.length < 2) return;
+
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.lineCap   = 'round';
+  ctx.setLineDash([6, 9]);
+  for (let i = 1; i < pts.length; i++) {
+    const t = i / pts.length;
+    ctx.strokeStyle = `rgba(245,158,11,${0.08 + t * 0.3})`;
+    ctx.beginPath();
+    ctx.moveTo(pts[i-1].x, pts[i-1].y);
+    ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// TRAIL DE VUELO
+// ═══════════════════════════════════════════════
+function drawTrail() {
+  for (let i = 0; i < gs.trail.length; i++) {
+    const t = i / gs.trail.length;
+    const r = R_BALL * 0.65 * t;
+    const alpha = t * 0.4;
+    ctx.fillStyle = `rgba(232,104,32,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(gs.trail[i].x, gs.trail[i].y, r, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// ═══════════════════════════════════════════════
+// PARTÍCULAS Y FLOATERS
+// ═══════════════════════════════════════════════
+function drawParticles() {
+  gs.particles.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur  = 4;
+    ctx.beginPath();
+    ctx.arc(0, 0, p.sz * 0.5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  gs.floaters.forEach(f => {
+    ctx.save();
+    const alpha = Math.min(1, f.life);
+    ctx.globalAlpha = alpha;
+    ctx.font = 'bold 18px Orbitron, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle   = f.color;
+    ctx.shadowColor = f.color;
+    ctx.shadowBlur  = 14;
+    ctx.fillText(f.text, f.x, f.y);
+    ctx.restore();
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ═══════════════════════════════════════════════
+// HUD
+// ═══════════════════════════════════════════════
+function drawHUD() {
+  const lvl = LEVELS[gs.level];
+
+  // Badge de nivel (top left)
+  ctx.fillStyle = 'rgba(5,8,16,0.82)';
+  ctx.beginPath(); rRect(8, 8, 200, 28, 8); ctx.fill();
+  ctx.strokeStyle = 'rgba(59,130,246,0.38)';
+  ctx.lineWidth   = 1;
+  ctx.beginPath(); rRect(8, 8, 200, 28, 8); ctx.stroke();
+  ctx.font      = '13px Inter, sans-serif';
+  ctx.fillStyle = '#60a5fa';
+  ctx.fillText(`Nv${lvl.id}: ${lvl.label}`, 16, 26);
+
+  // Info de distancia (bottom left)
+  const dxM = ((lvl.hoopX - BALL_X0) / SCALE).toFixed(1);
+  const dyM = ((BALL_Y0 - lvl.hoopY) / SCALE).toFixed(1);
+  ctx.fillStyle = 'rgba(5,8,16,0.78)';
+  ctx.beginPath(); rRect(8, H - 32, 240, 24, 6); ctx.fill();
+  ctx.font      = '11px Roboto Mono, monospace';
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText(`Dist: ${dxM} m  |  Δh aro: ${dyM} m`, 14, H - 14);
+
+  // ¡ENCESTÓ! animado
+  if (gs.phase === 'WIN') {
+    const s = 1 + 0.06 * Math.sin(Date.now() / 140);
+    ctx.save();
+    ctx.translate(W/2, 78);
+    ctx.scale(s, s);
+    ctx.font        = 'bold 20px Orbitron, sans-serif';
+    ctx.textAlign   = 'center';
+    ctx.shadowColor = '#f59e0b';
+    ctx.shadowBlur  = 22;
+    ctx.fillStyle   = '#f59e0b';
+    ctx.fillText('¡ENCESTÓ!', 0, 0);
+    ctx.restore();
+  }
+}
+
+// ═══════════════════════════════════════════════
+// RENDER PRINCIPAL
+// ═══════════════════════════════════════════════
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  const shakeX = gs.shake > 0 ? (Math.random()-0.5) * 7 * gs.shake : 0;
+  const shakeY = gs.shake > 0 ? (Math.random()-0.5) * 4 * gs.shake : 0;
+  ctx.save();
+  if (gs.shake > 0) ctx.translate(shakeX, shakeY);
+
+  drawBG();
+  drawTrajectory();
+  drawHoop();
+  drawTrail();
+  drawPlayer();
+
+  if (gs.phase === 'SETUP') {
+    // La pelota está en la mano del jugador
+    drawBallAt(BALL_X0, BALL_Y0, 0);
+    drawArrow();
+  } else if (gs.ball) {
+    drawBallAt(gs.ball.x, gs.ball.y, gs.ball.spin);
+  }
+
+  drawParticles();
+  drawHUD();
+  ctx.restore();
+}
+
+// ═══════════════════════════════════════════════
+// LÓGICA DE JUEGO
+// ═══════════════════════════════════════════════
+function calcStars() {
+  if (gs.intentos <= 1) return 3;
+  if (gs.intentos <= 3) return 2;
+  return 1;
+}
+
+function onWin() {
+  gs.phase = 'WIN';
+  const stars  = calcStars();
+  const puntos = stars * 100 + Math.max(0, 50 - gs.intentos * 8);
+  gs.score += puntos;
+  spawnParticles(LEVELS[gs.level].hoopX, LEVELS[gs.level].hoopY);
+  spawnFloater(LEVELS[gs.level].hoopX, LEVELS[gs.level].hoopY - 25, `+${puntos}`, '#f59e0b');
+  gs.shake = 1;
+  const msgs = [
+    `¡Primer intento! v₀=${gs.v0} m/s, θ=${gs.angle}° ★★★ +${puntos}pts`,
+    `¡Buen tiro! Ajustaste bien la física. ★★ +${puntos}pts`,
+    `¡Lo lograste! La práctica hace al maestro. ★ +${puntos}pts`,
+  ];
+  setMsg(msgs[Math.min(gs.intentos - 1, 2)], '#f59e0b');
+  document.getElementById('elEstrellas').textContent = '★'.repeat(stars) + '☆'.repeat(3-stars);
+  const isLast = gs.level >= LEVELS.length - 1;
+  document.getElementById('btnNext').style.display = isLast ? 'none' : 'block';
+  updateUI();
+}
+
+function onMiss() {
+  gs.phase = 'SETUP'; gs.ball = null;
+  const hints = [LEVELS[gs.level].h1, LEVELS[gs.level].h2];
+  if (gs.pistas > 0 && gs.pistas <= 2) {
+    setMsg('💡 ' + hints[gs.pistas - 1], '#f59e0b');
+  } else if (gs.intentos === 1) {
+    setMsg('¡Casi! Ajustá el ángulo o la velocidad inicial.', '#f97316');
+  } else {
+    setMsg(`Intento #${gs.intentos} — v₀=${gs.v0.toFixed(1)} m/s, θ=${gs.angle}°`, '#f97316');
+  }
+  updateUI();
+}
+
+function resetLevel() {
+  gs.phase = 'SETUP'; gs.ball = null; gs.trail = []; gs.particles = []; gs.floaters = [];
+  document.getElementById('btnNext').style.display = 'none';
+  setMsg(LEVELS[gs.level].desc, '#60a5fa');
+  document.getElementById('elEstrellas').textContent = '★'.repeat(calcStars()) + '☆'.repeat(3-calcStars());
+  updateUI();
+}
+
+function nextLevel() {
+  if (gs.level < LEVELS.length - 1) {
+    gs.level++; gs.intentos = 0; gs.pistas = 0;
+    gs.trail = []; gs.particles = []; gs.floaters = []; gs.ball = null; gs.phase = 'SETUP';
+    document.getElementById('elEstrellas').textContent = '☆☆☆';
+    document.getElementById('btnNext').style.display = 'none';
+    setMsg(LEVELS[gs.level].desc, '#60a5fa');
+    updateUI();
+  }
+}
+
+function showHint() {
+  gs.pistas = Math.min(gs.pistas + 1, 2);
+  setMsg('💡 ' + [LEVELS[gs.level].h1, LEVELS[gs.level].h2][gs.pistas-1], '#f59e0b');
+}
+
+// ═══════════════════════════════════════════════
+// UI
+// ═══════════════════════════════════════════════
+function setMsg(txt, color = '#60a5fa') {
+  const el = document.getElementById('elMsg');
+  el.textContent = txt; el.style.color = color;
+}
+
+function updateSliderFill(id, val, min, max, c1) {
+  const pct = ((val - min) / (max - min) * 100).toFixed(1);
+  document.getElementById(id).style.background =
+    `linear-gradient(90deg, ${c1} ${pct}%, rgba(20,35,65,0.9) ${pct}%)`;
+}
+
+function updateUI() {
+  document.getElementById('elNivel').textContent    = LEVELS[gs.level].id;
+  document.getElementById('elScore').textContent    = gs.score;
+  document.getElementById('elIntentos').textContent = gs.intentos;
+  document.getElementById('lblAngulo').textContent  = gs.angle + '°';
+  document.getElementById('lblV0').textContent      = gs.v0.toFixed(1) + ' m/s';
+  const rad = gs.angle * Math.PI / 180;
+  document.getElementById('fVx').textContent = (gs.v0 * Math.cos(rad)).toFixed(1);
+  document.getElementById('fVy').textContent = (gs.v0 * Math.sin(rad)).toFixed(1);
+  updateSliderFill('sldAngulo', gs.angle, 5, 85, '#3b82f6');
+  updateSliderFill('sldV0',    gs.v0,    3, 15, '#f97316');
+  const isSetup = gs.phase === 'SETUP';
+  document.getElementById('sldAngulo').disabled = !isSetup;
+  document.getElementById('sldV0').disabled     = !isSetup;
+  document.getElementById('btnLanzar').disabled = !isSetup;
+}
+
+// ═══════════════════════════════════════════════
+// GAME LOOP (dt-based)
+// ═══════════════════════════════════════════════
+let lastTime = null;
+function loop(ts) {
+  if (lastTime === null) lastTime = ts;
+  const dt = Math.min((ts - lastTime) / 1000, 0.05);
+  lastTime = ts;
+
+  if (gs.phase === 'FLYING' && gs.ball) {
+    stepBall(dt);
+    checkRimHit();
+    tickParticles(dt);
+    if      (checkHoop()) onWin();
+    else if (oob())       onMiss();
+  } else {
+    tickParticles(dt);
+  }
+
+  draw();
+  requestAnimationFrame(loop);
+}
+
+// ═══════════════════════════════════════════════
+// EVENTOS
+// ═══════════════════════════════════════════════
+document.getElementById('sldAngulo').addEventListener('input', e => {
+  gs.angle = parseInt(e.target.value); updateUI();
+});
+document.getElementById('sldV0').addEventListener('input', e => {
+  gs.v0 = parseFloat(e.target.value); updateUI();
+});
+document.getElementById('btnLanzar').addEventListener('click', launch);
+document.getElementById('btnReset' ).addEventListener('click', resetLevel);
+document.getElementById('btnPista' ).addEventListener('click', showHint);
+document.getElementById('btnNext'  ).addEventListener('click', nextLevel);
+
+document.addEventListener('keydown', e => {
+  switch (e.code) {
+    case 'Space': e.preventDefault(); launch(); break;
+    case 'KeyR':  resetLevel(); break;
+    case 'KeyH':  showHint();   break;
+    case 'Enter': nextLevel();  break;
+    case 'ArrowUp': case 'ArrowDown': {
+      if (gs.phase !== 'SETUP') break;
+      gs.angle = Math.min(85, Math.max(5, gs.angle + (e.code === 'ArrowUp' ? 5 : -5)));
+      document.getElementById('sldAngulo').value = gs.angle;
+      updateUI(); break;
+    }
+    case 'ArrowRight': case 'ArrowLeft': {
+      if (gs.phase !== 'SETUP') break;
+      gs.v0 = Math.round((Math.min(15, Math.max(3, gs.v0 + (e.code === 'ArrowRight' ? 0.5 : -0.5)))) * 2) / 2;
+      document.getElementById('sldV0').value = gs.v0;
+      updateUI(); break;
+    }
+  }
+});
+
+// ═══════════════════════════════════════════════
+// INICIO
+// ═══════════════════════════════════════════════
+setMsg(LEVELS[0].desc, '#60a5fa');
+updateUI();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
