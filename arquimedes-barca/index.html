@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Arquímedes: la barca del río</title>
+<style>
+  :root {
+    --jungle-dark: #1f5c3a;
+    --jungle-mid: #2f7a4a;
+    --sand: #f4ecd8;
+    --sand-card: #fffaf0;
+    --wood: #6b431f;
+    --water: #2f7f9e;
+    --ink: #24321f;
+    --ok: #2f9e44;
+    --warning: #d9a520;
+    --danger: #d64545;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background: linear-gradient(180deg, #cfe8d8, var(--sand));
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    gap: 14px;
+  }
+
+  header { text-align: center; max-width: 700px; }
+  header h1 { margin: 0 0 4px; font-size: 1.5rem; color: var(--jungle-dark); }
+  header p { margin: 0; font-size: 0.9rem; opacity: 0.75; }
+
+  main {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 1300px;
+  }
+
+  #canvas-wrapper {
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    line-height: 0;
+  }
+
+  #game-container canvas { display: block; max-width: 100%; height: auto; }
+
+  aside.ui-panel {
+    width: 300px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .card {
+    background: var(--sand-card);
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+  }
+
+  .card h2 {
+    margin: 0 0 10px;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--wood);
+  }
+
+  #volume-slider {
+    width: 100%;
+    accent-color: var(--jungle-mid);
+  }
+
+  .slider-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+
+  #volume-value {
+    font-weight: 700;
+    color: var(--jungle-dark);
+    font-size: 1.1rem;
+  }
+
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    row-gap: 7px;
+    column-gap: 10px;
+    font-size: 0.85rem;
+  }
+
+  .metrics-grid dt { color: #5c6b52; }
+  .metrics-grid dd { margin: 0; font-weight: 600; text-align: right; }
+
+  .status-badge {
+    display: block;
+    text-align: center;
+    font-weight: 700;
+    padding: 10px;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    background: #eef6ea;
+  }
+  .status-badge.status-ok { color: var(--ok); }
+  .status-badge.status-warning { color: var(--warning); }
+  .status-badge.status-danger { color: var(--danger); }
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-weight: 600;
+  }
+
+  #reset-button {
+    width: 100%;
+    background: var(--jungle-mid);
+    color: white;
+  }
+  #reset-button:hover { background: var(--jungle-dark); }
+
+  #sunk-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8, 22, 30, 0.72);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  #sunk-overlay.visible { opacity: 1; pointer-events: auto; }
+
+  /* Tarjeta sólida para el mensaje: así queda siempre legible sin
+     importar qué esté animando en la escena de fondo (agua, barca). */
+  .sunk-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    max-width: 340px;
+    padding: 22px 26px;
+    border-radius: 16px;
+    background: rgba(10, 20, 28, 0.94);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    color: white;
+    text-align: center;
+  }
+  .sunk-card h2 { margin: 0; font-size: 1.3rem; }
+  #sunk-reset-button { background: var(--danger); color: white; }
+  #sunk-reset-button:hover { background: #b93333; }
+
+  footer { font-size: 0.75rem; opacity: 0.6; text-align: center; max-width: 600px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>La barca del río — Principio de Arquímedes</h1>
+  <p>Solo podés cambiar el volumen de la barca. Encontrá el punto de equilibrio y descubrí dónde deja de flotar.</p>
+</header>
+
+<main>
+  <div id="canvas-wrapper">
+    <div id="game-container"></div>
+    <div id="sunk-overlay">
+      <div class="sunk-card">
+        <h2>🌊 La barca se hundió</h2>
+        <button id="sunk-reset-button">Reiniciar simulación</button>
+      </div>
+    </div>
+  </div>
+
+  <aside class="ui-panel">
+    <div class="card">
+      <h2>Volumen de la barca</h2>
+      <div class="slider-row">
+        <span>Volumen</span>
+        <span id="volume-value">350.000 cm³</span>
+      </div>
+      <input type="range" id="volume-slider" />
+    </div>
+
+    <div class="card">
+      <h2>Estado</h2>
+      <span class="status-badge" id="status-badge">🟢 Flotando correctamente</span>
+    </div>
+
+    <div class="card">
+      <h2>Métricas en vivo</h2>
+      <dl class="metrics-grid">
+        <dt>Masa total</dt><dd id="metric-mass">—</dd>
+        <dt>Peso total</dt><dd id="metric-weight">—</dd>
+        <dt>Volumen de la barca</dt><dd id="metric-boat-volume">—</dd>
+        <dt>Volumen desplazado</dt><dd id="metric-displaced-volume">—</dd>
+        <dt>Empuje</dt><dd id="metric-buoyant-force">—</dd>
+        <dt>% de inmersión</dt><dd id="metric-immersion">—</dd>
+        <dt>Densidad sistema / agua</dt><dd id="metric-density">—</dd>
+        <dt>Margen antes de hundirse</dt><dd id="metric-margin">—</dd>
+      </dl>
+    </div>
+
+    <button id="reset-button">Reiniciar simulación</button>
+  </aside>
+</main>
+
+<footer>
+  Empuje = ρ_agua · g · V_desplazado — mientras la barca flota, el empuje siempre iguala al peso total; lo que cambia es cuánto volumen hace falta sumergir para lograrlo.
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+
+<!--
+  Scripts clásicos (no type="module") a propósito: así el juego abre
+  con doble clic sobre este archivo (file://) sin bloqueos de CORS.
+  El orden importa — cada archivo espera que los anteriores ya hayan
+  colgado sus símbolos de window.Arq.
+-->
+<script>window.Arq = {};</script>
+<script src="src/utils/constants.js"></script>
+<script src="src/utils/EventBus.js"></script>
+<script src="src/physics/BuoyancyPhysics.js"></script>
+<script src="src/characters/Monkey.js"></script>
+<script src="src/characters/Passenger.js"></script>
+<script src="src/characters/Dog.js"></script>
+<script src="src/scenario/Jungle.js"></script>
+<script src="src/water/Water.js"></script>
+<script src="src/boat/Boat.js"></script>
+<script src="src/ui/ControlPanel.js"></script>
+<script src="src/ui/MetricsPanel.js"></script>
+<script src="src/ui/StatusIndicator.js"></script>
+<script src="src/ui/ResetButton.js"></script>
+<script src="src/audio/AudioManager.js"></script>
+<script src="src/scenes/RiverScene.js"></script>
+<script src="src/main.js"></script>
+</body>
+</html>
