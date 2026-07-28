@@ -1,0 +1,2172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<title>Alhazen y la cámara oscura</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: #1F1610;
+    overflow: hidden;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+  }
+  canvas { display: block; }
+
+  #game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  #game-canvas, #debug-canvas {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 1280px;
+    height: 720px;
+    transform: translate(-50%, -50%) scale(1);
+    transform-origin: center center;
+  }
+  #game-canvas { z-index: 1; touch-action: none; }
+  #debug-canvas { z-index: 2; display: none; pointer-events: none; }
+
+  #hud {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+             max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  }
+  #hud > * { pointer-events: auto; }
+
+  .game-title {
+    position: absolute;
+    top: max(10px, env(safe-area-inset-top));
+    left: 50%;
+    transform: translateX(-50%);
+    margin: 0;
+    padding: 6px 22px;
+    font-family: Georgia, 'Palatino Linotype', serif;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    color: #FFD700;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55), 0 0 18px rgba(244, 185, 66, 0.35);
+    background: rgba(31, 22, 16, 0.55);
+    border: 1px solid rgba(244, 185, 66, 0.45);
+    border-radius: 10px;
+    pointer-events: none;
+    white-space: nowrap;
+    z-index: 6;
+  }
+  @media (max-width: 600px) {
+    .game-title {
+      font-size: 14px;
+      padding: 5px 12px;
+      max-width: 60vw;
+      white-space: normal;
+      text-align: center;
+      line-height: 1.25;
+    }
+  }
+
+  .hud-buttons {
+    display: flex;
+    gap: 8px;
+    align-self: flex-start;
+  }
+  .hud-buttons button {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(244, 185, 66, 0.6);
+    background: rgba(58, 42, 30, 0.88);
+    color: #F2E4C9;
+    font-size: 14px;
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+  .hud-buttons button:hover, .hud-buttons button:focus-visible {
+    background: rgba(74, 54, 38, 0.95);
+  }
+  .btn-mute { font-size: 18px; padding: 8px 12px; }
+
+  /* ===== MetricsPanel (Interface) — inlineado tal cual METRICS_PANEL_CSS ===== */
+  .metrics-panel {
+    position: relative;
+    pointer-events: auto;
+    min-width: 220px;
+    max-width: 280px;
+    background: rgba(58, 42, 30, 0.88);
+    border: 1px solid rgba(244, 185, 66, 0.5);
+    border-radius: 10px;
+    padding: 10px 14px 12px;
+    color: #F2E4C9;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    font-size: 13px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+
+  .metrics-panel__toggle {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    color: #F4B942;
+    font-size: 16px;
+    cursor: pointer;
+    transform: translate(6px, -6px);
+  }
+
+  .metrics-panel__summary {
+    display: none;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    padding-right: 28px;
+  }
+  .metrics-panel__summary .metric-label { color: #D4A853; }
+  .metrics-panel__summary .metric-value {
+    font-size: 16px;
+    font-weight: 700;
+    color: #FFD700;
+  }
+
+  .metrics-panel__detail {
+    display: block;
+    padding-right: 28px;
+  }
+
+  .metrics-panel--collapsed .metrics-panel__summary { display: flex; }
+  .metrics-panel--collapsed .metrics-panel__detail { display: none; }
+
+  .metric-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    margin: 4px 0;
+  }
+  .metric-label { color: #D4A853; font-size: 12px; }
+  .metric-value {
+    color: #FFD700;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    min-width: 52px;
+    text-align: right;
+    transition: color 0.15s ease;
+  }
+  .metric-unit { color: #C9975A; font-size: 11px; width: 18px; }
+
+  @keyframes metric-value-flash {
+    0%   { color: #FFFDF5; text-shadow: 0 0 8px rgba(255, 253, 245, 0.9); }
+    100% { color: #FFD700; text-shadow: none; }
+  }
+  .metric-value--flash { animation: metric-value-flash 400ms ease-out; }
+
+  .formula-label {
+    margin-top: 10px;
+    padding: 6px 8px;
+    border-left: 3px solid #F4B942;
+    background: rgba(31, 22, 16, 0.6);
+    border-radius: 0 6px 6px 0;
+    font-family: 'Courier New', monospace;
+    font-size: 11.5px;
+    line-height: 1.5;
+    color: #F2E4C9;
+  }
+  .formula-value { color: #FFD700; font-weight: 700; }
+
+  @media (max-width: 600px) {
+    .metrics-panel { min-width: 160px; max-width: 60vw; padding: 8px 10px 10px; font-size: 12px; }
+    .metrics-panel:not(.metrics-panel--collapsed) .metrics-panel__summary { display: none; }
+  }
+
+  /* ===== ExplanationModal (Interface) — inlineado tal cual EXPLANATION_MODAL_CSS ===== */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(15, 10, 6, 0.7);
+    opacity: 0;
+    transition: opacity 220ms ease;
+  }
+  .modal-backdrop[hidden] { display: none; }
+  .modal-backdrop--open { opacity: 1; }
+
+  .modal-panel {
+    position: relative;
+    width: min(640px, 100%);
+    max-height: 85vh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    background: linear-gradient(180deg, #F2E4C9 0%, #E8C88A 100%);
+    color: #3A2A1E;
+    border: 1px solid #C9975A;
+    border-radius: 12px;
+    padding: 28px 24px 20px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    transform: translateY(8px) scale(0.98);
+    transition: transform 220ms ease;
+  }
+  .modal-backdrop--open .modal-panel { transform: translateY(0) scale(1); }
+
+  .modal-header h2 {
+    margin: 0 0 12px;
+    font-family: 'Papyrus', Georgia, serif;
+    font-size: 22px;
+    color: #3A2A1E;
+    border-bottom: 2px solid #F4B942;
+    padding-bottom: 8px;
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: transparent;
+    color: #3A2A1E;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+  .modal-close:hover, .modal-close:focus-visible { background: rgba(58, 42, 30, 0.1); }
+
+  .modal-body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 15px; line-height: 1.55; }
+
+  .modal-section { margin-bottom: 16px; }
+  .modal-section h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+    color: #7A4A1E;
+  }
+  .modal-section p { margin: 0; }
+  .modal-section code {
+    background: rgba(58, 42, 30, 0.08);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+  }
+  .modal-section em { font-style: italic; }
+
+  @media (max-width: 600px) {
+    .modal-panel { padding: 22px 16px 16px; max-height: 90vh; }
+    .modal-header h2 { font-size: 19px; }
+    .modal-body { font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas" width="1280" height="720"></canvas>
+    <canvas id="debug-canvas" width="1280" height="720"></canvas>
+
+    <div id="hud">
+      <h1 class="game-title">Alhazen y la cámara oscura</h1>
+      <div class="metrics-panel"></div>
+      <div class="hud-buttons">
+        <button type="button" class="btn-explicacion">Explicación</button>
+        <button type="button" class="btn-reiniciar">Reiniciar</button>
+        <button type="button" class="btn-mute" aria-pressed="false" aria-label="Silenciar sonido ambiente">🔊</button>
+      </div>
+    </div>
+
+    <div id="modal-explicacion" hidden></div>
+  </div>
+
+<script>
+(function () {
+'use strict';
+
+// ════════════════════════════════════════════════════════════════════════
+// 1. constants.js (Architect)
+// ════════════════════════════════════════════════════════════════════════
+const PIXELS_PER_METER = 140;
+const TARGET_FPS = 60;
+const CANVAS_WIDTH = 1280;
+const CANVAS_HEIGHT = 720;
+
+const HOLE_HEIGHT = 1.0;      // m, altura del agujero sobre el suelo (eje óptico)
+const PERSON_HEIGHT = 1.7;    // m, fija en v1 (no ajustable por el jugador)
+
+const DO_MIN = 1.0;           // m, distancia mínima objeto–agujero
+const DO_MAX = 6.0;           // m, distancia máxima objeto–agujero
+const DI_MIN = 0.15;          // m, distancia mínima agujero–pantalla
+const DI_MAX = 1.0;           // m, distancia máxima agujero–pantalla
+
+const DO_INITIAL = 3.0;       // m, valor de "Reiniciar"
+const DI_INITIAL = 0.75;      // m, valor de "Reiniciar" (pantalla más atrás dentro de la caja)
+
+// ════════════════════════════════════════════════════════════════════════
+// 2. EventBus.js (Architect)
+// ════════════════════════════════════════════════════════════════════════
+class EventBusClass {
+  constructor() {
+    this._listeners = new Map();
+  }
+
+  on(event, fn) {
+    if (!this._listeners.has(event)) this._listeners.set(event, new Set());
+    this._listeners.get(event).add(fn);
+    return () => this.off(event, fn);
+  }
+
+  off(event, fn) {
+    this._listeners.get(event)?.delete(fn);
+  }
+
+  emit(event, data) {
+    this._listeners.get(event)?.forEach((fn) => fn(data));
+  }
+
+  once(event, fn) {
+    const wrapper = (data) => {
+      fn(data);
+      this.off(event, wrapper);
+    };
+    this.on(event, wrapper);
+  }
+
+  clear(event) {
+    if (event) this._listeners.delete(event);
+    else this._listeners.clear();
+  }
+}
+
+const EventBus = new EventBusClass();
+
+// Eventos tipados — nombres exactos según briefs/contrato-comun.md (versión
+// actualizada por Interface: METRICS_UPDATED incluye `rays`).
+//
+// | Evento           | Payload                                                              | Emisor                        |
+// |-------------------|-----------------------------------------------------------------------|--------------------------------|
+// | PERSON_MOVED      | { do: number }                                                        | InputManager                   |
+// | SCREEN_MOVED      | { di: number }                                                        | InputManager                   |
+// | METRICS_UPDATED   | { do, di, personHeight, imageHeight, magnification, rays }            | main.js                        |
+// | RESET             | {}                                                                     | ExplanationModal (botón)       |
+// | EXPLAIN_OPEN      | {}                                                                     | HUD (botón .btn-explicacion)   |
+// | EXPLAIN_CLOSE     | {}                                                                     | ExplanationModal                |
+// | DEBUG_TOGGLE      | {}                                                                     | InputManager (tecla D)         |
+//
+// `do` es palabra reservada de JavaScript: no se puede desestructurar como
+// `const { do } = payload` (SyntaxError). Se accede como `payload.do` o se
+// renombra: `const { do: doM } = payload`.
+const EVENTS = {
+  PERSON_MOVED: 'person:moved',
+  SCREEN_MOVED: 'screen:moved',
+  METRICS_UPDATED: 'metrics:updated',
+  RESET: 'reset',
+  EXPLAIN_OPEN: 'explain:open',
+  EXPLAIN_CLOSE: 'explain:close',
+  DEBUG_TOGGLE: 'debug:toggle',
+};
+
+// ════════════════════════════════════════════════════════════════════════
+// 3. GameLoop.js (Architect)
+// ════════════════════════════════════════════════════════════════════════
+class GameLoop {
+  constructor({ maxFrameTime = 0.1 } = {}) {
+    this.maxFrameTime = maxFrameTime;
+    this.paused = false;
+
+    this.onDraw = null;
+
+    this.fps = new FPSCounter();
+
+    this._lastTime = 0;
+    this._rafId = null;
+    this._running = false;
+
+    this._tick = this._tick.bind(this);
+  }
+
+  start() {
+    if (this._running) return;
+    this._running = true;
+    requestAnimationFrame((t) => {
+      this._lastTime = t;
+      this._rafId = requestAnimationFrame(this._tick);
+    });
+  }
+
+  stop() {
+    this._running = false;
+    if (this._rafId !== null) cancelAnimationFrame(this._rafId);
+    this._rafId = null;
+  }
+
+  pause() {
+    this.paused = true;
+  }
+
+  resume() {
+    this.paused = false;
+  }
+
+  _tick(timestamp) {
+    this._rafId = requestAnimationFrame(this._tick);
+
+    const rawDt = Math.min((timestamp - this._lastTime) / 1000, this.maxFrameTime);
+    this._lastTime = timestamp;
+
+    if (this.paused) return;
+
+    this.fps.update(rawDt);
+    this.onDraw?.(rawDt);
+  }
+}
+
+class FPSCounter {
+  constructor() {
+    this._frames = 0;
+    this._elapsed = 0;
+    this.fps = 0;
+  }
+
+  update(dt) {
+    this._frames++;
+    this._elapsed += dt;
+    if (this._elapsed >= 0.5) {
+      this.fps = Math.round(this._frames / this._elapsed);
+      this._frames = 0;
+      this._elapsed = 0;
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 4. DraggableEntity.js (Architect) — worldToCanvas / canvasToWorld / clamp
+// ════════════════════════════════════════════════════════════════════════
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function worldToCanvas(x, y, originPxX, originPxY) {
+  return {
+    x: originPxX + x * PIXELS_PER_METER,
+    y: originPxY - y * PIXELS_PER_METER,
+  };
+}
+
+function canvasToWorld(px, py, originPxX, originPxY) {
+  return {
+    x: (px - originPxX) / PIXELS_PER_METER,
+    y: (originPxY - py) / PIXELS_PER_METER,
+  };
+}
+
+class DraggableEntity {
+  constructor({ id, x, axisMin, axisMax, yCenter = 0, hitWidth, hitHeight }) {
+    this.id = id;
+    this.axisMin = axisMin;
+    this.axisMax = axisMax;
+    this.yCenter = yCenter;
+    this.hitWidth = hitWidth;
+    this.hitHeight = hitHeight;
+    this.x = clamp(x, axisMin, axisMax);
+    this.dragging = false;
+  }
+
+  setX(worldX) {
+    this.x = clamp(worldX, this.axisMin, this.axisMax);
+    return this.x;
+  }
+
+  get bounds() {
+    return {
+      xMin: this.x - this.hitWidth / 2,
+      xMax: this.x + this.hitWidth / 2,
+      yMin: this.yCenter - this.hitHeight / 2,
+      yMax: this.yCenter + this.hitHeight / 2,
+    };
+  }
+
+  containsWorldPoint(worldX, worldY) {
+    const b = this.bounds;
+    return worldX >= b.xMin && worldX <= b.xMax && worldY >= b.yMin && worldY <= b.yMax;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 5. InputManager.js (Architect)
+// ════════════════════════════════════════════════════════════════════════
+const PERSON_HIT_WIDTH = 0.6;
+const PERSON_HIT_HEIGHT = PERSON_HEIGHT + 0.3;
+const SCREEN_HIT_WIDTH = 0.12;
+const SCREEN_HIT_HEIGHT = 1.4;
+
+class InputManager {
+  constructor({ canvas, getOrigin }) {
+    this.canvas = canvas;
+    this.getOrigin = getOrigin;
+
+    this.person = new DraggableEntity({
+      id: 'person',
+      x: -DO_INITIAL,
+      axisMin: -DO_MAX,
+      axisMax: -DO_MIN,
+      yCenter: PERSON_HEIGHT / 2 - HOLE_HEIGHT,
+      hitWidth: PERSON_HIT_WIDTH,
+      hitHeight: PERSON_HIT_HEIGHT,
+    });
+
+    this.screen = new DraggableEntity({
+      id: 'screen',
+      x: DI_INITIAL,
+      axisMin: DI_MIN,
+      axisMax: DI_MAX,
+      yCenter: 0,
+      hitWidth: SCREEN_HIT_WIDTH,
+      hitHeight: SCREEN_HIT_HEIGHT,
+    });
+
+    this._activeEntity = null;
+    this._activePointerId = null;
+    this._bound = false;
+
+    this._onPointerDown = this._onPointerDown.bind(this);
+    this._onPointerMove = this._onPointerMove.bind(this);
+    this._onPointerUp = this._onPointerUp.bind(this);
+    this._onKeyDown = this._onKeyDown.bind(this);
+  }
+
+  bind() {
+    if (this._bound) return;
+    this._bound = true;
+
+    this.canvas.addEventListener('pointerdown', this._onPointerDown);
+    window.addEventListener('pointermove', this._onPointerMove);
+    window.addEventListener('pointerup', this._onPointerUp);
+    window.addEventListener('pointercancel', this._onPointerUp);
+    window.addEventListener('keydown', this._onKeyDown);
+
+    this.canvas.style.touchAction = 'none';
+  }
+
+  unbind() {
+    if (!this._bound) return;
+    this._bound = false;
+
+    this.canvas.removeEventListener('pointerdown', this._onPointerDown);
+    window.removeEventListener('pointermove', this._onPointerMove);
+    window.removeEventListener('pointerup', this._onPointerUp);
+    window.removeEventListener('pointercancel', this._onPointerUp);
+    window.removeEventListener('keydown', this._onKeyDown);
+  }
+
+  get doValue() {
+    return -this.person.x;
+  }
+
+  get diValue() {
+    return this.screen.x;
+  }
+
+  _canvasPointFromEvent(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  }
+
+  _worldPointFromEvent(e) {
+    const origin = this.getOrigin();
+    const p = this._canvasPointFromEvent(e);
+    return canvasToWorld(p.x, p.y, origin.x, origin.y);
+  }
+
+  _onPointerDown(e) {
+    const world = this._worldPointFromEvent(e);
+
+    if (this.screen.containsWorldPoint(world.x, world.y)) {
+      this._activeEntity = this.screen;
+    } else if (this.person.containsWorldPoint(world.x, world.y)) {
+      this._activeEntity = this.person;
+    } else {
+      return;
+    }
+
+    this._activeEntity.dragging = true;
+    this._activePointerId = e.pointerId;
+    this.canvas.setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  }
+
+  _onPointerMove(e) {
+    if (!this._activeEntity || e.pointerId !== this._activePointerId) return;
+
+    const world = this._worldPointFromEvent(e);
+    this._activeEntity.setX(world.x);
+
+    if (this._activeEntity === this.person) {
+      EventBus.emit(EVENTS.PERSON_MOVED, { do: this.doValue });
+    } else if (this._activeEntity === this.screen) {
+      EventBus.emit(EVENTS.SCREEN_MOVED, { di: this.diValue });
+    }
+
+    e.preventDefault();
+  }
+
+  _onPointerUp(e) {
+    if (e.pointerId !== this._activePointerId) return;
+    if (this._activeEntity) this._activeEntity.dragging = false;
+    this._activeEntity = null;
+    this._activePointerId = null;
+  }
+
+  _onKeyDown(e) {
+    if (e.code === 'KeyD') {
+      EventBus.emit(EVENTS.DEBUG_TOGGLE, {});
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 6. PinholeOpticsEngine.js (Physicist)
+// ════════════════════════════════════════════════════════════════════════
+//
+// CASO DE VERIFICACIÓN (documentado por el Physicist):
+//   holeHeight=1.0m, personHeight=1.7m, do=3.0m, di=0.3m
+//   magnification = 0.3/3.0 = 0.1 · imageHeight = 1.7*0.1 = 0.17m
+//   Rayo cabeza: y_o=0.7 -> y_imagen=-0.07 (debajo del eje) — Rayo pies: y_o=-1.0 -> y_imagen=+0.1 (encima)
+//   => imagen invertida, comportamiento correcto de pinhole ideal.
+//
+// NOTA de integración (Publisher): PinholeOpticsEngine.js definía su propio
+// helper interno `clamp(value, min, max)`, con la misma firma que el
+// `clamp` exportado por DraggableEntity.js (Architect). Al inlinear todo en
+// un único scope global esos dos `function clamp(...)` habrían colisionado
+// (dos declaraciones para el mismo nombre). Se renombró el helper privado
+// de este módulo a `clampNum` — es de uso exclusivamente interno de
+// `computeProjection`, ningún otro módulo lo referenciaba por nombre, así
+// que el rename es seguro. Ver INTEGRATION_REPORT.md.
+class PinholeOpticsEngine {
+  constructor({ holeHeight = HOLE_HEIGHT, personHeight = PERSON_HEIGHT } = {}) {
+    this.holeHeight = holeHeight;     // m
+    this.personHeight = personHeight; // m
+  }
+
+  computeProjection(do_, di_) {
+    const do_clamped = clampNum(do_, DO_MIN, DO_MAX); // m
+    const di_clamped = clampNum(di_, DI_MIN, DI_MAX); // m
+
+    const magnification = di_clamped / do_clamped;              // adimensional, m/m
+    const imageHeight = this.personHeight * magnification;      // m, magnitud (siempre positiva)
+
+    const yHead = this.personHeight - this.holeHeight; // m
+    const yFeet = -this.holeHeight;                    // m
+
+    const yImageHead = -yHead * magnification; // m
+    const yImageFeet = -yFeet * magnification; // m
+
+    const rays = [
+      {
+        from: { x: -do_clamped, y: yHead },
+        through: { x: 0, y: 0 },
+        to: { x: di_clamped, y: yImageHead },
+      },
+      {
+        from: { x: -do_clamped, y: yFeet },
+        through: { x: 0, y: 0 },
+        to: { x: di_clamped, y: yImageFeet },
+      },
+    ];
+
+    return { magnification, imageHeight, rays };
+  }
+}
+
+function clampNum(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 7. LightRays.js (Artist)
+// ════════════════════════════════════════════════════════════════════════
+const RAY_COLOR_RGB = '244, 185, 66';
+const RAY_ALPHA_BASE = 0.6;
+const RAY_LINE_WIDTH = 2.5;
+const RAY_GLOW_BLUR = 16;
+const BEAM_FILL_ALPHA = 0.07;
+const SHIMMER_SPEED = 1.4;
+const SHIMMER_AMOUNT = 0.18;
+
+class LightRays {
+  constructor() {
+    this._rays = null;
+    this._time = 0;
+
+    this._unsubscribe = EventBus.on(EVENTS.METRICS_UPDATED, (data) => {
+      this._rays = Array.isArray(data?.rays) ? data.rays : null;
+    });
+  }
+
+  get currentRays() {
+    return this._rays;
+  }
+
+  update(dt) {
+    this._time += dt;
+  }
+
+  destroy() {
+    this._unsubscribe?.();
+    this._unsubscribe = null;
+  }
+
+  render(ctx, originPxX, originPxY) {
+    if (!this._rays || this._rays.length < 2) return;
+
+    const [headRay, feetRay] = this._rays;
+    const hole = worldToCanvas(headRay.through.x, headRay.through.y, originPxX, originPxY);
+    const headFrom = worldToCanvas(headRay.from.x, headRay.from.y, originPxX, originPxY);
+    const headTo = worldToCanvas(headRay.to.x, headRay.to.y, originPxX, originPxY);
+    const feetFrom = worldToCanvas(feetRay.from.x, feetRay.from.y, originPxX, originPxY);
+    const feetTo = worldToCanvas(feetRay.to.x, feetRay.to.y, originPxX, originPxY);
+
+    const shimmer = 1 + Math.sin(this._time * SHIMMER_SPEED) * SHIMMER_AMOUNT;
+    const alpha = Math.min(1, RAY_ALPHA_BASE * shimmer);
+
+    ctx.save();
+
+    ctx.fillStyle = `rgba(${RAY_COLOR_RGB}, ${BEAM_FILL_ALPHA})`;
+    ctx.beginPath();
+    ctx.moveTo(hole.x, hole.y);
+    ctx.lineTo(headFrom.x, headFrom.y);
+    ctx.lineTo(feetFrom.x, feetFrom.y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(hole.x, hole.y);
+    ctx.lineTo(headTo.x, headTo.y);
+    ctx.lineTo(feetTo.x, feetTo.y);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(${RAY_COLOR_RGB}, ${alpha})`;
+    ctx.lineWidth = RAY_LINE_WIDTH;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.shadowColor = '#F4B942';
+    ctx.shadowBlur = RAY_GLOW_BLUR;
+
+    ctx.beginPath();
+    ctx.moveTo(headFrom.x, headFrom.y);
+    ctx.lineTo(hole.x, hole.y);
+    ctx.lineTo(headTo.x, headTo.y);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(feetFrom.x, feetFrom.y);
+    ctx.lineTo(hole.x, hole.y);
+    ctx.lineTo(feetTo.x, feetTo.y);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 8. DustParticles.js (Artist)
+// ════════════════════════════════════════════════════════════════════════
+const PARTICLE_COUNT = 26;
+const DRIFT_SPEED_MIN = 0.03;
+const DRIFT_SPEED_MAX = 0.09;
+const JITTER_SPEED_MIN = 0.6;
+const JITTER_SPEED_MAX = 1.6;
+const JITTER_AMOUNT = 0.9;
+const SIZE_MIN_PX = 0.8;
+const SIZE_MAX_PX = 2.2;
+const ALPHA_MIN = 0.15;
+const ALPHA_MAX = 0.45;
+const DUST_COLOR_RGB = '255, 226, 173';
+
+function rand(min, max) {
+  return min + Math.random() * (max - min);
+}
+
+function lerpPoint(a, b, t) {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function clampSigned(v, limit = 1) {
+  return Math.min(limit, Math.max(-limit, v));
+}
+
+class DustParticles {
+  constructor(count = PARTICLE_COUNT) {
+    this._particles = Array.from({ length: count }, () => this._spawn());
+    this._time = 0;
+  }
+
+  _spawn() {
+    return {
+      u: rand(0.05, 0.95),
+      s: rand(-0.85, 0.85),
+      driftSpeed: rand(DRIFT_SPEED_MIN, DRIFT_SPEED_MAX) * (Math.random() < 0.5 ? -1 : 1),
+      jitterPhase: rand(0, Math.PI * 2),
+      jitterSpeed: rand(JITTER_SPEED_MIN, JITTER_SPEED_MAX),
+      size: rand(SIZE_MIN_PX, SIZE_MAX_PX),
+      alpha: rand(ALPHA_MIN, ALPHA_MAX),
+    };
+  }
+
+  update(dt) {
+    this._time += dt;
+    for (const p of this._particles) {
+      p.u += p.driftSpeed * dt;
+      if (p.u > 0.97) {
+        p.u = 0.97;
+        p.driftSpeed *= -1;
+      } else if (p.u < 0.03) {
+        p.u = 0.03;
+        p.driftSpeed *= -1;
+      }
+    }
+  }
+
+  render(ctx, originPxX, originPxY, rays) {
+    if (!rays || rays.length < 2) return;
+    const [headRay, feetRay] = rays;
+
+    ctx.save();
+    for (const p of this._particles) {
+      const topWorld = lerpPoint(headRay.through, headRay.to, p.u);
+      const bottomWorld = lerpPoint(feetRay.through, feetRay.to, p.u);
+
+      const jitter = Math.sin(this._time * p.jitterSpeed + p.jitterPhase) * JITTER_AMOUNT * 0.15;
+      const s = clampSigned(p.s + jitter);
+      const frac = (s + 1) / 2;
+
+      const worldX = topWorld.x + (bottomWorld.x - topWorld.x) * frac;
+      const worldY = topWorld.y + (bottomWorld.y - topWorld.y) * frac;
+      const canvasPt = worldToCanvas(worldX, worldY, originPxX, originPxY);
+
+      ctx.beginPath();
+      ctx.arc(canvasPt.x, canvasPt.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${DUST_COLOR_RGB}, ${p.alpha})`;
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 9. SceneRenderer.js (Artist)
+// ════════════════════════════════════════════════════════════════════════
+const PALETTE = {
+  skyTop: '#5B9BD5',
+  skyBottom: '#F2C879',
+  sandLight: '#E8C88A',
+  sandMid: '#D4A853',
+  sandDark: '#C9975A',
+  goldAccent: '#F4B942',
+  goldBright: '#FFD700',
+  boxSepiaMid: '#3A2A1E',
+  boxSepiaDark: '#1F1610',
+};
+
+const ORIGIN_PX_X = 950;
+const ORIGIN_PX_Y = 420;
+const BOX_BACK_X_M = DI_MAX + 0.25;
+const BOX_TOP_Y_M = 1.3;
+const BOX_BOTTOM_Y_M = -HOLE_HEIGHT;
+const SCREEN_HALF_HEIGHT_M = 1.0;
+
+// Ancho ilustrativo del panel (eje U, perpendicular al eje óptico) que el
+// motor de rayos no calcula (PinholeOpticsEngine es 2D: X=distancia,
+// Y=altura). Se dibuja como shear afín (perspectiva caballera): las líneas
+// verticales (altura, real) se mantienen verticales; U se proyecta en
+// diagonal. El panel es simétrico (U ∈ [-half, +half]) centrado exactamente
+// donde terminan los rayos, y la imagen se recorta a sus bordes para que
+// nunca se dibuje más ancha que la pantalla.
+const SCREEN_PANEL_HALF_WIDTH_M = 0.42;
+const CAVALIER_ANGLE = Math.PI / 4; // 45°
+const CAVALIER_RATIO = 0.45;
+const CAVALIER_COS = Math.cos(CAVALIER_ANGLE);
+const CAVALIER_SIN = Math.sin(CAVALIER_ANGLE);
+
+class SceneRenderer {
+  constructor({ canvas }) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.width = CANVAS_WIDTH;
+    this.height = CANVAS_HEIGHT;
+
+    this._origin = Object.freeze({ x: ORIGIN_PX_X, y: ORIGIN_PX_Y });
+
+    this._metrics = {
+      do: DO_INITIAL,
+      di: DI_INITIAL,
+      personHeight: PERSON_HEIGHT,
+      magnification: null,
+      imageHeight: null,
+      rays: null,
+    };
+
+    this._time = 0;
+    this._swayPhase = Math.random() * Math.PI * 2;
+
+    this._lightRays = new LightRays();
+    this._dust = new DustParticles();
+
+    this._box = this._computeBoxLayout();
+    this._buildStaticCaches();
+
+    this._unsubscribeMetrics = EventBus.on(EVENTS.METRICS_UPDATED, (data) => {
+      if (!data) return;
+      this._metrics = data;
+    });
+  }
+
+  get origin() {
+    return this._origin;
+  }
+
+  destroy() {
+    this._unsubscribeMetrics?.();
+    this._unsubscribeMetrics = null;
+    this._lightRays.destroy();
+  }
+
+  update(dt) {
+    this._time += dt;
+    this._lightRays.update(dt);
+    this._dust.update(dt);
+  }
+
+  render() {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, this.width, this.height);
+
+    this._drawSky(ctx);
+    this._drawSun(ctx);
+    this._drawPyramids(ctx);
+    this._drawDunesAndGround(ctx);
+    this._drawFramingColumns(ctx);
+
+    this._drawBoxStructure(ctx);
+
+    this._lightRays.render(ctx, this._origin.x, this._origin.y);
+    this._dust.render(ctx, this._origin.x, this._origin.y, this._metrics.rays);
+
+    this._drawPerson(ctx);
+    this._drawScreenAndImage(ctx);
+  }
+
+  _computeBoxLayout() {
+    const frontX = ORIGIN_PX_X;
+    const backX = ORIGIN_PX_X + BOX_BACK_X_M * PIXELS_PER_METER;
+    const topY = ORIGIN_PX_Y - BOX_TOP_Y_M * PIXELS_PER_METER;
+    const bottomY = ORIGIN_PX_Y - BOX_BOTTOM_Y_M * PIXELS_PER_METER;
+    return { frontX, backX, topY, bottomY, groundY: ORIGIN_PX_Y + HOLE_HEIGHT * PIXELS_PER_METER };
+  }
+
+  _buildStaticCaches() {
+    const ctx = this.ctx;
+    const w = this.width;
+    const h = this.height;
+    const groundY = this._box.groundY;
+
+    this._skyGradient = ctx.createLinearGradient(0, 0, 0, groundY);
+    this._skyGradient.addColorStop(0, PALETTE.skyTop);
+    this._skyGradient.addColorStop(1, PALETTE.skyBottom);
+
+    this._sun = { x: 230, y: 130, r: 52 };
+    this._sunHalo = ctx.createRadialGradient(
+      this._sun.x, this._sun.y, 0,
+      this._sun.x, this._sun.y, this._sun.r * 3.2
+    );
+    this._sunHalo.addColorStop(0, 'rgba(255, 246, 213, 0.55)');
+    this._sunHalo.addColorStop(0.4, 'rgba(244, 185, 66, 0.22)');
+    this._sunHalo.addColorStop(1, 'rgba(244, 185, 66, 0)');
+    this._sunDisc = ctx.createRadialGradient(
+      this._sun.x - this._sun.r * 0.3, this._sun.y - this._sun.r * 0.3, 0,
+      this._sun.x, this._sun.y, this._sun.r
+    );
+    this._sunDisc.addColorStop(0, '#FFFBEA');
+    this._sunDisc.addColorStop(0.55, PALETTE.goldBright);
+    this._sunDisc.addColorStop(1, PALETTE.goldAccent);
+
+    this._sandBaseGradient = ctx.createLinearGradient(0, groundY, 0, h);
+    this._sandBaseGradient.addColorStop(0, PALETTE.sandMid);
+    this._sandBaseGradient.addColorStop(1, PALETTE.sandDark);
+
+    this._duneFar = this._buildDunePath(groundY + 6, 10, 3, 0.3);
+    this._duneNear = this._buildDunePath(groundY + 44, 16, 4, 1.7);
+
+    const box = this._box;
+    this._boxInteriorBase = PALETTE.boxSepiaDark;
+    this._boxLightSpill = ctx.createRadialGradient(
+      this._origin.x, this._origin.y, 0,
+      this._origin.x, this._origin.y, (box.backX - box.frontX) * 0.9
+    );
+    this._boxLightSpill.addColorStop(0, 'rgba(244, 185, 66, 0.30)');
+    this._boxLightSpill.addColorStop(0.5, 'rgba(244, 185, 66, 0.08)');
+    this._boxLightSpill.addColorStop(1, 'rgba(244, 185, 66, 0)');
+
+    const boxCx = (box.frontX + box.backX) / 2;
+    const boxCy = (box.topY + box.bottomY) / 2;
+    const boxR = Math.hypot(box.backX - box.frontX, box.bottomY - box.topY) / 2;
+    this._boxVignette = ctx.createRadialGradient(boxCx, boxCy, boxR * 0.35, boxCx, boxCy, boxR * 1.05);
+    this._boxVignette.addColorStop(0, 'rgba(0,0,0,0)');
+    this._boxVignette.addColorStop(1, 'rgba(0,0,0,0.55)');
+
+    this._boxShadow = ctx.createRadialGradient(boxCx, box.groundY + 10, 0, boxCx, box.groundY + 10, (box.backX - box.frontX) * 0.65);
+    this._boxShadow.addColorStop(0, 'rgba(31, 22, 16, 0.35)');
+    this._boxShadow.addColorStop(1, 'rgba(31, 22, 16, 0)');
+  }
+
+  _buildDunePath(baseY, amplitude, waves, phase) {
+    const path = new Path2D();
+    const w = this.width;
+    path.moveTo(0, this.height + 10);
+    path.lineTo(0, baseY);
+    const steps = 48;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const x = t * w;
+      const y = baseY + Math.sin(t * Math.PI * 2 * (waves / 2) + phase) * amplitude;
+      path.lineTo(x, y);
+    }
+    path.lineTo(w, this.height + 10);
+    path.closePath();
+    return path;
+  }
+
+  _drawSky(ctx) {
+    ctx.fillStyle = this._skyGradient;
+    ctx.fillRect(0, 0, this.width, this._box.groundY);
+  }
+
+  _drawSun(ctx) {
+    ctx.save();
+    ctx.fillStyle = this._sunHalo;
+    ctx.beginPath();
+    ctx.arc(this._sun.x, this._sun.y, this._sun.r * 3.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowColor = PALETTE.goldBright;
+    ctx.shadowBlur = 38;
+    ctx.fillStyle = this._sunDisc;
+    ctx.beginPath();
+    ctx.arc(this._sun.x, this._sun.y, this._sun.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  _drawPyramids(ctx) {
+    const groundY = this._box.groundY;
+    this._drawPyramid(ctx, { baseX: 560, baseY: groundY - 4, halfWidth: 78, height: 105, alpha: 0.55, lit: '#E4C99A', shadow: '#C9AD7C' });
+    this._drawPyramid(ctx, { baseX: 340, baseY: groundY - 2, halfWidth: 108, height: 168, alpha: 0.85, lit: PALETTE.sandLight, shadow: PALETTE.sandDark });
+    this._drawPyramid(ctx, { baseX: 175, baseY: groundY, halfWidth: 145, height: 232, alpha: 1, lit: PALETTE.sandMid, shadow: '#8f6a3c' });
+  }
+
+  _drawPyramid(ctx, { baseX, baseY, halfWidth, height, lit, shadow, alpha }) {
+    const apexX = baseX;
+    const apexY = baseY - height;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    ctx.beginPath();
+    ctx.moveTo(apexX, apexY);
+    ctx.lineTo(baseX - halfWidth, baseY);
+    ctx.lineTo(baseX, baseY);
+    ctx.closePath();
+    ctx.fillStyle = lit;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(apexX, apexY);
+    ctx.lineTo(baseX, baseY);
+    ctx.lineTo(baseX + halfWidth, baseY);
+    ctx.closePath();
+    ctx.fillStyle = shadow;
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+    ctx.lineWidth = 1;
+    const courses = 5;
+    for (let i = 1; i < courses; i++) {
+      const t = i / courses;
+      const y = apexY + (baseY - apexY) * t;
+      const wAtY = halfWidth * t;
+      ctx.beginPath();
+      ctx.moveTo(baseX - wAtY, y);
+      ctx.lineTo(baseX + wAtY, y);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  _drawDunesAndGround(ctx) {
+    const groundY = this._box.groundY;
+    ctx.fillStyle = this._sandBaseGradient;
+    ctx.fillRect(0, groundY, this.width, this.height - groundY);
+
+    const parallax = ((this._metrics.do ?? DO_INITIAL) - DO_INITIAL) * 2.5;
+
+    ctx.save();
+    ctx.translate(-parallax, 0);
+    ctx.fillStyle = PALETTE.sandLight;
+    ctx.globalAlpha = 0.85;
+    ctx.fill(this._duneFar);
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(-parallax * 1.8, 0);
+    ctx.fillStyle = PALETTE.sandDark;
+    ctx.fill(this._duneNear);
+    ctx.restore();
+  }
+
+  _drawFramingColumns(ctx) {
+    const groundY = this._box.groundY;
+    this._drawColumn(ctx, { x: 55, baseY: groundY, topY: 145, shaftHalfWidth: 20 });
+    this._drawColumn(ctx, { x: this.width - 55, baseY: groundY, topY: 165, shaftHalfWidth: 18 });
+  }
+
+  _drawColumn(ctx, { x, baseY, topY, shaftHalfWidth }) {
+    ctx.save();
+
+    ctx.fillStyle = 'rgba(31,22,16,0.2)';
+    ctx.beginPath();
+    ctx.ellipse(x, baseY + 4, shaftHalfWidth * 1.6, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = PALETTE.sandDark;
+    ctx.fillRect(x - shaftHalfWidth * 1.4, baseY - 14, shaftHalfWidth * 2.8, 14);
+
+    const shaftTopHalf = shaftHalfWidth * 0.78;
+    ctx.beginPath();
+    ctx.moveTo(x - shaftHalfWidth, baseY - 14);
+    ctx.lineTo(x - shaftTopHalf, topY + 26);
+    ctx.lineTo(x + shaftTopHalf, topY + 26);
+    ctx.lineTo(x + shaftHalfWidth, baseY - 14);
+    ctx.closePath();
+    const shaftGrad = ctx.createLinearGradient(x - shaftHalfWidth, 0, x + shaftHalfWidth, 0);
+    shaftGrad.addColorStop(0, PALETTE.sandLight);
+    shaftGrad.addColorStop(1, PALETTE.sandMid);
+    ctx.fillStyle = shaftGrad;
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.1)';
+    ctx.lineWidth = 1;
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x + i * (shaftHalfWidth / 3), baseY - 16);
+      ctx.lineTo(x + i * (shaftTopHalf / 3), topY + 26);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = PALETTE.sandDark;
+    ctx.beginPath();
+    ctx.moveTo(x - shaftTopHalf, topY + 26);
+    ctx.quadraticCurveTo(x - shaftHalfWidth * 1.5, topY + 10, x - shaftHalfWidth * 1.3, topY);
+    ctx.lineTo(x + shaftHalfWidth * 1.3, topY);
+    ctx.quadraticCurveTo(x + shaftHalfWidth * 1.5, topY + 10, x + shaftTopHalf, topY + 26);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = PALETTE.goldAccent;
+    ctx.fillRect(x - shaftHalfWidth * 1.35, topY - 8, shaftHalfWidth * 2.7, 8);
+
+    ctx.fillStyle = PALETTE.sandMid;
+    ctx.fillRect(x - shaftHalfWidth * 1.5, topY - 16, shaftHalfWidth * 3, 8);
+
+    ctx.restore();
+  }
+
+  _drawBoxStructure(ctx) {
+    const box = this._box;
+    const w = box.backX - box.frontX;
+    const h = box.bottomY - box.topY;
+
+    ctx.fillStyle = this._boxShadow;
+    ctx.fillRect(box.frontX - 40, box.groundY - 4, w + 80, 40);
+
+    ctx.fillStyle = this._boxInteriorBase;
+    ctx.fillRect(box.frontX, box.topY, w, h);
+    ctx.fillStyle = this._boxLightSpill;
+    ctx.fillRect(box.frontX, box.topY, w, h);
+    ctx.fillStyle = this._boxVignette;
+    ctx.fillRect(box.frontX, box.topY, w, h);
+
+    const frameColor = PALETTE.boxSepiaMid;
+    ctx.fillStyle = frameColor;
+    ctx.fillRect(box.frontX - 6, box.topY - 16, w + 12, 16);
+    ctx.fillRect(box.backX, box.topY - 16, 20, h + 16);
+    ctx.fillRect(box.frontX - 6, box.bottomY, w + 26, 12);
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 4; i++) {
+      const x = box.frontX + (w * i) / 4;
+      ctx.beginPath();
+      ctx.moveTo(x, box.topY - 15);
+      ctx.lineTo(x, box.topY - 1);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = frameColor;
+    ctx.fillRect(box.frontX - 12, box.topY, 12, h);
+
+    ctx.strokeStyle = 'rgba(244, 185, 66, 0.25)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(box.frontX + 4, box.topY + 14);
+    ctx.lineTo(box.backX - 4, box.topY + 14);
+    ctx.moveTo(box.frontX + 4, box.bottomY - 14);
+    ctx.lineTo(box.backX - 4, box.bottomY - 14);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.shadowColor = PALETTE.goldAccent;
+    ctx.shadowBlur = 18;
+    const glowPulse = 0.65 + Math.sin(this._time * 2.2) * 0.15;
+    ctx.fillStyle = `rgba(244, 185, 66, ${glowPulse})`;
+    ctx.beginPath();
+    ctx.arc(this._origin.x, this._origin.y, 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = PALETTE.boxSepiaDark;
+    ctx.beginPath();
+    ctx.arc(this._origin.x, this._origin.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  _drawPerson(ctx) {
+    const doM = this._metrics.do ?? DO_INITIAL;
+    const personHeight = this._metrics.personHeight ?? PERSON_HEIGHT;
+
+    const headWorld = { x: -doM, y: personHeight - HOLE_HEIGHT };
+    const feetWorld = { x: -doM, y: -HOLE_HEIGHT };
+    const headPt = worldToCanvas(headWorld.x, headWorld.y, this._origin.x, this._origin.y);
+    const feetPt = worldToCanvas(feetWorld.x, feetWorld.y, this._origin.x, this._origin.y);
+
+    const shadowW = Math.abs(feetPt.y - headPt.y) * 0.34;
+    ctx.save();
+    ctx.fillStyle = 'rgba(31, 22, 16, 0.28)';
+    ctx.beginPath();
+    ctx.ellipse(feetPt.x, feetPt.y + 4, shadowW, shadowW * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    const swayRad = Math.sin(this._time * 1.1 + this._swayPhase) * 0.035;
+
+    drawIllustratedFigure(ctx, headPt, feetPt, {
+      swayRad,
+      palette: { lit: PALETTE.sandDark, shadow: '#8f6a3c' },
+    });
+  }
+
+  _projectPanelPoint(u, v, baseX) {
+    return { x: baseX + u * CAVALIER_COS, y: v - u * CAVALIER_SIN };
+  }
+
+  _drawScreenAndImage(ctx) {
+    const diM = this._metrics.di ?? DI_INITIAL;
+    const topWorld = { x: diM, y: SCREEN_HALF_HEIGHT_M };
+    const bottomWorld = { x: diM, y: -SCREEN_HALF_HEIGHT_M };
+    // Arista central del panel (U=0): exactamente donde los rayos tocan la
+    // pantalla — el único punto que el motor de rayos conoce.
+    const frontTop = worldToCanvas(topWorld.x, topWorld.y, this._origin.x, this._origin.y);
+    const frontBottom = worldToCanvas(bottomWorld.x, bottomWorld.y, this._origin.x, this._origin.y);
+    const baseX = frontTop.x; // === frontBottom.x, ambos comparten x = di
+
+    const halfWidthPx = SCREEN_PANEL_HALF_WIDTH_M * PIXELS_PER_METER * CAVALIER_RATIO;
+    const topLeft = this._projectPanelPoint(-halfWidthPx, frontTop.y, baseX);
+    const topRight = this._projectPanelPoint(halfWidthPx, frontTop.y, baseX);
+    const bottomRight = this._projectPanelPoint(halfWidthPx, frontBottom.y, baseX);
+    const bottomLeft = this._projectPanelPoint(-halfWidthPx, frontBottom.y, baseX);
+    const panelPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(topLeft.x, topLeft.y);
+      ctx.lineTo(topRight.x, topRight.y);
+      ctx.lineTo(bottomRight.x, bottomRight.y);
+      ctx.lineTo(bottomLeft.x, bottomLeft.y);
+      ctx.closePath();
+    };
+
+    // Cara visible del panel (paralelogramo simétrico por perspectiva
+    // caballera): tela/papiro clara con gradiente diagonal.
+    ctx.save();
+    ctx.shadowColor = 'rgba(0,0,0,0.4)';
+    ctx.shadowBlur = 10;
+    ctx.shadowOffsetX = 4;
+    const screenGrad = ctx.createLinearGradient(topLeft.x, topLeft.y, bottomRight.x, bottomRight.y);
+    screenGrad.addColorStop(0, '#B99968');
+    screenGrad.addColorStop(0.5, PALETTE.sandLight);
+    screenGrad.addColorStop(1, '#B99968');
+    ctx.fillStyle = screenGrad;
+    panelPath();
+    ctx.fill();
+    ctx.restore();
+
+    ctx.strokeStyle = PALETTE.boxSepiaMid;
+    ctx.lineWidth = 2;
+    panelPath();
+    ctx.stroke();
+
+    const rays = this._metrics.rays;
+    if (!rays || rays.length < 2) return;
+    const [headRay, feetRay] = rays;
+    const headImgPt = worldToCanvas(headRay.to.x, headRay.to.y, this._origin.x, this._origin.y);
+    const feetImgPt = worldToCanvas(feetRay.to.x, feetRay.to.y, this._origin.x, this._origin.y);
+    const H = feetImgPt.y - headImgPt.y;
+
+    ctx.save();
+    // Recorte a los bordes del panel: la figura nunca se dibuja más ancha
+    // que la pantalla, sin importar la magnificación.
+    panelPath();
+    ctx.clip();
+    ctx.globalAlpha = 0.9;
+    // Shear vía transform del canvas: se traslada el origen a la arista
+    // central (headImgPt, que coincide con baseX/frontTop) y se aplica la
+    // misma matriz caballera — drawIllustratedFigure dibuja en coordenadas
+    // LOCALES (u, t) sin cambios, y su propio ancho (hombros, dobladillo)
+    // sale proyectado en diagonal, igual que el panel. Mismos colores que
+    // la persona real (se invierte solo porque feetPt queda "más arriba").
+    ctx.translate(headImgPt.x, headImgPt.y);
+    ctx.transform(CAVALIER_COS, -CAVALIER_SIN, 0, 1, 0, 0);
+    drawIllustratedFigure(ctx, { x: 0, y: 0 }, { x: 0, y: H }, {
+      swayRad: 0,
+      palette: { lit: PALETTE.sandDark, shadow: '#8f6a3c' },
+    });
+    ctx.restore();
+  }
+}
+
+function figureMetrics(headPt, feetPt) {
+  const cx = (headPt.x + feetPt.x) / 2;
+  const H = feetPt.y - headPt.y;
+  const absH = Math.max(Math.abs(H), 1);
+  const y = (t) => headPt.y + H * t;
+  return { cx, absH, y };
+}
+
+function drawIllustratedFigure(ctx, headPt, feetPt, { swayRad = 0, palette }) {
+  const { cx, absH, y } = figureMetrics(headPt, feetPt);
+
+  const headR = absH * 0.085;
+  const headCY = y(0.075);
+  const shoulderY = y(0.16);
+  const waistY = y(0.46);
+  const hemY = y(0.62);
+  const ankleY = y(0.95);
+  const footY = y(1.0);
+
+  const shoulderHW = absH * 0.15;
+  const waistHW = absH * 0.095;
+  const hemHW = absH * 0.17;
+  const legHW = absH * 0.065;
+  const legGap = absH * 0.02;
+  const armW = absH * 0.045;
+
+  ctx.fillStyle = palette.shadow;
+  ctx.fillRect(cx - legGap / 2 - legHW, hemY, legHW, ankleY - hemY);
+  ctx.fillRect(cx + legGap / 2, hemY, legHW, ankleY - hemY);
+  ctx.fillStyle = palette.lit;
+  ctx.fillRect(cx - legGap / 2 - legHW, ankleY, legHW, footY - ankleY);
+  ctx.fillRect(cx + legGap / 2, ankleY, legHW, footY - ankleY);
+
+  ctx.save();
+  ctx.translate(cx, waistY);
+  ctx.rotate(swayRad);
+  ctx.translate(-cx, -waistY);
+
+  ctx.beginPath();
+  ctx.moveTo(cx - shoulderHW, shoulderY);
+  ctx.lineTo(cx + shoulderHW, shoulderY);
+  ctx.lineTo(cx + waistHW, waistY);
+  ctx.lineTo(cx + hemHW, hemY);
+  ctx.lineTo(cx - hemHW, hemY);
+  ctx.lineTo(cx - waistHW, waistY);
+  ctx.closePath();
+  const torsoGrad = ctx.createLinearGradient(cx - hemHW, 0, cx + hemHW, 0);
+  torsoGrad.addColorStop(0, palette.lit);
+  torsoGrad.addColorStop(1, palette.shadow);
+  ctx.fillStyle = torsoGrad;
+  ctx.fill();
+
+  ctx.fillStyle = '#F4B942';
+  ctx.fillRect(cx - waistHW, waistY - absH * 0.015, waistHW * 2, absH * 0.03);
+
+  ctx.fillStyle = palette.shadow;
+  ctx.fillRect(cx - shoulderHW - armW * 0.4, shoulderY, armW, (waistY - shoulderY) * 0.95);
+  ctx.fillRect(cx + shoulderHW - armW * 0.6, shoulderY, armW, (waistY - shoulderY) * 0.95);
+
+  ctx.beginPath();
+  ctx.arc(cx, headCY, headR, 0, Math.PI * 2);
+  ctx.fillStyle = palette.lit;
+  ctx.fill();
+  ctx.strokeStyle = palette.shadow;
+  ctx.lineWidth = Math.max(1, absH * 0.008);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+
+// ════════════════════════════════════════════════════════════════════════
+// 10. MetricsPanel.js (Interface)
+// ════════════════════════════════════════════════════════════════════════
+const ANIM_DURATION_MS = 350;
+const MOBILE_BREAKPOINT_PX = 600;
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+class AnimatedValue {
+  constructor(el, decimals = 2) {
+    this._el = el;
+    this._decimals = decimals;
+    this._current = null;
+    this._from = 0;
+    this._target = 0;
+    this._startTime = 0;
+    this._raf = null;
+  }
+
+  set(value) {
+    if (typeof value !== 'number' || Number.isNaN(value)) return;
+
+    if (this._current === null) {
+      this._current = value;
+      this._target = value;
+      this._render(value);
+      return;
+    }
+
+    if (Math.abs(value - this._target) < 1e-9) return;
+
+    this._from = this._current;
+    this._target = value;
+    this._startTime = performance.now();
+    this._flash();
+
+    if (this._raf) cancelAnimationFrame(this._raf);
+    this._raf = requestAnimationFrame((t) => this._tick(t));
+  }
+
+  _tick(now) {
+    const t = Math.min(1, (now - this._startTime) / ANIM_DURATION_MS);
+    const eased = easeOutCubic(t);
+    this._current = this._from + (this._target - this._from) * eased;
+    this._render(this._current);
+
+    if (t < 1) {
+      this._raf = requestAnimationFrame((n) => this._tick(n));
+    } else {
+      this._current = this._target;
+      this._render(this._current);
+      this._raf = null;
+    }
+  }
+
+  _render(value) {
+    this._el.textContent = value.toFixed(this._decimals);
+  }
+
+  _flash() {
+    this._el.classList.remove('metric-value--flash');
+    void this._el.offsetWidth;
+    this._el.classList.add('metric-value--flash');
+  }
+
+  destroy() {
+    if (this._raf) cancelAnimationFrame(this._raf);
+  }
+}
+
+class MetricsPanel {
+  constructor(containerEl) {
+    if (!containerEl) {
+      throw new Error('MetricsPanel: containerEl es requerido (ej. document.querySelector(".metrics-panel")).');
+    }
+    this._el = containerEl;
+    this._el.classList.add('metrics-panel');
+
+    this._expanded = !this._isMobileViewport();
+
+    this._build();
+    this._applyExpandedState();
+
+    this._onMetricsUpdated = this._onMetricsUpdated.bind(this);
+    EventBus.on(EVENTS.METRICS_UPDATED, this._onMetricsUpdated);
+  }
+
+  _isMobileViewport() {
+    return typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX}px)`).matches
+      : false;
+  }
+
+  _build() {
+    this._el.innerHTML = `
+      <button type="button" class="metrics-panel__toggle" aria-expanded="true"
+              aria-label="Mostrar u ocultar el detalle de métricas">
+        <span class="metrics-panel__toggle-icon" aria-hidden="true">&#9662;</span>
+      </button>
+
+      <div class="metrics-panel__summary">
+        <span class="metric-label">Aumento</span>
+        <span class="metric-value" data-role="magnification-compact">--</span>
+      </div>
+
+      <div class="metrics-panel__detail">
+        <div class="metric-row">
+          <span class="metric-label">Objeto &rarr; agujero (d&#8320;)</span>
+          <span class="metric-value" data-role="do">--</span>
+          <span class="metric-unit">m</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Agujero &rarr; pantalla (d&#7522;)</span>
+          <span class="metric-value" data-role="di">--</span>
+          <span class="metric-unit">m</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Altura del objeto</span>
+          <span class="metric-value" data-role="personHeight">--</span>
+          <span class="metric-unit">m</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Altura de la imagen</span>
+          <span class="metric-value" data-role="imageHeight">--</span>
+          <span class="metric-unit">m</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Factor de aumento (m)</span>
+          <span class="metric-value" data-role="magnification">--</span>
+          <span class="metric-unit"></span>
+        </div>
+
+        <div class="formula-label" data-role="formula">
+          Aumento = distancia pantalla / distancia objeto = -- / -- = --
+        </div>
+      </div>
+    `;
+
+    this._toggleBtn = this._el.querySelector('.metrics-panel__toggle');
+    this._toggleIcon = this._el.querySelector('.metrics-panel__toggle-icon');
+    this._formulaEl = this._el.querySelector('[data-role="formula"]');
+
+    this._values = {
+      do: new AnimatedValue(this._el.querySelector('[data-role="do"]'), 2),
+      di: new AnimatedValue(this._el.querySelector('[data-role="di"]'), 2),
+      personHeight: new AnimatedValue(this._el.querySelector('[data-role="personHeight"]'), 2),
+      imageHeight: new AnimatedValue(this._el.querySelector('[data-role="imageHeight"]'), 2),
+      magnification: new AnimatedValue(this._el.querySelector('[data-role="magnification"]'), 3),
+      magnificationCompact: new AnimatedValue(this._el.querySelector('[data-role="magnification-compact"]'), 3),
+    };
+
+    this._toggleBtn.addEventListener('click', () => {
+      this._expanded = !this._expanded;
+      this._applyExpandedState();
+    });
+  }
+
+  _applyExpandedState() {
+    this._el.classList.toggle('metrics-panel--collapsed', !this._expanded);
+    this._toggleBtn.setAttribute('aria-expanded', String(this._expanded));
+    this._toggleIcon.innerHTML = this._expanded ? '&#9662;' : '&#9656;';
+  }
+
+  _onMetricsUpdated(data) {
+    if (!data) return;
+    const { do: doM, di, personHeight, imageHeight, magnification } = data;
+
+    this._values.do.set(doM);
+    this._values.di.set(di);
+    this._values.personHeight.set(personHeight);
+    this._values.imageHeight.set(imageHeight);
+    this._values.magnification.set(magnification);
+    this._values.magnificationCompact.set(magnification);
+
+    if (typeof doM === 'number' && typeof di === 'number' && typeof magnification === 'number') {
+      this._formulaEl.innerHTML =
+        'Aumento = distancia pantalla / distancia objeto = ' +
+        `<span class="formula-value">${di.toFixed(2)}</span> / ` +
+        `<span class="formula-value">${doM.toFixed(2)}</span> = ` +
+        `<span class="formula-value">${magnification.toFixed(3)}</span>`;
+    }
+  }
+
+  destroy() {
+    EventBus.off(EVENTS.METRICS_UPDATED, this._onMetricsUpdated);
+    Object.values(this._values).forEach((v) => v.destroy());
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 11. ExplanationModal.js (Interface)
+// ════════════════════════════════════════════════════════════════════════
+const MODAL_TRANSITION_MS = 220;
+
+const SECTIONS = [
+  {
+    heading: '¿Quién fue Alhazen?',
+    html:
+      'Ibn al-Haytham (965–1040), conocido en Occidente como Alhazen, fue un científico ' +
+      'nacido en Basra que desarrolló gran parte de su obra en El Cairo, Egipto, bajo el ' +
+      'califato fatimí. Es considerado uno de los padres del método científico experimental ' +
+      'aplicado a la óptica.',
+  },
+  {
+    heading: '¿Qué es una cámara oscura?',
+    html:
+      'Es una caja o habitación cerrada con un pequeño agujero en una de sus caras. La luz ' +
+      'que entra por ese agujero proyecta, en la pared opuesta, una imagen del exterior. El ' +
+      'fenómeno ya era conocido antes de Alhazen (hay menciones en China y Grecia antigua), ' +
+      'pero fue él quien lo estudió de forma rigurosa y experimental en su obra principal, el ' +
+      '<em>Libro de la Óptica</em> (Kitab al-Manazir, hacia el año 1021), explicando ' +
+      'correctamente por qué se forma la imagen.',
+  },
+  {
+    heading: '¿Por qué la imagen aparece invertida?',
+    html:
+      'Porque la luz viaja en línea recta. Un rayo que sale de la parte de arriba del objeto ' +
+      'y otro que sale de la parte de abajo se cruzan exactamente en el agujero antes de ' +
+      'continuar su camino: el rayo de arriba termina abajo, y el de abajo termina arriba, en ' +
+      'la pantalla. Es pura geometría (semejanza de triángulos), no algo específico del ojo o ' +
+      'de un lente.',
+  },
+  {
+    heading: '¿Por qué cambia el tamaño de la imagen?',
+    html:
+      'Cuanto más lejos está el objeto del agujero, más "cerrado" es el ángulo de los rayos ' +
+      'que lo delimitan, así que la imagen proyectada es más chica. Cuanto más lejos está la ' +
+      'pantalla del agujero, más se abren esos mismos rayos antes de llegar a ella, así que la ' +
+      'imagen es más grande. La relación exacta es ' +
+      '<code>Aumento = distancia pantalla / distancia objeto</code>.',
+  },
+  {
+    heading: '¿Qué relación tiene esto con la fotografía?',
+    html:
+      'El principio de la cámara oscura —una abertura que proyecta una imagen del mundo ' +
+      'exterior sobre una superficie— es el antepasado directo de la cámara fotográfica. ' +
+      'Siglos después, en el siglo XIX, ese mismo principio se combinó con superficies ' +
+      'sensibles a la luz (como hizo Niépce con sus primeras fotografías) para poder capturar ' +
+      'y fijar esa imagen proyectada de forma permanente. Toda cámara moderna, con lente y ' +
+      'sensor digital, sigue el mismo esquema básico que Alhazen estudió con un simple ' +
+      'agujero.',
+  },
+];
+
+class ExplanationModal {
+  constructor(containerEl) {
+    if (!containerEl) {
+      throw new Error('ExplanationModal: containerEl es requerido (ej. document.getElementById("modal-explicacion")).');
+    }
+    this._el = containerEl;
+    this._isOpen = false;
+    this._closeTimer = null;
+
+    this._build();
+    this._bindStaticButtons();
+
+    this._onOpen = this._onOpen.bind(this);
+    this._onCloseEvent = this._onCloseEvent.bind(this);
+    this._onKeyDown = this._onKeyDown.bind(this);
+
+    EventBus.on(EVENTS.EXPLAIN_OPEN, this._onOpen);
+    EventBus.on(EVENTS.EXPLAIN_CLOSE, this._onCloseEvent);
+  }
+
+  _build() {
+    this._el.classList.add('modal-backdrop');
+    this._el.setAttribute('role', 'dialog');
+    this._el.setAttribute('aria-modal', 'true');
+    this._el.setAttribute('aria-labelledby', 'modal-explicacion-titulo');
+
+    const sectionsHtml = SECTIONS.map(
+      (s) => `
+        <section class="modal-section">
+          <h3>${s.heading}</h3>
+          <p>${s.html}</p>
+        </section>`
+    ).join('');
+
+    this._el.innerHTML = `
+      <div class="modal-panel">
+        <button type="button" class="modal-close" aria-label="Cerrar explicación">&times;</button>
+        <header class="modal-header">
+          <h2 id="modal-explicacion-titulo">Alhazen y la cámara oscura</h2>
+        </header>
+        <div class="modal-body">
+          ${sectionsHtml}
+        </div>
+      </div>
+    `;
+
+    this._panelEl = this._el.querySelector('.modal-panel');
+    this._closeBtn = this._el.querySelector('.modal-close');
+
+    this._el.addEventListener('click', (e) => {
+      if (e.target === this._el) EventBus.emit(EVENTS.EXPLAIN_CLOSE, {});
+    });
+    this._closeBtn.addEventListener('click', () => EventBus.emit(EVENTS.EXPLAIN_CLOSE, {}));
+  }
+
+  _bindStaticButtons() {
+    const openBtn = document.querySelector('.btn-explicacion');
+    const resetBtn = document.querySelector('.btn-reiniciar');
+
+    if (openBtn) {
+      openBtn.addEventListener('click', () => EventBus.emit(EVENTS.EXPLAIN_OPEN, {}));
+    }
+    if (resetBtn) {
+      resetBtn.addEventListener('click', () => EventBus.emit(EVENTS.RESET, {}));
+    }
+  }
+
+  _onOpen() {
+    if (this._isOpen) return;
+    this._isOpen = true;
+
+    if (this._closeTimer) {
+      clearTimeout(this._closeTimer);
+      this._closeTimer = null;
+    }
+
+    this._el.hidden = false;
+    void this._el.offsetWidth;
+    this._el.classList.add('modal-backdrop--open');
+
+    document.addEventListener('keydown', this._onKeyDown);
+    this._panelEl.scrollTop = 0;
+    this._closeBtn.focus();
+  }
+
+  _onCloseEvent() {
+    if (!this._isOpen) return;
+    this._isOpen = false;
+
+    this._el.classList.remove('modal-backdrop--open');
+    document.removeEventListener('keydown', this._onKeyDown);
+
+    this._closeTimer = setTimeout(() => {
+      this._el.hidden = true;
+      this._closeTimer = null;
+    }, MODAL_TRANSITION_MS);
+  }
+
+  _onKeyDown(e) {
+    if (e.key === 'Escape') EventBus.emit(EVENTS.EXPLAIN_CLOSE, {});
+  }
+
+  destroy() {
+    EventBus.off(EVENTS.EXPLAIN_OPEN, this._onOpen);
+    EventBus.off(EVENTS.EXPLAIN_CLOSE, this._onCloseEvent);
+    document.removeEventListener('keydown', this._onKeyDown);
+    if (this._closeTimer) clearTimeout(this._closeTimer);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 12. DebugDraw.js (Interface)
+// ════════════════════════════════════════════════════════════════════════
+const AXIS_COLOR = 'rgba(120, 230, 255, 0.85)';
+const RAY_LINE_COLOR = 'rgba(255, 255, 255, 0.4)';
+const POINT_COLORS = { from: '#ff5d5d', through: '#ffe14d', to: '#5dff9e' };
+const RAY_LABELS = ['cabeza', 'pies'];
+
+class DebugDraw {
+  constructor({ canvas, getOrigin }) {
+    if (!canvas) throw new Error('DebugDraw: canvas es requerido (ej. #debug-canvas).');
+    if (typeof getOrigin !== 'function') throw new Error('DebugDraw: getOrigin es requerido (() => ({x, y})).');
+
+    this._canvas = canvas;
+    this._ctx = canvas.getContext('2d');
+    this._getOrigin = getOrigin;
+
+    this.enabled = false;
+    this._latest = null;
+
+    this._onToggle = this._onToggle.bind(this);
+    this._onMetricsUpdated = this._onMetricsUpdated.bind(this);
+
+    EventBus.on(EVENTS.DEBUG_TOGGLE, this._onToggle);
+    EventBus.on(EVENTS.METRICS_UPDATED, this._onMetricsUpdated);
+
+    this._applyVisibility();
+  }
+
+  _onToggle() {
+    this.enabled = !this.enabled;
+    this._applyVisibility();
+    this._redraw();
+  }
+
+  _onMetricsUpdated(data) {
+    this._latest = data;
+    if (this.enabled) this._redraw();
+  }
+
+  _applyVisibility() {
+    this._canvas.style.display = this.enabled ? 'block' : 'none';
+    if (!this.enabled) this._clear();
+  }
+
+  _clear() {
+    this._ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+  }
+
+  _redraw() {
+    this._clear();
+    if (!this.enabled || !this._latest) return;
+
+    const origin = this._getOrigin();
+    this._drawOpticalAxis(origin);
+    this._drawRays(origin);
+  }
+
+  _toCanvas(x, y, origin) {
+    return worldToCanvas(x, y, origin.x, origin.y);
+  }
+
+  _drawOpticalAxis(origin) {
+    const ctx = this._ctx;
+    const left = this._toCanvas(-DO_MAX - 0.5, 0, origin);
+    const right = this._toCanvas(DI_MAX + 0.5, 0, origin);
+
+    ctx.save();
+    ctx.strokeStyle = AXIS_COLOR;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(left.x, left.y);
+    ctx.lineTo(right.x, right.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = AXIS_COLOR;
+    ctx.font = '11px monospace';
+    ctx.fillText('eje óptico (y = 0)', left.x + 4, left.y - 6);
+
+    const holePt = this._toCanvas(0, 0, origin);
+    ctx.beginPath();
+    ctx.arc(holePt.x, holePt.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = '#fff';
+    ctx.fill();
+    ctx.fillText('agujero (0, 0)', holePt.x + 6, holePt.y + 14);
+    ctx.restore();
+  }
+
+  _drawRays(origin) {
+    const rays = this._latest?.rays;
+    if (!Array.isArray(rays)) return;
+
+    rays.forEach((ray, i) => {
+      const from = this._toCanvas(ray.from.x, ray.from.y, origin);
+      const through = this._toCanvas(ray.through.x, ray.through.y, origin);
+      const to = this._toCanvas(ray.to.x, ray.to.y, origin);
+      const label = RAY_LABELS[i] ?? `rayo ${i}`;
+
+      this._strokePath([from, through, to]);
+
+      this._point(from, POINT_COLORS.from, `${label} · from (${ray.from.x.toFixed(2)}, ${ray.from.y.toFixed(2)})`);
+      this._point(through, POINT_COLORS.through, `through (${ray.through.x.toFixed(2)}, ${ray.through.y.toFixed(2)})`);
+      this._point(to, POINT_COLORS.to, `to (${ray.to.x.toFixed(2)}, ${ray.to.y.toFixed(2)})`);
+    });
+  }
+
+  _strokePath(points) {
+    const ctx = this._ctx;
+    ctx.save();
+    ctx.strokeStyle = RAY_LINE_COLOR;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    points.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+
+  _point(p, color, label) {
+    const ctx = this._ctx;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+
+    ctx.font = '10px monospace';
+    const textW = ctx.measureText(label).width + 6;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+    ctx.fillRect(p.x + 6, p.y - 12, textW, 14);
+    ctx.fillStyle = color;
+    ctx.fillText(label, p.x + 9, p.y - 1);
+    ctx.restore();
+  }
+
+  destroy() {
+    EventBus.off(EVENTS.DEBUG_TOGGLE, this._onToggle);
+    EventBus.off(EVENTS.METRICS_UPDATED, this._onMetricsUpdated);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 13. Audio (Publisher) — viento del desierto sutil y continuo.
+//     Oscilador de ruido filtrado (buffer de ruido blanco generado en
+//     runtime + lowpass modulado por un LFO muy lento, simula ráfagas).
+//     NO es un sample externo (cumple briefs/publisher-brief.md).
+// ════════════════════════════════════════════════════════════════════════
+let _audioCtx = null;
+
+function getAudioContext() {
+  if (!_audioCtx) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    _audioCtx = new Ctx();
+  }
+  return _audioCtx;
+}
+
+function unlockAudio() {
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') ctx.resume();
+}
+
+class DesertWindAmbience {
+  constructor() {
+    this._ctx = null;
+    this._gain = null;
+    this._started = false;
+    this._muted = false;
+    this._targetVolume = 0.05; // muy sutil, según brief
+  }
+
+  start() {
+    if (this._started) {
+      if (this._ctx && this._ctx.state === 'suspended') this._ctx.resume();
+      return;
+    }
+    this._started = true;
+
+    const ctx = getAudioContext();
+    this._ctx = ctx;
+
+    // Buffer de ruido blanco (2s, en loop) — "oscilador de ruido filtrado".
+    const bufferSize = ctx.sampleRate * 2;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 480;
+    filter.Q.value = 0.6;
+
+    // LFO muy lento que modula la frecuencia de corte -> sensación de
+    // ráfagas de viento del desierto, sin ser un sample.
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.06;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 160;
+    lfo.connect(lfoGain);
+    lfoGain.connect(filter.frequency);
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    this._gain = gain;
+
+    source.connect(filter).connect(gain).connect(ctx.destination);
+    source.start();
+    lfo.start();
+
+    // Fade-in suave, nunca abrupto.
+    gain.gain.setTargetAtTime(this._muted ? 0 : this._targetVolume, ctx.currentTime, 2.5);
+  }
+
+  toggleMute() {
+    this._muted = !this._muted;
+    if (this._gain && this._ctx) {
+      this._gain.gain.setTargetAtTime(this._muted ? 0 : this._targetVolume, this._ctx.currentTime, 0.3);
+    }
+    return this._muted;
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 14. main.js (Publisher) — SOLO wiring: instanciar, conectar, arrancar.
+// ════════════════════════════════════════════════════════════════════════
+function main() {
+  const gameCanvasEl = document.getElementById('game-canvas');
+  const debugCanvasEl = document.getElementById('debug-canvas');
+  const metricsPanelEl = document.querySelector('.metrics-panel');
+  const modalEl = document.getElementById('modal-explicacion');
+  const muteBtn = document.querySelector('.btn-mute');
+
+  // ── Instanciación ──
+  const engine = new PinholeOpticsEngine();
+  const sceneRenderer = new SceneRenderer({ canvas: gameCanvasEl });
+  const input = new InputManager({ canvas: gameCanvasEl, getOrigin: () => sceneRenderer.origin });
+  input.bind();
+
+  const metricsPanel = new MetricsPanel(metricsPanelEl);
+  const explanationModal = new ExplanationModal(modalEl);
+  const debugDraw = new DebugDraw({ canvas: debugCanvasEl, getOrigin: () => sceneRenderer.origin });
+  const desertWind = new DesertWindAmbience();
+
+  // ── Recalcular proyección y emitir metrics:updated con TODOS los campos ──
+  function emitMetrics(doM, diM) {
+    const result = engine.computeProjection(doM, diM);
+    EventBus.emit(EVENTS.METRICS_UPDATED, {
+      do: doM,
+      di: diM,
+      personHeight: engine.personHeight,
+      imageHeight: result.imageHeight,
+      magnification: result.magnification,
+      rays: result.rays,
+    });
+  }
+
+  EventBus.on(EVENTS.PERSON_MOVED, (payload) => emitMetrics(payload.do, input.diValue));
+  EventBus.on(EVENTS.SCREEN_MOVED, (payload) => emitMetrics(input.doValue, payload.di));
+
+  // ── Reset: anima do/di de vuelta a los valores iniciales, re-emitiendo
+  //    person:moved/screen:moved en cada frame para que rayos y HUD se
+  //    actualicen en vivo (no solo al final de la animación). ──
+  let resetRafId = null;
+
+  function tweenReset() {
+    if (resetRafId) cancelAnimationFrame(resetRafId);
+
+    const startDo = input.doValue;
+    const startDi = input.diValue;
+    const targetDo = DO_INITIAL;
+    const targetDi = DI_INITIAL;
+    const duration = 550; // ms
+    const startTime = performance.now();
+
+    function step(now) {
+      const t = Math.min(1, (now - startTime) / duration);
+      const eased = easeOutCubic(t);
+      const doM = startDo + (targetDo - startDo) * eased;
+      const diM = startDi + (targetDi - startDi) * eased;
+
+      input.person.setX(-doM);
+      input.screen.setX(diM);
+
+      EventBus.emit(EVENTS.PERSON_MOVED, { do: doM });
+      EventBus.emit(EVENTS.SCREEN_MOVED, { di: diM });
+
+      if (t < 1) {
+        resetRafId = requestAnimationFrame(step);
+      } else {
+        resetRafId = null;
+      }
+    }
+
+    resetRafId = requestAnimationFrame(step);
+  }
+
+  EventBus.on(EVENTS.RESET, tweenReset);
+
+  // Si el jugador empieza a arrastrar durante una animación de reset, el
+  // gesto manual tiene prioridad: se cancela el tween en curso.
+  gameCanvasEl.addEventListener('pointerdown', () => {
+    if (resetRafId) {
+      cancelAnimationFrame(resetRafId);
+      resetRafId = null;
+    }
+  });
+
+  // ── Emitir metrics:updated una vez al arrancar (recomendado por Interface
+  //    y Artist en sus reportes) para que HUD/rayos/silueta no arranquen
+  //    vacíos hasta el primer drag. ──
+  emitMetrics(input.doValue, input.diValue);
+
+  // ── GameLoop ──
+  const loop = new GameLoop({ maxFrameTime: 0.1 });
+  loop.onDraw = (dt) => {
+    sceneRenderer.update(dt);
+    sceneRenderer.render();
+  };
+  loop.start();
+
+  // ── Audio: el AudioContext solo puede arrancar tras un gesto del usuario
+  //    (política de navegadores). Se dispara en el primer pointerdown o
+  //    keydown de la partida. ──
+  function startAudioOnce() {
+    unlockAudio();
+    desertWind.start();
+  }
+  window.addEventListener('pointerdown', startAudioOnce, { once: true });
+  window.addEventListener('keydown', startAudioOnce, { once: true });
+
+  if (muteBtn) {
+    muteBtn.addEventListener('click', () => {
+      const muted = desertWind.toggleMute();
+      muteBtn.textContent = muted ? '🔇' : '🔊';
+      muteBtn.setAttribute('aria-pressed', String(muted));
+      muteBtn.setAttribute('aria-label', muted ? 'Activar sonido ambiente' : 'Silenciar sonido ambiente');
+    });
+  }
+
+  // ── Canvas responsive: reescala manteniendo aspect-ratio 16:9, con
+  //    letterbox (sin recortar ni deformar). #hud NO se escala (queda
+  //    superpuesto a viewport completo) para que los controles táctiles
+  //    conserven su tamaño real de 44px — ver INTEGRATION_REPORT.md. ──
+  function fitGameContainer() {
+    const scale = Math.min(window.innerWidth / CANVAS_WIDTH, window.innerHeight / CANVAS_HEIGHT);
+    const t = `translate(-50%, -50%) scale(${scale})`;
+    gameCanvasEl.style.transform = t;
+    debugCanvasEl.style.transform = t;
+  }
+  window.addEventListener('resize', fitGameContainer);
+  window.addEventListener('orientationchange', fitGameContainer);
+  fitGameContainer();
+}
+
+window.addEventListener('load', main);
+
+})();
+</script>
+</body>
+</html>
