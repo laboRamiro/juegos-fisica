@@ -1,0 +1,1464 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark" />
+<title>Guardavidas: Rescate Óptimo</title>
+<style>
+  :root {
+    --bg: #0b1216;
+    --bg2: #0e171c;
+    --card: #17262b;
+    --card-border: rgba(255, 255, 255, 0.08);
+    --accent: #6fc6e8;
+    --text: #d7dde8;
+    --text-dim: #8b93a8;
+    --ok: #3ddc84;
+    --warn: #ff9d3d;
+    --danger: #ff5a5a;
+    --player: #ff8c42;
+    --optimal: #2bd66b;
+    --mono: "SF Mono", "Cascadia Mono", Consolas, "Roboto Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%; background: #000;
+    font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+  }
+  #app { display: flex; width: 100%; height: 100vh; overflow: hidden; }
+  #stage {
+    flex: 1 1 auto; min-width: 0; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: #000;
+  }
+  #game {
+    width: min(100%, calc(100vh * 920 / 720));
+    height: auto;
+    aspect-ratio: 920 / 720;
+    display: block;
+    touch-action: none;
+    cursor: crosshair;
+  }
+  #hud {
+    flex: 0 0 360px; width: 360px;
+    background:
+      repeating-linear-gradient(0deg, rgba(111,198,232,0.025) 0px, rgba(111,198,232,0.025) 1px, transparent 1px, transparent 28px),
+      linear-gradient(180deg, var(--bg2), var(--bg));
+    color: var(--text);
+    overflow-y: auto; padding: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+    border-left: 1px solid rgba(255, 255, 255, 0.06);
+    box-shadow: inset 3px 0 18px rgba(0,0,0,0.35);
+  }
+  @media (max-width: 860px) {
+    #app { flex-direction: column; }
+    #stage { flex: 1 1 auto; }
+    #hud { flex: 0 0 auto; width: 100%; max-height: 46vh; border-left: none; border-top: 1px solid rgba(255,255,255,0.06); }
+  }
+  h1 {
+    font-size: 14px; margin: 0; letter-spacing: 0.06em; font-weight: 700;
+    border-bottom: 1px solid rgba(111,198,232,0.25); padding-bottom: 10px;
+  }
+  h1 .tag { display: block; font-size: 10px; letter-spacing: 0.12em; color: var(--accent); font-weight: 600; margin-top: 3px; }
+  h2 { font-size: 17px; margin: 0; }
+  .dim { color: var(--text-dim); }
+  .accent { color: var(--accent); }
+  .small { font-size: 11px; font-weight: 600; }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .card {
+    background: var(--card); border: 1px solid var(--card-border);
+    border-radius: 12px; padding: 10px 12px;
+  }
+  .row { display: flex; justify-content: space-between; gap: 8px; font-size: 13px; padding: 2px 0; }
+  button {
+    font: inherit; font-weight: 600; border: none; border-radius: 10px;
+    padding: 12px; cursor: pointer; min-height: 44px;
+  }
+  button:disabled { opacity: 0.35; cursor: default; }
+  .btn-player { background: var(--player); color: #0a1015; }
+  .btn-accent { background: var(--accent); color: #0a1015; }
+  .btn-ghost {
+    background: transparent; color: var(--accent);
+    border: 1px solid rgba(111, 198, 232, 0.4);
+  }
+  #score-line { text-align: center; font-size: 15px; margin: 4px 0; }
+  #summary-score { text-align: center; font-size: 26px; font-weight: 700; }
+  #summary-rows { display: flex; flex-direction: column; gap: 6px; }
+  .summary-row-title { font-size: 12px; }
+  .summary-row-detail { font-size: 11px; color: var(--text-dim); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"><canvas id="game" width="920" height="720"></canvas></div>
+
+  <div id="hud">
+    <h1>GUARDAVIDAS: RESCATE ÓPTIMO<span class="tag">SIMULADOR · PRINCIPIO DE FERMAT</span></h1>
+
+    <div id="game-section" style="display:flex;flex-direction:column;gap:10px;">
+      <div id="level-index" class="accent small mono"></div>
+      <div id="level-name" style="font-size:15px;"></div>
+      <div id="level-desc" class="dim" style="font-size:12px;"></div>
+
+      <div class="card">
+        <div class="row"><span class="dim">Velocidad en arena</span><span id="speed-sand" class="mono" style="color:var(--player)"></span></div>
+        <div class="row"><span class="dim">Velocidad en agua</span><span id="speed-water" class="mono accent"></span></div>
+      </div>
+
+      <div id="instruction" style="font-size:13px;"></div>
+      <div id="choice" class="mono" style="font-size:12px;color:var(--player);"></div>
+
+      <button id="confirm-btn" class="btn-player" disabled>CONFIRMAR RECORRIDO</button>
+
+      <div id="result-card" class="card hidden" style="display:flex;flex-direction:column;gap:2px;">
+        <div class="row"><span class="dim">Tu tiempo</span><span id="player-time" class="mono" style="color:var(--player)"></span></div>
+        <div class="row"><span class="dim">Tiempo óptimo</span><span id="optimal-time" class="mono" style="color:var(--optimal)"></span></div>
+        <div class="row"><span class="dim">Diferencia</span><span id="extra-time" class="mono"></span></div>
+        <div id="score-line"></div>
+        <div id="message" class="dim" style="font-size:12px;text-align:center;"></div>
+      </div>
+
+      <button id="next-btn" class="btn-ghost hidden"></button>
+    </div>
+
+    <div id="summary-section" class="hidden" style="display:flex;flex-direction:column;gap:10px;">
+      <h2>RESUMEN FINAL</h2>
+      <div id="summary-rows"></div>
+      <div id="summary-total" style="font-size:13px;"></div>
+      <div id="summary-score" class="mono"></div>
+      <div id="summary-message" class="dim" style="font-size:13px;text-align:center;"></div>
+      <button id="restart-btn" class="btn-accent">JUGAR DE NUEVO</button>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* ============================================================================================
+ * Guardavidas: Rescate Óptimo — version de un solo archivo HTML, con direccion de arte AAA
+ * traducida a Canvas2D puro (sin WebGL/Three.js/PixiJS: eso exigiria dependencias externas o un
+ * build, lo que rompe el objetivo de "un solo archivo que se abre con doble clic"). Lo que SI se
+ * porto del brief tecnico de direccion de arte:
+ *   - Camara ortografica inclinada ~65° (ver TILT_SQUISH) en vez de vista cenital pura.
+ *   - Composicion: orilla al 42% de la altura, guardavidas en el tercio superior-izquierdo,
+ *     victima en el tercio inferior-derecho (los niveles ya caian ahi por diseño original).
+ *   - Guion de color tipo fotografia costera (turquesa->azul profundo, arena calida/humeda).
+ *   - Vida ambiental (gaviotas, perro, cardumenes, gente lejana) deliberadamente discreta: la
+ *     jerarquia visual del propio brief pide que nada compita con guardavidas/victima/entrada/
+ *     recorrido, asi que todo lo ambiental queda de fondo, chico y de bajo contraste.
+ *   - Capa estatica cacheada en un canvas offscreen (buildStaticLayer) para el pedido de
+ *     rendimiento/"reducir draw calls": todo lo que no cambia cuadro a cuadro (cielo, arena,
+ *     grilla cientifica, marcas de distancia, puesto de guardavidas, gente lejana) se dibuja UNA
+ *     sola vez y despues se vuelca con un unico drawImage() por frame.
+ * Fisica, niveles y maquina de estados: identicos al puerto original (y a RescueSolver.gd en la
+ * version Godot) — ver guardavidas-rescate-optimo-html/README.md y test/logic-check.mjs.
+ * ========================================================================================== */
+
+// ---------- Camara: conversion mundo (metros) <-> pixeles del canvas ----------
+// Misma convencion de mundo que la version Godot: orilla en y=0, arena y<0, mar y>0. La camara
+// es ortografica, inclinada TILT_DEG respecto del plano horizontal (90° = cenital puro, sin
+// inclinacion; a menor angulo, mas se "acuesta" la vista y mas se comprime el eje de profundidad).
+// Es un efecto puramente de render: el eje X (a lo largo de la costa) no se toca, y RescueSolver
+// nunca pasa por worldToPx, asi que la fisica sigue siendo la misma en el plano real sin importar
+// como se proyecte en pantalla.
+const PPM = 12;
+const TILT_DEG = 65;
+const TILT_SQUISH = Math.sin(TILT_DEG * Math.PI / 180); // ~0.906
+const ORIGIN_X = 300;
+const CANVAS_W = 920;
+const CANVAS_H = 720;
+const SHORE_Y = Math.round(CANVAS_H * 0.42); // regla de composicion: orilla al 42% de la altura
+const CLICK_MIN_X = -20;
+const CLICK_MAX_X = 45;
+
+function worldToPx(x, y) { return { x: ORIGIN_X + x * PPM, y: SHORE_Y + y * PPM * TILT_SQUISH }; }
+function pxXToWorldX(px) { return (px - ORIGIN_X) / PPM; }
+function clampShoreX(x) { return Math.min(CLICK_MAX_X, Math.max(CLICK_MIN_X, x)); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpPt(a, b, t) { return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) }; }
+
+// ---------- Niveles (identicos a LevelData.gd) ----------
+const LEVELS = [
+  {
+    name: 'Nivel 1 — Playa tranquila',
+    description: 'Distancia moderada y corriente floja. Encontrá el punto de entrada ideal.',
+    guard: { x: 0, y: -20 }, victim: { x: 30, y: 15 },
+    vSand: 6.0, vWater: 1.6,
+  },
+  {
+    name: 'Nivel 2 — Desvío lateral',
+    description: 'El bañista está lejos, a un costado. Ir en línea recta no es lo más rápido.',
+    guard: { x: -15, y: -14 }, victim: { x: 35, y: 22 },
+    vSand: 5.5, vWater: 2.2,
+  },
+  {
+    name: 'Nivel 3 — Mar adentro',
+    description: 'El bañista está muy adentro y el agua está fría: nadás mucho más lento de lo que corrés.',
+    guard: { x: 5, y: -10 }, victim: { x: 38, y: 32 },
+    vSand: 6.5, vWater: 1.2,
+  },
+];
+
+// ---------- RescueSolver: identico en logica a RescueSolver.gd ----------
+// T(x) = |guardia - entrada|/v_arena + |entrada - victima|/v_agua es convexa en x (suma de
+// normas euclideas de funciones afines, escaladas por constantes positivas) -> un unico minimo,
+// resuelto por busqueda ternaria en vez de la ecuacion de Snell en forma cerrada para evitar el
+// caso especial de division por cero justo debajo de alguno de los dos personajes. Este bloque
+// trabaja siempre en coordenadas de MUNDO (metros) — nunca llama a worldToPx, asi que es
+// completamente ajeno a como se proyecte la camara.
+function dist(ax, ay, bx, by) { return Math.hypot(ax - bx, ay - by); }
+
+function breakdownForEntry(level, shoreX) {
+  const dSand = dist(level.guard.x, level.guard.y, shoreX, 0);
+  const dWater = dist(level.victim.x, level.victim.y, shoreX, 0);
+  const tSand = dSand / level.vSand;
+  const tWater = dWater / level.vWater;
+  return { shoreX, dSand, dWater, tSand, tWater, total: tSand + tWater };
+}
+
+function timeForEntry(level, shoreX) { return breakdownForEntry(level, shoreX).total; }
+
+function findOptimalEntry(level) {
+  let lo = Math.min(level.guard.x, level.victim.x) - 60;
+  let hi = Math.max(level.guard.x, level.victim.x) + 60;
+  for (let i = 0; i < 100; i++) {
+    const m1 = lo + (hi - lo) / 3;
+    const m2 = hi - (hi - lo) / 3;
+    if (timeForEntry(level, m1) < timeForEntry(level, m2)) hi = m2; else lo = m1;
+  }
+  return (lo + hi) / 2;
+}
+
+// Puntaje 0-100: 100 si el jugador iguala el tiempo optimo; perder un 50% de tiempo extra
+// respecto del optimo lleva el puntaje a 0. Identico a Main.gd::_score_for.
+function scoreFor(playerTotal, optimalTotal) {
+  if (optimalTotal <= 0.0001) return 100;
+  const extraRatio = (playerTotal - optimalTotal) / optimalTotal;
+  const score = 100 * (1 - extraRatio * 2);
+  return Math.round(Math.min(100, Math.max(0, score)));
+}
+
+// ---------- Utilidades de dibujo ----------
+function circlePath(ctx, x, y, r) { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); }
+function line(ctx, x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+function randRange(a, b) { return a + Math.random() * (b - a); }
+
+/* ============================================================================================
+ * ESCENARIO — capa estatica (cacheada en un canvas offscreen, se dibuja una unica vez)
+ * Guion de color: arena seca beige calido -> arena humeda ocre mas oscura junto a la orilla;
+ * mar turquesa cerca de la costa -> azul intenso mar adentro; cielo degradado con calima calida
+ * cerca del horizonte. Inspirado en fotografia costera editorial, evitando saturaciones altas.
+ * ========================================================================================== */
+const SKY_TOP_PX = 60;
+const WET_SAND_BAND = 34; // franja de arena compactada/humeda justo antes de la orilla
+
+// Puntitos de grano de arena — generados una sola vez, con tamaño/opacidad variables para que no
+// se vean uniformes (pedido explicito: "nunca completamente uniforme").
+const SAND_DOTS = Array.from({ length: 170 }, () => ({
+  x: Math.random() * CANVAS_W,
+  y: SKY_TOP_PX + 6 + Math.random() * (SHORE_Y - SKY_TOP_PX - WET_SAND_BAND - 10),
+  r: 0.8 + Math.random() * 1.1,
+  a: 0.12 + Math.random() * 0.22,
+}));
+
+const WIND_RIPPLES = Array.from({ length: 9 }, () => ({
+  x: Math.random() * CANVAS_W,
+  y: SKY_TOP_PX + 20 + Math.random() * (SHORE_Y - SKY_TOP_PX - WET_SAND_BAND - 40),
+  w: 40 + Math.random() * 70,
+  rot: (Math.random() - 0.5) * 0.3,
+}));
+
+const SEASHELLS = Array.from({ length: 7 }, () => ({
+  x: Math.random() * CANVAS_W,
+  y: SHORE_Y - WET_SAND_BAND * 0.5 - Math.random() * (SHORE_Y - SKY_TOP_PX - WET_SAND_BAND - 20),
+  rot: Math.random() * Math.PI * 2,
+  scale: 0.7 + Math.random() * 0.7,
+}));
+
+const SEAWEED_CLUMPS = Array.from({ length: 5 }, () => ({
+  x: Math.random() * CANVAS_W,
+  y: SHORE_Y - Math.random() * WET_SAND_BAND * 0.8,
+  scale: 0.8 + Math.random() * 0.6,
+}));
+
+// Rastro de huellas humanas fijo, cruzando diagonalmente una zona vacia de la arena seca — pura
+// ambientacion (no pertenece a ningun personaje activo).
+const FOOTPRINT_TRAIL = (() => {
+  const pts = [];
+  const start = { x: 60, y: 90 };
+  const end = { x: 260, y: 200 };
+  const steps = 11;
+  for (let i = 0; i < steps; i++) {
+    const t = i / (steps - 1);
+    const side = i % 2 === 0 ? -1 : 1;
+    const perp = { x: -(end.y - start.y), y: end.x - start.x };
+    const perpLen = Math.hypot(perp.x, perp.y) || 1;
+    pts.push({
+      x: lerp(start.x, end.x, t) + (perp.x / perpLen) * side * 4,
+      y: lerp(start.y, end.y, t) + (perp.y / perpLen) * side * 4,
+      angle: Math.atan2(end.y - start.y, end.x - start.x) + side * 0.15,
+    });
+  }
+  return pts;
+})();
+
+// Personas lejanas en la playa, muy poco detalladas a proposito ("bajo nivel de detalle para no
+// distraer" — la jerarquia visual del brief pone al recorrido siempre primero).
+const DISTANT_BEACHGOERS = [
+  { world: { x: -16, y: -17 }, umbrella: '#e0a34b' },
+  { world: { x: 24, y: -19 }, umbrella: '#6fc6e8' },
+];
+
+const TOWER_WORLD = { x: 33, y: -14 };
+
+let staticBuffer = null;
+let staticCtx = null;
+
+function buildStaticLayer() {
+  staticBuffer = document.createElement('canvas');
+  staticBuffer.width = CANVAS_W;
+  staticBuffer.height = CANVAS_H;
+  staticCtx = staticBuffer.getContext('2d');
+  const ctx = staticCtx;
+
+  drawSkyStatic(ctx);
+  drawSandStatic(ctx);
+  drawSeaBaseStatic(ctx);
+  drawSciGrid(ctx);
+  drawDistanceTicks(ctx);
+  for (const b of DISTANT_BEACHGOERS) drawDistantBeachgoer(ctx, worldToPx(b.world.x, b.world.y), b.umbrella);
+  drawLifeguardTowerBody(ctx, worldToPx(TOWER_WORLD.x, TOWER_WORLD.y));
+}
+
+function drawSkyStatic(ctx) {
+  // Gradiente real de Canvas (no bandas fillRect escalonadas): un degradado por pasos deja
+  // costuras visibles entre cada bloque de color, que se leen como "lineas horizontales" no
+  // deseadas — createLinearGradient interpola de forma continua, sin costuras.
+  const sky = ctx.createLinearGradient(0, 0, 0, SKY_TOP_PX);
+  sky.addColorStop(0, '#2f7fc4');
+  sky.addColorStop(1, '#bfe6f2');
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, CANVAS_W, SKY_TOP_PX);
+
+  // calima calida justo sobre el horizonte (union cielo/arena)
+  const haze = ctx.createLinearGradient(0, SKY_TOP_PX - 22, 0, SKY_TOP_PX);
+  haze.addColorStop(0, 'rgba(255,244,214,0)');
+  haze.addColorStop(1, 'rgba(255,244,214,0.55)');
+  ctx.fillStyle = haze;
+  ctx.fillRect(0, SKY_TOP_PX - 22, CANVAS_W, 22);
+
+  // sol con resplandor suave
+  const sun = ctx.createRadialGradient(830, 38, 0, 830, 38, 46);
+  sun.addColorStop(0, 'rgba(255,247,214,0.9)');
+  sun.addColorStop(1, 'rgba(255,247,214,0)');
+  ctx.fillStyle = sun;
+  ctx.beginPath(); ctx.arc(830, 38, 46, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff6d2';
+  circlePath(ctx, 830, 38, 16); ctx.fill();
+
+  drawCloud(ctx, 210, 26);
+  drawCloud(ctx, 470, 22);
+  drawCirrus(ctx, 90, 14, 60);
+  drawCirrus(ctx, 600, 10, 80);
+  drawCirrus(ctx, 350, 46, 50);
+}
+
+function drawCloud(ctx, x, y) {
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  circlePath(ctx, x, y, 11); ctx.fill();
+  circlePath(ctx, x + 13, y + 2, 9); ctx.fill();
+  circlePath(ctx, x - 12, y + 3, 8); ctx.fill();
+}
+
+function drawCirrus(ctx, x, y, w) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  for (let i = 0; i < 3; i++) {
+    ctx.beginPath();
+    ctx.ellipse(i * w * 0.32, i * 2.4, w * 0.42, 2.2, -0.06, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawSandStatic(ctx) {
+  const dryTop = SKY_TOP_PX, dryBottom = SHORE_Y - WET_SAND_BAND;
+  const dry = ctx.createLinearGradient(0, dryTop, 0, dryBottom);
+  dry.addColorStop(0, '#f4dcac');
+  dry.addColorStop(1, '#e0bd80');
+  ctx.fillStyle = dry;
+  ctx.fillRect(0, dryTop, CANVAS_W, dryBottom - dryTop);
+
+  // franja humeda/compactada junto a la orilla: mas oscura, con un ligero brillo especular
+  const wet = ctx.createLinearGradient(0, dryBottom, 0, SHORE_Y);
+  wet.addColorStop(0, '#c9a066');
+  wet.addColorStop(1, '#8a6a3f');
+  ctx.fillStyle = wet;
+  ctx.fillRect(0, dryBottom, CANVAS_W, WET_SAND_BAND);
+  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  ctx.fillRect(0, dryBottom + WET_SAND_BAND * 0.25, CANVAS_W, 2.5);
+
+  for (const d of SAND_DOTS) {
+    ctx.fillStyle = `rgba(120,90,45,${d.a.toFixed(2)})`;
+    circlePath(ctx, d.x, d.y, d.r); ctx.fill();
+  }
+  for (const r of WIND_RIPPLES) drawWindRipple(ctx, r.x, r.y, r.w, r.rot);
+  for (const s of SEASHELLS) drawSeashell(ctx, s.x, s.y, s.rot, s.scale);
+  for (const s of SEAWEED_CLUMPS) drawSeaweedClump(ctx, s.x, s.y, s.scale);
+  drawFootprintTrail(ctx, FOOTPRINT_TRAIL);
+}
+
+function drawWindRipple(ctx, x, y, w, rot) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rot);
+  ctx.strokeStyle = 'rgba(140,105,60,0.14)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(-w / 2, 0);
+  ctx.quadraticCurveTo(0, -3, w / 2, 0);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawSeashell(ctx, x, y, rot, scale) {
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(rot); ctx.scale(scale, scale);
+  ctx.fillStyle = 'rgba(255,248,238,0.95)';
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(-5, -2, -6, -7);
+  ctx.quadraticCurveTo(0, -4, 6, -7);
+  ctx.quadraticCurveTo(5, -2, 0, 0);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(200,160,130,0.6)'; ctx.lineWidth = 0.5;
+  for (const dx of [-4, -2, 0, 2, 4]) line(ctx, 0, 0, dx, -6.5 + Math.abs(dx) * 0.15);
+  ctx.restore();
+}
+
+function drawSeaweedClump(ctx, x, y, scale) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(scale, scale);
+  ctx.strokeStyle = 'rgba(90,74,40,0.5)'; ctx.lineWidth = 1.2;
+  for (let i = 0; i < 4; i++) {
+    const dx = (i - 1.5) * 3;
+    ctx.beginPath();
+    ctx.moveTo(dx, 0);
+    ctx.quadraticCurveTo(dx + 3, -4, dx - 1, -8);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawFootprintTrail(ctx, points) {
+  ctx.fillStyle = 'rgba(120,95,60,0.2)';
+  for (const p of points) {
+    ctx.save();
+    ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+    ctx.beginPath(); ctx.ellipse(0, 0, 2.2, 3.6, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawDistantBeachgoer(ctx, pos, umbrellaColor) {
+  ctx.fillStyle = umbrellaColor;
+  ctx.beginPath(); ctx.ellipse(pos.x, pos.y - 10, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(80,60,40,0.6)'; ctx.lineWidth = 1;
+  line(ctx, pos.x, pos.y - 8, pos.x, pos.y + 2);
+  ctx.fillStyle = 'rgba(214,178,140,0.85)';
+  circlePath(ctx, pos.x - 6, pos.y + 7, 3); ctx.fill();
+  circlePath(ctx, pos.x + 5, pos.y + 8, 2.6); ctx.fill();
+}
+
+// Base de color del mar (turquesa cerca de costa -> azul intenso mar adentro) — parte estatica;
+// las olas/brillos/corrientes se dibujan encima, en vivo, cada frame (ver drawSeaDynamic).
+function drawSeaBaseStatic(ctx) {
+  const top = SHORE_Y, bottom = CANVAS_H;
+  const sea = ctx.createLinearGradient(0, top, 0, bottom);
+  sea.addColorStop(0, '#6fe3d6');
+  sea.addColorStop(0.28, '#2f9fc9');
+  sea.addColorStop(0.62, '#155f92');
+  sea.addColorStop(1, '#082c4a');
+  ctx.fillStyle = sea;
+  ctx.fillRect(0, top, CANVAS_W, bottom - top);
+}
+
+// Grilla cientifica sutil (profundidad cada 10m con etiqueta al margen) — el "toque de simulador
+// profesional" pedido, sin competir con el recorrido (opacidad muy baja). Sin lineas verticales:
+// las unicas marcas verticales de la escena son las marcas de distancia (drawDistanceTicks), que
+// son trazos cortos, no lineas que crucen toda la playa/mar.
+function drawSciGrid(ctx) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.055)';
+  ctx.lineWidth = 1;
+  ctx.font = `10px ${MONO_FONT}`;
+  for (let y = -20; y <= 40; y += 10) {
+    if (y === 0) continue;
+    const p1 = worldToPx(CLICK_MIN_X, y), p2 = worldToPx(CLICK_MAX_X, y);
+    if (p1.y < SKY_TOP_PX || p1.y > CANVAS_H) continue;
+    line(ctx, p1.x, p1.y, p2.x, p2.y);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fillText(`${y > 0 ? '+' : ''}${y}m`, 6, p1.y + 3);
+  }
+}
+
+const MONO_FONT = '"SF Mono", Consolas, monospace';
+
+// Marcas cada 5m (finas) y etiquetas cada 10m a lo largo del rango de click valido — ayuda
+// espacial para estimar distancias antes de elegir el punto de entrada.
+function drawDistanceTicks(ctx) {
+  ctx.font = `12px ${MONO_FONT}`;
+  for (let x = CLICK_MIN_X; x <= CLICK_MAX_X; x += 5) {
+    const p = worldToPx(x, 0);
+    const isMajor = Math.round(x) % 10 === 0;
+    const halfH = isMajor ? 10 : 5;
+    ctx.strokeStyle = 'rgba(10,22,26,0.4)'; ctx.lineWidth = 1.5;
+    line(ctx, p.x, p.y - halfH, p.x, p.y + halfH);
+    if (isMajor) {
+      ctx.fillStyle = 'rgba(10,32,42,0.6)';
+      ctx.fillText(`${Math.round(x)}m`, p.x - 12, p.y + 22);
+    }
+  }
+}
+
+/* ============================================================================================
+ * PUESTO DE GUARDAVIDAS — torre elevada bien atras en la arena, con detalle tecnico (megafono,
+ * binoculares, cartel de estado del mar). El cuerpo es estatico (va al buffer); la bandera se
+ * anima y se redibuja en vivo cada frame (drawTowerFlagLive).
+ * ========================================================================================== */
+const TOWER_GEOM = {
+  LEG_SPREAD: 34, PLATFORM_H: 52, SEAT_W: 46, SEAT_H: 10,
+  ROOF_EAVE_OFFSET: 18, // alero: borde ancho del techo, el mas cercano a la plataforma
+  ROOF_APEX_OFFSET: 40, // vertice: punta del techo, arriba de todo — aca va la bandera
+};
+
+function towerSeatPos(base) { return { x: base.x, y: base.y - TOWER_GEOM.PLATFORM_H }; }
+
+// El alero (borde ancho, abajo) y el vertice (punta, arriba) del techo comparten estas dos
+// funciones entre drawLifeguardTowerBody (que dibuja el cuerpo del techo) y drawTowerFlagLive
+// (que engancha la bandera justo en el vertice) para que nunca se desalineen entre si.
+function towerRoofEave(base) {
+  const seat = towerSeatPos(base);
+  return { x: seat.x, y: seat.y - TOWER_GEOM.ROOF_EAVE_OFFSET };
+}
+function towerRoofApex(base) {
+  const seat = towerSeatPos(base);
+  return { x: seat.x, y: seat.y - TOWER_GEOM.ROOF_APEX_OFFSET };
+}
+
+function drawLifeguardTowerBody(ctx, base) {
+  const { LEG_SPREAD, SEAT_W, SEAT_H } = TOWER_GEOM;
+  const seat = towerSeatPos(base);
+  const wood = '#8a5a3a', woodDark = '#6b4429';
+
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = wood;
+  line(ctx, base.x - LEG_SPREAD, base.y, seat.x + SEAT_W * 0.4, seat.y);
+  line(ctx, base.x + LEG_SPREAD, base.y, seat.x - SEAT_W * 0.4, seat.y);
+  ctx.strokeStyle = woodDark;
+  line(ctx, base.x - LEG_SPREAD * 0.55, base.y, seat.x - SEAT_W * 0.4, seat.y);
+  line(ctx, base.x + LEG_SPREAD * 0.55, base.y, seat.x + SEAT_W * 0.4, seat.y);
+
+  ctx.lineWidth = 2.5;
+  for (const t of [0.35, 0.65]) {
+    const y = lerp(base.y, seat.y, t);
+    const half = lerp(LEG_SPREAD, SEAT_W * 0.4, t);
+    line(ctx, base.x - half, y, base.x + half, y);
+  }
+
+  const ladderTop = { x: seat.x + SEAT_W * 0.55, y: seat.y - 2 };
+  const ladderBottom = { x: base.x + LEG_SPREAD + 14, y: base.y };
+  const ladderTopB = { x: ladderTop.x + 6, y: ladderTop.y };
+  const ladderBottomB = { x: ladderBottom.x + 10, y: ladderBottom.y };
+  ctx.strokeStyle = '#caa373'; ctx.lineWidth = 3;
+  line(ctx, ladderBottom.x, ladderBottom.y, ladderTop.x, ladderTop.y);
+  line(ctx, ladderBottomB.x, ladderBottomB.y, ladderTopB.x, ladderTopB.y);
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    const t = (i + 1) / 5;
+    const a = lerpPt(ladderBottom, ladderTop, t);
+    const b = lerpPt(ladderBottomB, ladderTopB, t);
+    line(ctx, a.x, a.y, b.x, b.y);
+  }
+
+  ctx.fillStyle = '#d9b98a';
+  ctx.fillRect(seat.x - SEAT_W * 0.5, seat.y - SEAT_H * 0.5, SEAT_W, SEAT_H);
+  ctx.strokeStyle = wood; ctx.lineWidth = 2;
+  ctx.strokeRect(seat.x - SEAT_W * 0.5, seat.y - SEAT_H * 0.5, SEAT_W, SEAT_H);
+  ctx.fillStyle = woodDark; ctx.font = '12px system-ui, sans-serif';
+  ctx.fillText('1', seat.x - 4, seat.y + SEAT_H * 0.5 + 3);
+
+  const railY = seat.y - SEAT_H * 0.5;
+  const railTop = railY - 20;
+  ctx.strokeStyle = '#f4f4f4'; ctx.lineWidth = 3;
+  line(ctx, seat.x - SEAT_W * 0.5, railY, seat.x - SEAT_W * 0.5, railTop);
+  line(ctx, seat.x + SEAT_W * 0.5, railY, seat.x + SEAT_W * 0.5, railTop);
+  line(ctx, seat.x - SEAT_W * 0.5, railTop, seat.x + SEAT_W * 0.5, railTop);
+
+  // Techo a rayas: abanico de triangulos desde el alero (ancho, abajo) hasta el vertice (arriba)
+  // — un techo real tiene la punta arriba y la base abajo, no al reves.
+  const eave = towerRoofEave(base);
+  const apex = towerRoofApex(base);
+  const stripes = 5;
+  for (let i = 0; i < stripes; i++) {
+    const ta = i / stripes, tb = (i + 1) / stripes;
+    const xa = lerp(-SEAT_W * 0.75, SEAT_W * 0.75, ta);
+    const xb = lerp(-SEAT_W * 0.75, SEAT_W * 0.75, tb);
+    ctx.fillStyle = i % 2 === 0 ? '#d1495b' : '#f4f4f4';
+    ctx.beginPath();
+    ctx.moveTo(eave.x + xa, eave.y);
+    ctx.lineTo(eave.x + xb, eave.y);
+    ctx.lineTo(apex.x, apex.y);
+    ctx.closePath(); ctx.fill();
+  }
+  // poste de soporte central, desde la plataforma hasta el alero
+  ctx.strokeStyle = wood; ctx.lineWidth = 2.5;
+  line(ctx, seat.x, seat.y - SEAT_H * 0.5, eave.x, eave.y);
+
+  const ringC = { x: seat.x - SEAT_W * 0.5 - 2, y: railY - 10 };
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#f4f4f4';
+  ctx.beginPath(); ctx.arc(ringC.x, ringC.y, 7, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = '#d1495b';
+  ctx.beginPath(); ctx.arc(ringC.x, ringC.y, 7, 0, Math.PI * 0.5); ctx.stroke();
+  ctx.beginPath(); ctx.arc(ringC.x, ringC.y, 7, Math.PI, Math.PI * 1.5); ctx.stroke();
+
+  drawBinoculars(ctx, { x: seat.x + SEAT_W * 0.12, y: railY + 5 });
+  drawMegaphone(ctx, { x: seat.x + SEAT_W * 0.5 + 3, y: railY - 3 }, -0.5);
+  drawInfoSign(ctx, base);
+}
+
+function drawBinoculars(ctx, pos) {
+  ctx.strokeStyle = 'rgba(58,63,77,0.6)'; ctx.lineWidth = 1;
+  line(ctx, pos.x - 3, pos.y + 3, pos.x - 7, pos.y + 14);
+  line(ctx, pos.x + 3, pos.y + 3, pos.x + 7, pos.y + 14);
+  ctx.fillStyle = '#3a3f4d';
+  circlePath(ctx, pos.x - 3, pos.y, 3); ctx.fill();
+  circlePath(ctx, pos.x + 3, pos.y, 3); ctx.fill();
+  ctx.fillRect(pos.x - 3, pos.y - 1.5, 6, 3);
+}
+
+function drawMegaphone(ctx, pos, rot) {
+  ctx.save();
+  ctx.translate(pos.x, pos.y); ctx.rotate(rot);
+  ctx.fillStyle = '#f4f4f4';
+  ctx.beginPath();
+  ctx.moveTo(0, -2); ctx.lineTo(11, -5); ctx.lineTo(11, 5); ctx.lineTo(0, 2);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#c22e2e'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(11, -5); ctx.lineTo(11, 5); ctx.stroke();
+  ctx.restore();
+}
+
+function drawInfoSign(ctx, base) {
+  const postTop = { x: base.x - 42, y: base.y - 34 };
+  const postBottom = { x: base.x - 42, y: base.y };
+  ctx.strokeStyle = '#8a5a3a'; ctx.lineWidth = 3;
+  line(ctx, postBottom.x, postBottom.y, postTop.x, postTop.y);
+  ctx.fillStyle = '#f4f4f4';
+  ctx.fillRect(postTop.x - 15, postTop.y - 22, 30, 22);
+  ctx.strokeStyle = '#2f3a3f'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(postTop.x - 15, postTop.y - 22, 30, 22);
+  ctx.fillStyle = '#3ddc84';
+  ctx.fillRect(postTop.x - 11, postTop.y - 18, 22, 4);
+  ctx.strokeStyle = 'rgba(47,58,63,0.55)'; ctx.lineWidth = 1.4;
+  for (let i = 0; i < 3; i++) line(ctx, postTop.x - 11, postTop.y - 9 + i * 3, postTop.x + 11 - i * 3, postTop.y - 9 + i * 3);
+}
+
+function drawTowerFlagLive(ctx, base, time) {
+  const apex = towerRoofApex(base);
+  const flagTop = { x: apex.x, y: apex.y - 10 };
+  ctx.strokeStyle = '#6b4429'; ctx.lineWidth = 2;
+  line(ctx, apex.x, apex.y, flagTop.x, flagTop.y);
+  const wave = Math.sin(time * 3.0) * 4;
+  ctx.fillStyle = '#ff4d4d';
+  ctx.beginPath();
+  ctx.moveTo(flagTop.x, flagTop.y);
+  ctx.lineTo(flagTop.x + 16, flagTop.y + 3 + wave);
+  ctx.lineTo(flagTop.x, flagTop.y + 8);
+  ctx.closePath(); ctx.fill();
+}
+
+/* ============================================================================================
+ * MAR — capa dinamica: olas, brillos solares (glints), corriente sutil, caustica cerca de la
+ * orilla y espuma. Todo se redibuja en vivo (son los unicos elementos del "fondo" que animan).
+ * ========================================================================================== */
+function drawSeaDynamic(ctx, time) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.lineWidth = 2;
+  for (let i = 0; i < 5; i++) {
+    const y = SHORE_Y + 40 + i * 70;
+    ctx.beginPath();
+    for (let x = 0; x <= CANVAS_W + 10; x += 40) {
+      const yy = y + Math.sin(time * 0.8 + x * 0.02 + i) * 4;
+      if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+    }
+    ctx.stroke();
+  }
+  drawCaustics(ctx, time);
+  drawCurrentFlow(ctx, time);
+  drawSeaGlints(ctx, time);
+}
+
+function drawCaustics(ctx, time) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.lineWidth = 1.4;
+  for (let i = 0; i < 4; i++) {
+    const y = SHORE_Y + 8 + i * 11;
+    ctx.beginPath();
+    for (let x = 0; x <= CANVAS_W; x += 20) {
+      const yy = y + Math.sin(time * 1.2 + x * 0.05 + i * 1.3) * 2.4;
+      if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+    }
+    ctx.stroke();
+  }
+}
+
+function drawCurrentFlow(ctx, time) {
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 1;
+  for (let i = 0; i < 3; i++) {
+    const baseY = SHORE_Y + 100 + i * 150;
+    const offset = ((time * 10 + i * 90) % (CANVAS_W + 120)) - 60;
+    line(ctx, offset, baseY, offset + 34, baseY + 5);
+    line(ctx, offset + 34, baseY + 5, offset + 28, baseY + 2);
+    line(ctx, offset + 34, baseY + 5, offset + 29, baseY + 8);
+  }
+}
+
+function drawSeaGlints(ctx, time) {
+  for (let i = 0; i < 22; i++) {
+    const seed = i * 37.13;
+    const gx = ((Math.sin(seed) * 0.5 + 0.5) * CANVAS_W);
+    const gy = SHORE_Y + 16 + (Math.cos(seed * 1.7) * 0.5 + 0.5) * 300;
+    const twinkle = Math.sin(time * 3 + seed) * 0.5 + 0.5;
+    if (twinkle < 0.62) continue;
+    const alpha = ((twinkle - 0.62) / 0.38) * 0.55;
+    ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(2)})`;
+    ctx.beginPath();
+    ctx.ellipse(gx, gy, 5, 1.3, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawShorelineFoam(ctx, time) {
+  const y = SHORE_Y;
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 4;
+  ctx.beginPath();
+  for (let x = 0; x <= CANVAS_W + 10; x += 16) {
+    const yy = y + Math.sin(time * 1.6 + x * 0.045) * 3;
+    if (x === 0) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+  }
+  ctx.stroke();
+}
+
+/* ============================================================================================
+ * VIDA AMBIENTAL — gaviotas, perro con huellas, cardumenes. Deliberadamente discretos (chicos,
+ * baja opacidad/contraste) para no competir con guardavidas/victima/recorrido.
+ * ========================================================================================== */
+function drawGull(ctx, x, y, wingPhase) {
+  ctx.strokeStyle = 'rgba(60,64,72,0.75)'; ctx.lineWidth = 1.6;
+  const wing = Math.sin(wingPhase) * 6;
+  ctx.beginPath();
+  ctx.moveTo(x - 8, y + wing * 0.3);
+  ctx.quadraticCurveTo(x - 3, y - wing, x, y);
+  ctx.quadraticCurveTo(x + 3, y - wing, x + 8, y + wing * 0.3);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(20,30,20,0.10)';
+  circlePath(ctx, x, y + 10, 4.5); ctx.fill();
+}
+
+const GULLS = [
+  { y0: 105, amp: 18, ySpeed: 0.6, xSpeed: 34, phase: 0.4, x0: -40 },
+  { y0: 150, amp: 22, ySpeed: 0.45, xSpeed: -26, phase: 3.1, x0: 780 },
+];
+
+function drawGulls(ctx, time) {
+  for (const g of GULLS) {
+    const x = ((g.x0 + time * g.xSpeed) % (CANVAS_W + 160) + (CANVAS_W + 160)) % (CANVAS_W + 160) - 80;
+    const y = g.y0 + Math.sin(time * g.ySpeed + g.phase) * g.amp;
+    drawGull(ctx, x, y, time * 9 + g.phase * 5);
+  }
+}
+
+const dogState = {
+  worldXFrom: -18, worldXTo: -5, worldY: -3,
+  facing: 1, phase: 0, printTimer: 0, prints: [], px: null,
+};
+
+function updateDog(dt, time) {
+  const t = (Math.sin(time * 0.45) + 1) / 2;
+  const wx = lerp(dogState.worldXFrom, dogState.worldXTo, t);
+  const p = worldToPx(wx, dogState.worldY);
+  if (dogState.px) dogState.facing = p.x >= dogState.px.x ? 1 : -1;
+  dogState.px = p;
+  dogState.phase += dt * 13;
+  dogState.printTimer -= dt;
+  if (dogState.printTimer <= 0) {
+    dogState.prints.push({ x: p.x, y: p.y + 7, angle: dogState.facing > 0 ? 0.25 : -0.25, life: 1.0 });
+    dogState.printTimer = 0.16;
+  }
+  for (let i = dogState.prints.length - 1; i >= 0; i--) {
+    dogState.prints[i].life -= dt * 0.18;
+    if (dogState.prints[i].life <= 0) dogState.prints.splice(i, 1);
+  }
+}
+
+function drawPawPrint(ctx, x, y, angle, alpha) {
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(angle);
+  ctx.fillStyle = `rgba(110,85,52,${(0.3 * alpha).toFixed(2)})`;
+  circlePath(ctx, 0, 0, 2.1); ctx.fill();
+  circlePath(ctx, -2.6, -2.8, 1); ctx.fill();
+  circlePath(ctx, 0, -3.8, 1); ctx.fill();
+  circlePath(ctx, 2.6, -2.8, 1); ctx.fill();
+  ctx.restore();
+}
+
+function drawDog(ctx, x, y, facing, phase) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(facing, 1);
+  const legPhase = Math.sin(phase);
+  ctx.strokeStyle = '#c9a06a'; ctx.lineWidth = 2.4;
+  line(ctx, -4, 3, -4 + legPhase * 3, 10);
+  line(ctx, 4, 3, 4 - legPhase * 3, 10);
+  line(ctx, -4, 1, -4 - legPhase * 3, 9);
+  line(ctx, 4, 1, 4 + legPhase * 3, 9);
+  ctx.fillStyle = '#dcb271';
+  ctx.beginPath(); ctx.ellipse(0, 0, 9, 5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(10, -2, 4, 3.4, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#b98c52';
+  ctx.beginPath(); ctx.ellipse(11, -5, 1.6, 2.2, 0.3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#dcb271'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-9, -1);
+  ctx.quadraticCurveTo(-13, -4 - Math.sin(phase * 1.3) * 2, -14, -2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawDogAndTrail(ctx) {
+  if (!dogState.px) return;
+  for (const p of dogState.prints) drawPawPrint(ctx, p.x, p.y, p.angle, p.life);
+  drawDog(ctx, dogState.px.x, dogState.px.y, dogState.facing, dogState.phase);
+}
+
+const FISH_SCHOOLS = [
+  { cx: -6, cy: 26, n: 6, spread: 6, speed: 0.3, phase: 0 },
+  { cx: 20, cy: 9, n: 5, spread: 5, speed: 0.24, phase: 2 },
+];
+
+function drawFishSchools(ctx, time) {
+  ctx.fillStyle = 'rgba(205,224,228,0.35)';
+  for (const school of FISH_SCHOOLS) {
+    for (let i = 0; i < school.n; i++) {
+      const ang = i * (Math.PI * 2 / school.n) + time * school.speed + school.phase;
+      const wx = school.cx + Math.cos(ang) * school.spread * 0.4;
+      const wy = school.cy + Math.sin(ang) * school.spread * 0.25;
+      const p = worldToPx(wx, wy);
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y, 3, 1.1, Math.sin(ang) * 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+// ---------- Peces que saltan cada tanto en el mar (SeaLife.gd) ----------
+let fishTimer = randRange(1.6, 3.6);
+let jumps = [];
+
+function updateSeaLife(dt) {
+  fishTimer -= dt;
+  if (fishTimer <= 0) { spawnJump(); fishTimer = randRange(1.6, 3.6); }
+  for (let i = jumps.length - 1; i >= 0; i--) {
+    jumps[i].phase += dt / jumps[i].duration;
+    if (jumps[i].phase >= 1) jumps.splice(i, 1);
+  }
+}
+
+function spawnJump() {
+  const wx = randRange(CLICK_MIN_X + 5, CLICK_MAX_X - 5);
+  const wy = randRange(6, 34);
+  const p = worldToPx(wx, wy);
+  jumps.push({ x: p.x, waterY: p.y, phase: 0, duration: 0.85, facing: Math.random() > 0.5 ? 1 : -1 });
+}
+
+function drawSeaLife(ctx) { for (const j of jumps) drawJump(ctx, j); }
+
+function drawJump(ctx, j) {
+  const phase = j.phase;
+  const arc = Math.sin(phase * Math.PI);
+  const x = j.x, waterY = j.waterY;
+  const y = waterY - arc * 42;
+  const facing = j.facing;
+
+  if (phase < 0.14 || phase > 0.86) {
+    const edgeT = phase < 0.14 ? phase : (1 - phase);
+    const r = 4 + (1 - edgeT / 0.14) * 9;
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, waterY, r, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  const rotation = facing * (0.5 - phase) * Math.PI * 0.6;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  const L = 15, H = 6.5, m = facing;
+
+  ctx.fillStyle = '#5a92a8';
+  ctx.beginPath();
+  ctx.moveTo(-L * 0.45 * m, 0);
+  ctx.lineTo(-L * 0.85 * m, -H * 0.65);
+  ctx.lineTo(-L * 0.85 * m, H * 0.65);
+  ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = '#7fb3c7';
+  ctx.beginPath();
+  ctx.moveTo(L * 0.55 * m, 0);
+  ctx.lineTo(L * 0.1 * m, -H * 0.5);
+  ctx.lineTo(-L * 0.4 * m, -H * 0.32);
+  ctx.lineTo(-L * 0.45 * m, 0);
+  ctx.lineTo(-L * 0.4 * m, H * 0.32);
+  ctx.lineTo(L * 0.1 * m, H * 0.5);
+  ctx.closePath(); ctx.fill();
+
+  ctx.strokeStyle = '#eaf6f3'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(-L * 0.3 * m, H * 0.2); ctx.lineTo(L * 0.15 * m, H * 0.32); ctx.stroke();
+
+  ctx.fillStyle = 'rgba(26,26,26,0.8)';
+  circlePath(ctx, L * 0.35 * m, -H * 0.08, 1); ctx.fill();
+
+  ctx.restore();
+}
+
+/* ============================================================================================
+ * TRAYECTORIA elegida / optima (PathVisual.gd) — con marcador pulsante para que el punto de
+ * entrada "se destaque visualmente" al interactuar (pedido explicito del brief).
+ * ========================================================================================== */
+let hoverX = null;
+let pathState = null; // { level, hasChoice, chosenX, hasResult, optimalX }
+
+function drawPathVisual(ctx, time) {
+  if (!pathState) return;
+  const level = pathState.level;
+  const guardPx = worldToPx(level.guard.x, level.guard.y);
+  const victimPx = worldToPx(level.victim.x, level.victim.y);
+
+  if (hoverX !== null && !pathState.hasResult) {
+    const hp = worldToPx(hoverX, 0);
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2;
+    line(ctx, hp.x, hp.y - 14, hp.x, hp.y + 14);
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    circlePath(ctx, hp.x, hp.y, 4); ctx.fill();
+  }
+
+  if (pathState.hasChoice) {
+    const ep = worldToPx(pathState.chosenX, 0);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#ff8c42';
+    line(ctx, guardPx.x, guardPx.y, ep.x, ep.y);
+    ctx.strokeStyle = '#ffb877';
+    line(ctx, ep.x, ep.y, victimPx.x, victimPx.y);
+    drawPulseRing(ctx, ep, 8, '255,140,66', time, 0);
+    drawPulseRing(ctx, ep, 8, '255,140,66', time, 0.5);
+    ctx.fillStyle = '#ff8c42'; circlePath(ctx, ep.x, ep.y, 7); ctx.fill();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+    circlePath(ctx, ep.x, ep.y, 7); ctx.stroke();
+  }
+
+  if (pathState.hasResult) {
+    const op = worldToPx(pathState.optimalX, 0);
+    ctx.strokeStyle = '#2bd66b'; ctx.lineWidth = 3;
+    ctx.setLineDash([10, 8]);
+    line(ctx, guardPx.x, guardPx.y, op.x, op.y);
+    line(ctx, op.x, op.y, victimPx.x, victimPx.y);
+    ctx.setLineDash([]);
+    drawPulseRing(ctx, op, 8, '43,214,107', time, 0.25);
+    drawDiamond(ctx, op, 8, '#2bd66b');
+    ctx.fillStyle = '#2bd66b'; ctx.font = `13px ${MONO_FONT}`;
+    ctx.fillText('ÓPTIMO', op.x - 26, op.y - 14);
+  }
+}
+
+function drawPulseRing(ctx, c, baseR, rgb, time, phaseOffset) {
+  const t = (((time * 0.8 + phaseOffset) % 1) + 1) % 1;
+  const r = baseR + t * 16;
+  const alpha = (1 - t) * 0.45;
+  ctx.strokeStyle = `rgba(${rgb},${alpha.toFixed(2)})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.stroke();
+}
+
+function drawDiamond(ctx, c, half, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(c.x, c.y - half);
+  ctx.lineTo(c.x + half, c.y);
+  ctx.lineTo(c.x, c.y + half);
+  ctx.lineTo(c.x - half, c.y);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5; ctx.stroke();
+}
+
+/* ============================================================================================
+ * PERSONAJES (Lifeguard.gd / Swimmer.gd) — uniforme rojo/amarillo con gorra, lentes de sol y
+ * silbato para el guardavidas; victima con agitacion realista pero sin sobreactuar el drama.
+ * ========================================================================================== */
+// 'rescued': el guardavidas ya llego hasta la victima — se queda en el agua (pose de nadar,
+// casi quieto) en vez de volver a la pose de pie/tierra, que quedaria flotando parado sobre
+// el mar si se reusara drawLifeguardLand aca.
+function drawLifeguard(ctx, pos, pose, cyclePhase, time) {
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  if (pose === 'swimming' || pose === 'rescued') drawLifeguardSwimming(ctx, cyclePhase, pose === 'swimming');
+  else drawLifeguardLand(ctx, pose, cyclePhase, time);
+  ctx.restore();
+}
+
+function drawLifeguardLand(ctx, pose, cyclePhase, time) {
+  const r = 13;
+  const running = pose === 'running';
+  const bob = running ? Math.abs(Math.sin(cyclePhase)) * 2.2 : Math.sin(time * 2.2) * 1.0;
+  const legSwing = running ? Math.sin(cyclePhase) * (r * 0.55) : 0;
+  const headC = { x: 0, y: -r * 2.5 - bob };
+  const hipY = -r * 0.2 - bob;
+
+  ctx.strokeStyle = '#e8c9a0'; ctx.lineWidth = 4;
+  line(ctx, 0, hipY, -r * 0.55 + legSwing, r * 1.3);
+  line(ctx, 0, hipY, r * 0.55 - legSwing, r * 1.3);
+
+  ctx.fillStyle = '#f4f4f4';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.55, hipY - r * 0.3);
+  ctx.lineTo(r * 0.55, hipY - r * 0.3);
+  ctx.lineTo(r * 0.45, hipY + r * 0.6);
+  ctx.lineTo(-r * 0.45, hipY + r * 0.6);
+  ctx.closePath(); ctx.fill();
+
+  const armSwing = running ? Math.sin(cyclePhase + Math.PI) * (r * 0.7) : 0;
+  ctx.strokeStyle = '#e8c9a0'; ctx.lineWidth = 3;
+  line(ctx, -r * 0.4, -r * 1.6 - bob, -r * 0.7 + armSwing, -r * 0.3 - bob);
+
+  // remera con vivo amarillo (uniforme oficial: rojo + detalles amarillos)
+  ctx.fillStyle = '#ff4d4d';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.55, -r * 1.7 - bob);
+  ctx.lineTo(r * 0.55, -r * 1.7 - bob);
+  ctx.lineTo(r * 0.45, hipY);
+  ctx.lineTo(-r * 0.45, hipY);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#c22e2e'; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1.6;
+  line(ctx, -r * 0.5, -r * 1.15 - bob, r * 0.5, -r * 1.15 - bob);
+
+  // silbato colgado del cuello
+  ctx.strokeStyle = '#e8c9a0'; ctx.lineWidth = 1;
+  line(ctx, -r * 0.18, -r * 1.65 - bob, 0, -r * 1.0 - bob);
+  line(ctx, r * 0.18, -r * 1.65 - bob, 0, -r * 1.0 - bob);
+  ctx.fillStyle = '#d7dde8';
+  ctx.beginPath(); ctx.ellipse(0, -r * 0.95 - bob, r * 0.14, r * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+
+  const buoyC = { x: r * 0.9, y: -r * 0.6 - bob };
+  ctx.strokeStyle = '#ff9d3d'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(buoyC.x, buoyC.y, r * 0.55, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = '#e8c9a0'; ctx.lineWidth = 3;
+  line(ctx, r * 0.4, -r * 1.5 - bob, buoyC.x, buoyC.y);
+
+  ctx.fillStyle = '#e8c9a0';
+  circlePath(ctx, headC.x, headC.y, r * 0.68); ctx.fill();
+  ctx.strokeStyle = '#a3805c'; ctx.lineWidth = 1.3; ctx.stroke();
+  ctx.strokeStyle = '#3a2c1e'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y - r * 0.1, r * 0.7, Math.PI * 1.05, Math.PI * 2.02); ctx.stroke();
+
+  // gorra roja con visera
+  ctx.fillStyle = '#c22e2e';
+  ctx.beginPath(); ctx.arc(headC.x, headC.y - r * 0.55, r * 0.66, Math.PI, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(headC.x + r * 0.5, headC.y - r * 0.45, r * 0.34, r * 0.13, 0, 0, Math.PI * 2); ctx.fill();
+
+  // lentes de sol
+  ctx.fillStyle = 'rgba(18,20,26,0.88)';
+  ctx.fillRect(headC.x - r * 0.34, headC.y - r * 0.06, r * 0.68, r * 0.17);
+}
+
+// `hasBuoy`: el torpedo de rescate solo se dibuja mientras el guardavidas todavia lo lleva
+// nadando hacia la victima — una vez que llega y pasa a la pose 'rescued', el torpedo queda
+// puesto en la victima (drawSwimmerRescued), asi que aca no se vuelve a dibujar (si no, se ven
+// dos salvavidas a la vez).
+function drawLifeguardSwimming(ctx, cyclePhase, hasBuoy) {
+  const r = 13;
+  const stroke = Math.sin(cyclePhase);
+  const wakeY = 2;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(-r * 0.2, wakeY, r * 1.6, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+
+  const headC = { x: 0, y: -r * 0.3 };
+  ctx.fillStyle = '#e8c9a0'; circlePath(ctx, headC.x, headC.y, r * 0.62); ctx.fill();
+  ctx.strokeStyle = '#a3805c'; ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.strokeStyle = '#3a2c1e'; ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y - r * 0.1, r * 0.64, Math.PI * 1.05, Math.PI * 2.02); ctx.stroke();
+
+  ctx.fillStyle = '#ff4d4d';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.5, wakeY); ctx.lineTo(r * 0.5, wakeY);
+  ctx.lineTo(r * 0.35, r * 0.2); ctx.lineTo(-r * 0.35, r * 0.2);
+  ctx.closePath(); ctx.fill();
+
+  const armA = { x: -r * 1.3, y: wakeY - stroke * r * 1.1 };
+  const armB = { x: r * 1.3, y: wakeY + stroke * r * 1.1 };
+  ctx.strokeStyle = '#e8c9a0'; ctx.lineWidth = 3;
+  line(ctx, -r * 0.3, wakeY, armA.x, armA.y);
+  line(ctx, r * 0.3, wakeY, armB.x, armB.y);
+
+  if (hasBuoy) {
+    ctx.strokeStyle = '#ff9d3d'; ctx.lineWidth = 3.5;
+    ctx.beginPath(); ctx.arc(r * 1.1, wakeY + r * 0.5, r * 0.5, 0, Math.PI * 2); ctx.stroke();
+  }
+}
+
+// `rescued`: una vez que el guardavidas llega hasta la victima (animacion de rescate completa),
+// deja de agitarse en señal de auxilio y queda en una pose calma, con el torpedo del guardavidas
+// puesto alrededor — ver `victimRescued` en la maquina de estados.
+function drawSwimmer(ctx, pos, time, rescued) {
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  if (rescued) drawSwimmerRescued(ctx, time);
+  else drawSwimmerDistress(ctx, time);
+  ctx.restore();
+}
+
+function drawSwimmerDistress(ctx, time) {
+  const r = 12;
+  const bob = Math.sin(time * 2.6) * 3.0;
+  const flail = Math.sin(time * 6.0);
+  const headC = { x: 0, y: -r * 0.2 - bob };
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, r * 0.6, r * 1.8, 0.1 * Math.PI, 0.9 * Math.PI); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.beginPath(); ctx.arc(0, r * 0.9, r * 2.3, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+
+  const armL = { x: headC.x - r * 1.5, y: headC.y - r * 1.6 + flail * r * 0.5 };
+  const armR = { x: headC.x + r * 1.5, y: headC.y - r * 1.6 - flail * r * 0.5 };
+  ctx.strokeStyle = '#d9a066'; ctx.lineWidth = 3.2;
+  line(ctx, headC.x - r * 0.3, headC.y + r * 0.1, armL.x, armL.y);
+  line(ctx, headC.x + r * 0.3, headC.y + r * 0.1, armR.x, armR.y);
+  ctx.fillStyle = '#d9a066';
+  circlePath(ctx, armL.x, armL.y, 2.6); ctx.fill();
+  circlePath(ctx, armR.x, armR.y, 2.6); ctx.fill();
+
+  ctx.fillStyle = '#f4d35e';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.55, r * 0.1); ctx.lineTo(r * 0.55, r * 0.1);
+  ctx.lineTo(r * 0.4, r * 0.7); ctx.lineTo(-r * 0.4, r * 0.7);
+  ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = '#d9a066'; circlePath(ctx, headC.x, headC.y, r * 0.66); ctx.fill();
+  ctx.strokeStyle = '#9c6f43'; ctx.lineWidth = 1.3; ctx.stroke();
+  ctx.strokeStyle = '#241a12'; ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y - r * 0.1, r * 0.68, Math.PI * 1.05, Math.PI * 2.02); ctx.stroke();
+
+  // cara de angustia: ojos bien abiertos + boca abierta
+  ctx.strokeStyle = '#9c6f43'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y + r * 0.28, r * 0.16, 0, Math.PI); ctx.stroke();
+  ctx.fillStyle = '#9c6f43';
+  circlePath(ctx, headC.x - r * 0.22, headC.y - r * 0.02, 1.6); ctx.fill();
+  circlePath(ctx, headC.x + r * 0.22, headC.y - r * 0.02, 1.6); ctx.fill();
+}
+
+function drawSwimmerRescued(ctx, time) {
+  const r = 12;
+  const bob = Math.sin(time * 1.3) * 1.6; // respiracion calma, ya no hay agitacion de auxilio
+  const headC = { x: 0, y: -r * 0.2 - bob };
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(0, r * 0.6, r * 1.4, 0.2 * Math.PI, 0.8 * Math.PI); ctx.stroke();
+
+  // torpedo de rescate del guardavidas, ahora puesto alrededor de la victima
+  ctx.strokeStyle = '#ff9d3d'; ctx.lineWidth = 4.5;
+  ctx.beginPath(); ctx.arc(0, r * 0.4 - bob * 0.3, r * 0.95, 0, Math.PI * 2); ctx.stroke();
+
+  // brazos apoyados sobre el torpedo, relajados (no en alto pidiendo auxilio)
+  ctx.strokeStyle = '#d9a066'; ctx.lineWidth = 3;
+  line(ctx, headC.x - r * 0.32, headC.y + r * 0.2, -r * 0.85, r * 0.35 - bob * 0.3);
+  line(ctx, headC.x + r * 0.32, headC.y + r * 0.2, r * 0.85, r * 0.35 - bob * 0.3);
+  ctx.fillStyle = '#d9a066';
+  circlePath(ctx, -r * 0.85, r * 0.35 - bob * 0.3, 2.4); ctx.fill();
+  circlePath(ctx, r * 0.85, r * 0.35 - bob * 0.3, 2.4); ctx.fill();
+
+  ctx.fillStyle = '#f4d35e';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.55, r * 0.1); ctx.lineTo(r * 0.55, r * 0.1);
+  ctx.lineTo(r * 0.4, r * 0.7); ctx.lineTo(-r * 0.4, r * 0.7);
+  ctx.closePath(); ctx.fill();
+
+  ctx.fillStyle = '#d9a066'; circlePath(ctx, headC.x, headC.y, r * 0.66); ctx.fill();
+  ctx.strokeStyle = '#9c6f43'; ctx.lineWidth = 1.3; ctx.stroke();
+  ctx.strokeStyle = '#241a12'; ctx.lineWidth = 3.5;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y - r * 0.1, r * 0.68, Math.PI * 1.05, Math.PI * 2.02); ctx.stroke();
+
+  // cara aliviada: ojos normales + sonrisa leve, ya no hay angustia
+  ctx.strokeStyle = '#9c6f43'; ctx.lineWidth = 1.3;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y + r * 0.2, r * 0.14, 0.1 * Math.PI, 0.9 * Math.PI); ctx.stroke();
+  ctx.fillStyle = '#9c6f43';
+  circlePath(ctx, headC.x - r * 0.22, headC.y - r * 0.02, 1.4); ctx.fill();
+  circlePath(ctx, headC.x + r * 0.22, headC.y - r * 0.02, 1.4); ctx.fill();
+}
+
+// ---------- Estado del juego / maquina de estados (Main.gd) ----------
+let state = 'choosing'; // 'choosing' | 'result' | 'summary'
+let currentLevelIndex = 0;
+let hasChoice = false;
+let chosenShoreX = 0;
+let levelResults = [];
+let extraTimeAccum = 0;
+
+let victimWorldPos = { x: 0, y: 0 };
+let victimRescued = false; // true una vez que el guardavidas llega hasta la victima
+let lifeguardScreenPos = { x: 0, y: 0 };
+let lifeguardPose = 'idle';
+let lifeguardAnim = null;
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+const levelIndexEl = document.getElementById('level-index');
+const levelNameEl = document.getElementById('level-name');
+const levelDescEl = document.getElementById('level-desc');
+const speedSandEl = document.getElementById('speed-sand');
+const speedWaterEl = document.getElementById('speed-water');
+const instructionEl = document.getElementById('instruction');
+const choiceEl = document.getElementById('choice');
+const confirmBtn = document.getElementById('confirm-btn');
+const resultCard = document.getElementById('result-card');
+const playerTimeEl = document.getElementById('player-time');
+const optimalTimeEl = document.getElementById('optimal-time');
+const extraTimeEl = document.getElementById('extra-time');
+const scoreLineEl = document.getElementById('score-line');
+const messageEl = document.getElementById('message');
+const nextBtn = document.getElementById('next-btn');
+const gameSection = document.getElementById('game-section');
+const summarySection = document.getElementById('summary-section');
+const summaryRowsEl = document.getElementById('summary-rows');
+const summaryTotalEl = document.getElementById('summary-total');
+const summaryScoreEl = document.getElementById('summary-score');
+const summaryMessageEl = document.getElementById('summary-message');
+const restartBtn = document.getElementById('restart-btn');
+
+function loadLevel(index) {
+  currentLevelIndex = index;
+  hasChoice = false;
+  state = 'choosing';
+  hoverX = null;
+
+  const level = LEVELS[index];
+  victimWorldPos = { x: level.victim.x, y: level.victim.y };
+  victimRescued = false;
+  lifeguardScreenPos = worldToPx(level.guard.x, level.guard.y);
+  lifeguardPose = 'idle';
+  lifeguardAnim = null;
+  pathState = { level, hasChoice: false, hasResult: false };
+
+  levelIndexEl.textContent = `DESAFÍO ${index + 1} DE ${LEVELS.length}`;
+  levelNameEl.textContent = level.name;
+  levelDescEl.textContent = level.description;
+  speedSandEl.textContent = `${level.vSand.toFixed(1)} m/s`;
+  speedWaterEl.textContent = `${level.vWater.toFixed(1)} m/s`;
+  instructionEl.textContent = 'Hacé clic en la orilla para elegir tu punto de entrada al agua. Después corré por la arena y nadá en línea recta hasta la persona.';
+  choiceEl.textContent = 'Todavía no elegiste un punto.';
+  confirmBtn.disabled = true;
+  confirmBtn.classList.remove('hidden');
+  resultCard.classList.add('hidden');
+  nextBtn.classList.add('hidden');
+  gameSection.classList.remove('hidden');
+  summarySection.classList.add('hidden');
+}
+
+function eventToCanvasX(evt) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  return (evt.clientX - rect.left) * scaleX;
+}
+
+canvas.addEventListener('pointermove', (evt) => {
+  if (state !== 'choosing') return;
+  hoverX = clampShoreX(pxXToWorldX(eventToCanvasX(evt)));
+});
+
+canvas.addEventListener('pointerdown', (evt) => {
+  if (state !== 'choosing') return;
+  const wx = clampShoreX(pxXToWorldX(eventToCanvasX(evt)));
+  hasChoice = true;
+  chosenShoreX = wx;
+  hoverX = wx;
+  pathState = { level: LEVELS[currentLevelIndex], hasChoice: true, chosenX: wx, hasResult: false };
+  choiceEl.textContent = `Punto elegido: ${wx.toFixed(1)} m. Presioná Confirmar para lanzarte al rescate.`;
+  confirmBtn.disabled = false;
+});
+
+confirmBtn.addEventListener('click', onConfirm);
+nextBtn.addEventListener('click', onNextLevel);
+restartBtn.addEventListener('click', onRestart);
+
+function onConfirm() {
+  if (!hasChoice || state !== 'choosing') return;
+
+  const level = LEVELS[currentLevelIndex];
+  const playerBd = breakdownForEntry(level, chosenShoreX);
+  const optimalX = findOptimalEntry(level);
+  const optimalBd = breakdownForEntry(level, optimalX);
+  const extra = Math.max(0, playerBd.total - optimalBd.total);
+  const score = scoreFor(playerBd.total, optimalBd.total);
+
+  extraTimeAccum += extra;
+  levelResults.push({ name: level.name, playerTime: playerBd.total, optimalTime: optimalBd.total, extra, score });
+
+  state = 'result';
+  pathState = { level, hasChoice: true, chosenX: chosenShoreX, hasResult: true, optimalX };
+  startLifeguardAnimation(level, chosenShoreX);
+
+  const isLast = currentLevelIndex >= LEVELS.length - 1;
+  showResult(playerBd.total, optimalBd.total, extra, score, isLast);
+}
+
+function showResult(playerTotal, optimalTotal, extra, score, isLast) {
+  confirmBtn.classList.add('hidden');
+  resultCard.classList.remove('hidden');
+  nextBtn.classList.remove('hidden');
+
+  playerTimeEl.textContent = `${playerTotal.toFixed(2)} s`;
+  optimalTimeEl.textContent = `${optimalTotal.toFixed(2)} s`;
+
+  const extraPercent = optimalTotal <= 0.0001 ? 0 : (extra / optimalTotal) * 100;
+  extraTimeEl.textContent = extra < 0.03 ? '+0.00 s' : `+${extra.toFixed(2)} s (${extraPercent.toFixed(0)}% más lento)`;
+
+  let scoreColor = 'var(--danger)';
+  if (score >= 90) scoreColor = 'var(--ok)'; else if (score >= 60) scoreColor = 'var(--warn)';
+  scoreLineEl.innerHTML = `Puntaje del desafío: <span class="mono" style="color:${scoreColor}">${score} / 100</span>`;
+
+  if (extra < 0.03) messageEl.textContent = '¡Excelente! Encontraste (o casi) el recorrido de tiempo mínimo.';
+  else if (score >= 60) messageEl.textContent = 'Buen recorrido, pero corriendo más o menos por la orilla se puede achicar el tiempo de nado.';
+  else messageEl.textContent = 'El camino más corto no siempre es el más rápido: nadar es mucho más lento que correr.';
+
+  nextBtn.textContent = isLast ? 'VER RESUMEN' : 'SIGUIENTE DESAFÍO';
+}
+
+function onNextLevel() {
+  if (currentLevelIndex < LEVELS.length - 1) loadLevel(currentLevelIndex + 1);
+  else showSummary();
+}
+
+function showSummary() {
+  state = 'summary';
+  gameSection.classList.add('hidden');
+  summarySection.classList.remove('hidden');
+
+  summaryRowsEl.innerHTML = '';
+  levelResults.forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = 'card';
+    row.innerHTML = `<div class="summary-row-title">${i + 1}. ${r.name}</div>
+      <div class="summary-row-detail mono">Vos: ${r.playerTime.toFixed(2)} s · Óptimo: ${r.optimalTime.toFixed(2)} s · +${r.extra.toFixed(2)} s · ${r.score}/100</div>`;
+    summaryRowsEl.appendChild(row);
+  });
+
+  summaryTotalEl.textContent = `Tiempo extra acumulado sobre el óptimo en los ${levelResults.length} desafíos: ${extraTimeAccum.toFixed(2)} s`;
+
+  const overallScore = Math.round(levelResults.reduce((s, r) => s + r.score, 0) / levelResults.length);
+  let color = 'var(--danger)';
+  if (overallScore >= 90) color = 'var(--ok)'; else if (overallScore >= 60) color = 'var(--warn)';
+  summaryScoreEl.innerHTML = `<span style="color:${color}">${overallScore} / 100</span>`;
+
+  if (overallScore >= 90) summaryMessageEl.textContent = '¡Excelente! Tenés muy buena intuición para la ley del tiempo mínimo (refracción).';
+  else if (overallScore >= 60) summaryMessageEl.textContent = 'Buen trabajo. Con un poco más de práctica vas a acercarte todavía más al recorrido óptimo.';
+  else summaryMessageEl.textContent = 'Seguí practicando: recordá que conviene correr más por la arena para nadar menos, ya que nadar es mucho más lento.';
+}
+
+function onRestart() {
+  levelResults = [];
+  extraTimeAccum = 0;
+  loadLevel(0);
+}
+
+// ---------- Animacion del guardavidas (Lifeguard.gd::animate_rescue) ----------
+// Duracion fija en pantalla (no representa el tiempo fisico real, que se muestra aparte como
+// texto), repartida entre el tramo de arena y el de agua proporcionalmente a su distancia real.
+function startLifeguardAnimation(level, chosenX) {
+  const fromPx = worldToPx(level.guard.x, level.guard.y);
+  const entryPx = worldToPx(chosenX, 0);
+  const victimPx = worldToPx(level.victim.x, level.victim.y);
+  const d1 = Math.hypot(fromPx.x - entryPx.x, fromPx.y - entryPx.y);
+  const d2 = Math.hypot(entryPx.x - victimPx.x, entryPx.y - victimPx.y);
+  const totalD = Math.max(d1 + d2, 1);
+  const totalSeconds = 2.4;
+  const t1 = Math.max(totalSeconds * d1 / totalD, 0.15);
+  const t2 = Math.max(totalSeconds - t1, 0.15);
+  lifeguardAnim = { fromPx, entryPx, victimPx, t1, t2, elapsed: 0 };
+  lifeguardPose = 'running';
+}
+
+function easeInOut(t) { return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; }
+
+function updateLifeguard(dt) {
+  if (!lifeguardAnim) return;
+  lifeguardAnim.elapsed += dt;
+  const { fromPx, entryPx, victimPx, t1, t2, elapsed } = lifeguardAnim;
+  if (elapsed < t1) {
+    lifeguardPose = 'running';
+    lifeguardScreenPos = lerpPt(fromPx, entryPx, easeInOut(elapsed / t1));
+  } else if (elapsed < t1 + t2) {
+    lifeguardPose = 'swimming';
+    lifeguardScreenPos = lerpPt(entryPx, victimPx, easeInOut((elapsed - t1) / t2));
+  } else {
+    // Rescate completo: el guardavidas se queda en el agua junto a la victima (no vuelve a la
+    // playa ni a su pose de pie) y la victima pasa a la pose "rescatada", con el torpedo puesto.
+    lifeguardPose = 'rescued';
+    lifeguardScreenPos = { x: victimPx.x - 16, y: victimPx.y };
+    lifeguardAnim = null;
+    victimRescued = true;
+  }
+}
+
+/* ============================================================================================
+ * LOOP PRINCIPAL — capa estatica (un solo drawImage) + capas dinamicas encima, en orden de
+ * jerarquia visual: mar animado -> espuma -> bandera -> vida ambiental (cardumenes, peces
+ * saltando, gaviotas, perro) -> recorrido -> victima -> guardavidas (siempre arriba de todo).
+ * ========================================================================================== */
+let lastTime = performance.now();
+let cyclePhase = 0;
+
+function frame(now) {
+  const dt = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+  const time = now / 1000;
+
+  updateSeaLife(dt);
+  updateDog(dt, time);
+  updateLifeguard(dt);
+  if (lifeguardPose === 'running') cyclePhase += dt * 9.0;
+  else if (lifeguardPose === 'swimming') cyclePhase += dt * 5.0;
+  else if (lifeguardPose === 'rescued') cyclePhase += dt * 1.2; // flotando tranquilo, ya no nada
+
+  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.drawImage(staticBuffer, 0, 0);
+
+  drawSeaDynamic(ctx, time);
+  drawShorelineFoam(ctx, time);
+  drawTowerFlagLive(ctx, worldToPx(TOWER_WORLD.x, TOWER_WORLD.y), time);
+  drawFishSchools(ctx, time);
+  drawSeaLife(ctx);
+  drawGulls(ctx, time);
+  drawDogAndTrail(ctx);
+  drawPathVisual(ctx, time);
+  drawSwimmer(ctx, worldToPx(victimWorldPos.x, victimWorldPos.y), time, victimRescued);
+  drawLifeguard(ctx, lifeguardScreenPos, lifeguardPose, cyclePhase, time);
+
+  requestAnimationFrame(frame);
+}
+
+buildStaticLayer();
+loadLevel(0);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
