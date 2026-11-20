@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MRUV — Incorporación a la Autopista</title>
+<style>
+  :root {
+    --teal-dark: #0f4a50;
+    --teal: #1a7070;
+    --teal-light: #cfeff2;
+    --gold: #e8b84b;
+    --gold-dark: #b8872b;
+    --red: #e8493d;
+    --panel-bg: rgba(15,74,80,0.92);
+    --text-muted: #9fd4d8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: linear-gradient(180deg, #07262a 0%, #0f4a50 100%);
+    color: #eafafb;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 18px 10px 40px;
+  }
+  .game-wrap { width: 100%; max-width: 820px; }
+  header { text-align: center; margin-bottom: 10px; }
+  h1 {
+    margin: 0 0 4px;
+    font-size: 26px;
+    letter-spacing: 1px;
+    color: var(--gold);
+    text-shadow: 2px 2px 0 #07262a;
+  }
+  .subtitle { margin: 0; font-size: 13px; color: var(--text-muted); }
+
+  .objective-panel {
+    margin: 14px 0 10px;
+    text-align: center;
+    background: var(--panel-bg);
+    border: 2px solid var(--teal);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 15px;
+    font-weight: bold;
+  }
+  .objective-panel span { color: var(--gold); }
+
+  .track-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 800px;
+    margin: 0 auto;
+    border: 3px solid var(--teal);
+    border-radius: 4px;
+    overflow: hidden;
+    line-height: 0;
+  }
+  #track-canvas { width: 100%; height: auto; display: block; background: #0f4a50; image-rendering: pixelated; }
+  .graph-overlay {
+    position: absolute; top: 8px;
+    width: 220px; height: 118px;
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 3px;
+  }
+  #graph-canvas-xt { left: 8px; }
+  #graph-canvas { right: 8px; }
+
+  .controls-panel {
+    margin-top: 14px;
+    background: var(--panel-bg);
+    border: 2px solid var(--teal);
+    border-radius: 6px;
+    padding: 14px 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    align-items: center;
+  }
+  .slider-wrap { flex: 1 1 240px; min-width: 220px; }
+  .slider-label { display: block; font-size: 13px; color: var(--teal-light); margin-bottom: 4px; }
+  .slider-label b { color: var(--gold); }
+  input[type=range] { width: 100%; accent-color: var(--gold); }
+  input[type=range]:disabled { opacity: 0.4; }
+
+  #start-btn, #next-btn, #restart-btn {
+    background: var(--gold);
+    color: #2a2208;
+    border: none;
+    font-weight: bold;
+    font-size: 15px;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    box-shadow: 0 3px 0 var(--gold-dark);
+  }
+  #start-btn:hover, #next-btn:hover, #restart-btn:hover { filter: brightness(1.08); }
+  #start-btn:disabled {
+    background: #555; color: #999; box-shadow: 0 3px 0 #333; cursor: not-allowed;
+  }
+
+  .metrics-panel {
+    display: flex; gap: 14px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+  }
+  .metric-row { display: flex; flex-direction: column; align-items: center; }
+  .metric-label { color: var(--text-muted); font-size: 11px; }
+  .metric-value { color: var(--gold); font-weight: bold; font-size: 16px; }
+  .metric-unit { color: var(--text-muted); font-size: 11px; }
+
+  .formula-label {
+    font-family: 'Courier New', monospace;
+    font-size: 14px;
+    background: rgba(0,0,0,0.25);
+    border-left: 3px solid var(--gold);
+    padding: 6px 10px;
+    border-radius: 0 4px 4px 0;
+    width: 100%;
+  }
+  .formula-value { color: var(--gold); font-weight: bold; }
+
+  .result-panel, .summary-panel {
+    margin-top: 14px;
+    background: var(--panel-bg);
+    border: 2px solid var(--gold);
+    border-radius: 6px;
+    padding: 16px 18px;
+    text-align: center;
+  }
+  .hidden { display: none !important; }
+  .result-title { font-size: 19px; font-weight: bold; margin-bottom: 8px; }
+  .result-title.ok { color: #7be08a; }
+  .result-title.fail { color: #e88a6a; }
+  .result-title.warn { color: var(--gold); }
+  .result-line { font-size: 14px; margin: 4px 0; color: var(--teal-light); }
+  .result-line b { color: var(--gold); }
+
+  .stars { font-size: 28px; letter-spacing: 4px; margin: 6px 0; }
+  .star-filled { color: var(--gold); }
+  .star-empty { color: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+
+<div class="game-wrap">
+  <header>
+    <h1>MRUV — Incorporación a la Autopista</h1>
+    <p class="subtitle">Movimiento Rectilíneo Uniformemente Variado: arrancás detenido, calculá la aceleración exacta para alcanzar la velocidad de la autopista antes de que termine el carril.</p>
+  </header>
+
+  <div class="objective-panel" id="objective-panel">
+    Ronda <span id="round-num">1</span>/5 — Velocidad objetivo: <span id="round-vf">15</span> m/s — Largo del carril: <span id="round-d">75</span> m
+  </div>
+
+  <div class="track-wrap">
+    <canvas id="track-canvas" width="800" height="420"></canvas>
+    <canvas id="graph-canvas-xt" class="graph-overlay" width="220" height="118"></canvas>
+    <canvas id="graph-canvas" class="graph-overlay" width="220" height="118"></canvas>
+  </div>
+
+  <div class="controls-panel" id="controls-panel">
+    <div id="slider-host" class="slider-wrap"></div>
+    <button id="start-btn">¡Acelerar!</button>
+    <div id="metrics-host" class="metrics-panel"></div>
+    <div id="formula-host" class="formula-label"></div>
+  </div>
+
+  <div class="result-panel hidden" id="result-panel">
+    <div class="result-title" id="result-title"></div>
+    <div class="result-line" id="result-line-1"></div>
+    <div class="result-line" id="result-line-2"></div>
+    <button id="next-btn">Siguiente ronda →</button>
+  </div>
+
+  <div class="summary-panel hidden" id="summary-panel">
+    <div class="result-title" id="summary-title">¡Carrera terminada!</div>
+    <div class="result-line" id="summary-score"></div>
+    <div class="stars" id="summary-stars"></div>
+    <button id="restart-btn">Jugar de nuevo</button>
+  </div>
+</div>
+
+<script>
+// ===================================================================
+// EventBus + Events
+// ===================================================================
+const EventBus = {
+  _listeners: {},
+  on(event, cb) { (this._listeners[event] ||= []).push(cb); },
+  emit(event, data) { (this._listeners[event] || []).forEach(cb => cb(data)); }
+};
+const EVENTS = {
+  SLIDER_CHANGED: 'slider_changed',
+  START_PRESSED:  'start_pressed',
+  METRICS_UPDATE: 'metrics_update',
+  NEXT_ROUND:     'next_round',
+  GAME_FINISHED:  'game_finished'
+};
+
+// ===================================================================
+// Datos de las 5 rondas (vF en m/s, D en m, a_ideal = vF²/(2D) en m/s²)
+// v0 = 0 siempre: arranca detenido, no es parámetro de ronda.
+// ===================================================================
+const ROUNDS = [
+  { vF: 15, D: 75,   aMin: 0.5, aMax: 3,   aStep: 0.5, tolerance: 8 },
+  { vF: 20, D: 80,   aMin: 1,   aMax: 4,   aStep: 0.5, tolerance: 6 },
+  { vF: 24, D: 96,   aMin: 1,   aMax: 5,   aStep: 0.5, tolerance: 4 },
+  { vF: 24, D: 72,   aMin: 2,   aMax: 6,   aStep: 0.5, tolerance: 3 },
+  { vF: 25, D: 62.5, aMin: 3,   aMax: 6.5, aStep: 0.5, tolerance: 2 }
+];
+function aIdealOf(round) { return (round.vF * round.vF) / (2 * round.D); }
+
+// ===================================================================
+// GameLoop — fixed timestep (html-systems-loop)
+// ===================================================================
+class GameLoop {
+  constructor({ fixedHz = 60, maxFrameTime = 0.1 } = {}) {
+    this.fixedDt = 1 / fixedHz;
+    this.maxFrame = maxFrameTime;
+    this.timeScale = 1.0;
+    this.paused = false;
+    this._accumulator = 0;
+    this._lastTime = 0;
+    this._rafId = null;
+    this.onFixedUpdate = null;
+    this.onDraw = null;
+  }
+  start() {
+    const tick = (timestamp) => {
+      this._rafId = requestAnimationFrame(tick);
+      if (this.paused) return;
+      const rawDt = Math.min((timestamp - this._lastTime) / 1000, this.maxFrame);
+      this._lastTime = timestamp;
+      const scaledDt = rawDt * this.timeScale;
+      this._accumulator += scaledDt;
+      while (this._accumulator >= this.fixedDt) {
+        this.onFixedUpdate?.(this.fixedDt);
+        this._accumulator -= this.fixedDt;
+      }
+      const alpha = this._accumulator / this.fixedDt;
+      this.onDraw?.(alpha);
+    };
+    requestAnimationFrame((t) => { this._lastTime = t; requestAnimationFrame(tick); });
+  }
+}
+
+// ===================================================================
+// StateMachine (html-patterns-state)
+// ===================================================================
+class StateMachine {
+  constructor(owner) { this._owner = owner; this._states = new Map(); this._current = null; }
+  addState(name, { onEnter, onExit, onUpdate } = {}) { this._states.set(name, { onEnter, onExit, onUpdate }); return this; }
+  transition(nextName) {
+    if (!this._states.has(nextName)) return;
+    if (this._current) this._states.get(this._current)?.onExit?.call(this._owner);
+    this._current = nextName;
+    this._states.get(nextName)?.onEnter?.call(this._owner);
+  }
+  update(dt) { if (!this._current) return; this._states.get(this._current)?.onUpdate?.call(this._owner, dt); }
+  is(name) { return this._current === name; }
+}
+
+// ===================================================================
+// UI — MetricsPanel, FormulaLabel, PhysicsSlider (html-ui-physics)
+// ===================================================================
+class MetricsPanel {
+  constructor(parentEl) {
+    this._rows = new Map();
+    this._el = parentEl;
+    EventBus.on(EVENTS.METRICS_UPDATE, data => this.update(data));
+  }
+  addRow(key, label, unit, decimals) {
+    const row = document.createElement('div');
+    row.className = 'metric-row';
+    row.innerHTML = `<span class="metric-label">${label}</span>
+                      <span class="metric-value" id="mv-${key}">--</span>
+                      <span class="metric-unit">${unit}</span>`;
+    this._el.appendChild(row);
+    this._rows.set(key, { el: row.querySelector(`#mv-${key}`), decimals });
+    return this;
+  }
+  update(data) {
+    for (const [key, { el, decimals }] of this._rows) {
+      if (data[key] !== undefined) el.textContent = data[key].toFixed(decimals);
+    }
+  }
+}
+
+class FormulaLabel {
+  constructor(parentEl, template) {
+    this._template = template;
+    this._el = parentEl;
+    this._render({});
+    EventBus.on(EVENTS.METRICS_UPDATE, data => this._render(data));
+  }
+  _render(data) {
+    this._el.innerHTML = this._template.replace(/\{(\w+)\}/g, (_, key) => {
+      const v = data[key];
+      return v !== undefined ? `<span class="formula-value">${v.toFixed(2)}</span>` : `<span class="formula-value">--</span>`;
+    });
+  }
+}
+
+class PhysicsSlider {
+  constructor(parentEl, { name, label, min, max, step, value, unit }) {
+    this._name = name; this._value = value;
+    parentEl.innerHTML = `
+      <label class="slider-label">${label}: <span id="sv-${name}">${value.toFixed(step < 1 ? 2 : 1)}</span> ${unit}</label>
+      <input type="range" id="si-${name}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+    this._input = parentEl.querySelector(`#si-${name}`);
+    this._display = parentEl.querySelector(`#sv-${name}`);
+    this._input.addEventListener('input', () => {
+      this._value = parseFloat(this._input.value);
+      this._display.textContent = this._value.toFixed(step < 1 ? 2 : 1);
+      EventBus.emit(EVENTS.SLIDER_CHANGED, { name: this._name, value: this._value });
+    });
+  }
+  get value() { return this._value; }
+  setEnabled(enabled) { this._input.disabled = !enabled; }
+}
+
+// ===================================================================
+// VTGraph — gráfico v(t) en vivo (creciente), área = distancia
+// ===================================================================
+class VTGraph {
+  constructor(canvas) {
+    this._canvas = canvas;
+    this._ctx = canvas.getContext('2d');
+    this._points = [];
+    this._showIdeal = false;
+  }
+  reset() { this._points = []; this._showIdeal = false; }
+  push(t, v) { this._points.push({ t, v }); }
+  revealIdeal() { this._showIdeal = true; }
+  draw(round) {
+    const ctx = this._ctx, cv = this._canvas;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = 'rgba(15,74,80,0.92)';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    const vF = round.vF;
+    const idealT = vF / aIdealOf(round);
+    const maxT = Math.max(idealT, ...this._points.map(p => p.t), 0.1) * 1.1;
+    const maxV = vF * 1.05;
+    const padL = 26, padB = 16, padT = 10, padR = 8;
+    const w = cv.width - padL - padR, h = cv.height - padT - padB;
+    const toPx = (t, v) => [padL + (t / maxT) * w, padT + h - (v / maxV) * h];
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT); ctx.lineTo(padL, cv.height - padB); ctx.lineTo(cv.width - padR, cv.height - padB);
+    ctx.stroke();
+    ctx.fillStyle = '#cfeff2'; ctx.font = '9px monospace';
+    ctx.fillText('v(m/s)', 2, 10);
+    ctx.fillText('t(s)', cv.width - 22, cv.height - 3);
+
+    if (this._points.length > 1) {
+      const last = this._points[this._points.length - 1];
+      const [zx, zeroY] = toPx(0, 0);
+
+      ctx.beginPath();
+      ctx.moveTo(zx, zeroY);
+      this._points.forEach(p => ctx.lineTo(...toPx(p.t, p.v)));
+      ctx.lineTo(toPx(last.t, 0)[0], toPx(last.t, 0)[1]);
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(232,73,61,0.25)';
+      ctx.fill();
+
+      ctx.strokeStyle = '#e8493d'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(zx, zeroY);
+      this._points.forEach(p => ctx.lineTo(...toPx(p.t, p.v)));
+      ctx.stroke();
+    }
+    if (this._showIdeal) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(...toPx(0, 0)); ctx.lineTo(...toPx(idealT, vF)); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = '#e8493d'; ctx.fillRect(cv.width - 64, 4, 6, 6);
+    ctx.fillStyle = '#cfeff2'; ctx.fillText('vos', cv.width - 54, 10);
+    if (this._showIdeal) {
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(cv.width - 30, 4, 6, 6);
+      ctx.fillStyle = '#cfeff2'; ctx.fillText('ideal', cv.width - 20, 10);
+    }
+  }
+}
+
+// ===================================================================
+// XTGraph — gráfico x(t) en vivo (cóncava hacia arriba), línea en D
+// ===================================================================
+class XTGraph {
+  constructor(canvas) {
+    this._canvas = canvas;
+    this._ctx = canvas.getContext('2d');
+    this._points = [];
+    this._showIdeal = false;
+  }
+  reset() { this._points = []; this._showIdeal = false; }
+  push(t, x) { this._points.push({ t, x }); }
+  revealIdeal() { this._showIdeal = true; }
+  draw(round) {
+    const ctx = this._ctx, cv = this._canvas;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = 'rgba(15,74,80,0.92)';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    const vF = round.vF, D = round.D, aIdeal = aIdealOf(round);
+    const idealT = vF / aIdeal;
+    const maxT = Math.max(idealT, ...this._points.map(p => p.t), 0.1) * 1.1;
+    const maxX = D * 1.15;
+    const padL = 26, padB = 16, padT = 10, padR = 8;
+    const w = cv.width - padL - padR, h = cv.height - padT - padB;
+    const toPx = (t, x) => [padL + (t / maxT) * w, padT + h - (x / maxX) * h];
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT); ctx.lineTo(padL, cv.height - padB); ctx.lineTo(cv.width - padR, cv.height - padB);
+    ctx.stroke();
+    ctx.fillStyle = '#cfeff2'; ctx.font = '9px monospace';
+    ctx.fillText('x(m)', 2, 10);
+    ctx.fillText('t(s)', cv.width - 22, cv.height - 3);
+
+    const [, dY] = toPx(0, D);
+    ctx.strokeStyle = 'rgba(232,73,61,0.5)'; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
+    ctx.beginPath(); ctx.moveTo(padL, dY); ctx.lineTo(cv.width - padR, dY); ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (this._points.length > 1) {
+      ctx.strokeStyle = '#e8493d'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(...toPx(0, 0));
+      this._points.forEach(p => ctx.lineTo(...toPx(p.t, p.x)));
+      ctx.stroke();
+    }
+    if (this._showIdeal) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      const steps = 24;
+      for (let i = 0; i <= steps; i++) {
+        const t = (idealT * i) / steps;
+        const x = 0.5 * aIdeal * t * t;
+        const [px, py] = toPx(t, x);
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = '#e8493d'; ctx.fillRect(cv.width - 64, 4, 6, 6);
+    ctx.fillStyle = '#cfeff2'; ctx.fillText('vos', cv.width - 54, 10);
+    if (this._showIdeal) {
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(cv.width - 30, 4, 6, 6);
+      ctx.fillStyle = '#cfeff2'; ctx.fillText('ideal', cv.width - 20, 10);
+    }
+  }
+}
+
+// ===================================================================
+// Audio mínimo (Web Audio API)
+// ===================================================================
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return _audioCtx;
+}
+function beep(freq, duration, type, gainVal, delay = 0) {
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator(), gain = ctx.createGain();
+    osc.type = type; osc.frequency.value = freq;
+    osc.connect(gain); gain.connect(ctx.destination);
+    const t0 = ctx.currentTime + delay;
+    gain.gain.setValueAtTime(gainVal, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+    osc.start(t0); osc.stop(t0 + duration + 0.02);
+  } catch (e) { /* audio no disponible, ignorar */ }
+}
+function playStartSound()   { beep(440, 0.08, 'square', 0.12); beep(660, 0.08, 'square', 0.12, 0.09); }
+function playSuccessSound() { beep(523.25, 0.12, 'sine', 0.15); beep(659.25, 0.15, 'sine', 0.15, 0.08); beep(783.99, 0.2, 'sine', 0.15, 0.16); }
+function playMissSound()    { beep(180, 0.25, 'sawtooth', 0.12); }
+
+// ===================================================================
+// Dibujo de pista (Canvas 2D)
+// ===================================================================
+const trackCanvas = document.getElementById('track-canvas');
+const trackCtx = trackCanvas.getContext('2d');
+const TRACK_ORIGIN_PX = 40;
+const TRACK_WIDTH_PX = 720;
+const GROUND_Y = 300;
+
+function drawHighwaySign(ctx, x, groundY) {
+  const postH = 50;
+  ctx.strokeStyle = '#9a9a9a'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(x, groundY); ctx.lineTo(x, groundY - postH); ctx.stroke();
+
+  const signW = 32, signH = 24, signX = x - signW / 2, signY = groundY - postH - signH + 6;
+  ctx.fillStyle = '#1d7a3a';
+  ctx.fillRect(signX, signY, signW, signH);
+  ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+  ctx.strokeRect(signX, signY, signW, signH);
+
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(signX + 6, signY + signH - 5);
+  ctx.lineTo(signX + signW - 9, signY + 5);
+  ctx.lineTo(signX + signW - 9, signY + 10);
+  ctx.lineTo(signX + 11, signY + signH - 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(signX + signW - 13, signY + 2);
+  ctx.lineTo(signX + signW - 4, signY + 6);
+  ctx.lineTo(signX + signW - 10, signY + 12);
+  ctx.closePath();
+  ctx.fill();
+}
+function drawCar(ctx, x, groundY) {
+  ctx.save();
+  ctx.globalAlpha = 0.32;
+  ctx.fillStyle = '#000000';
+  ctx.beginPath();
+  ctx.ellipse(x, groundY + 7, 25, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  const pts = [
+    [x - 23, groundY - 4],
+    [x - 20, groundY - 15],
+    [x - 12, groundY - 15],
+    [x - 7,  groundY - 26],
+    [x + 6,  groundY - 26],
+    [x + 13, groundY - 15],
+    [x + 21, groundY - 15],
+    [x + 23, groundY - 4]
+  ];
+  const bodyGrad = ctx.createLinearGradient(0, groundY - 26, 0, groundY - 4);
+  bodyGrad.addColorStop(0, '#e8493d');
+  bodyGrad.addColorStop(0.55, '#c0392b');
+  bodyGrad.addColorStop(1, '#852115');
+
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+  ctx.closePath();
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+  ctx.strokeStyle = '#5e140c';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  ctx.lineWidth = 1.3;
+  ctx.beginPath();
+  ctx.moveTo(x - 18, groundY - 15.5);
+  ctx.lineTo(x + 19, groundY - 15.5);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(x - 10, groundY - 15);
+  ctx.lineTo(x - 6,  groundY - 24);
+  ctx.lineTo(x + 5,  groundY - 24);
+  ctx.lineTo(x + 10, groundY - 15);
+  ctx.closePath();
+  ctx.fillStyle = '#1c2b33';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(190,225,235,0.55)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x - 5, groundY - 21);
+  ctx.lineTo(x + 2, groundY - 21);
+  ctx.stroke();
+
+  ctx.fillStyle = '#ffe9a8';
+  ctx.fillRect(x + 19, groundY - 11, 3, 4);
+
+  [x - 13, x + 13].forEach((wx) => {
+    ctx.fillStyle = '#161616';
+    ctx.beginPath(); ctx.arc(wx, groundY, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#8d9194';
+    ctx.beginPath(); ctx.arc(wx, groundY, 3.4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.6)';
+    ctx.beginPath(); ctx.arc(wx - 1.2, groundY - 1.2, 1, 0, Math.PI * 2); ctx.fill();
+  });
+}
+function drawSuccessFlash(ctx, x, groundY, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = '#e8b84b'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(x, groundY - 28, 30 + (1 - alpha) * 20, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+function drawWarnBurst(ctx, x, groundY, alpha) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = '#ff7043'; ctx.lineWidth = 2.5;
+  const r = 10 + (1 - alpha) * 16;
+  for (let i = 0; i < 6; i++) {
+    const ang = i * Math.PI / 3 + (1 - alpha);
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(ang) * r * 0.4, groundY - 22 + Math.sin(ang) * r * 0.4);
+    ctx.lineTo(x + Math.cos(ang) * r, groundY - 22 + Math.sin(ang) * r);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawTrack() {
+  const round = Game.round;
+  const ctx = trackCtx, cv = trackCanvas;
+  ctx.clearRect(0, 0, cv.width, cv.height);
+
+  const sky = ctx.createLinearGradient(0, 0, 0, 260);
+  sky.addColorStop(0, '#0f4a50'); sky.addColorStop(1, '#16646b');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, cv.width, 260);
+
+  ctx.fillStyle = '#3a3a3a'; ctx.fillRect(0, 260, cv.width, 160);
+  ctx.strokeStyle = '#cfcfcf'; ctx.lineWidth = 3; ctx.setLineDash([16, 14]);
+  ctx.beginPath(); ctx.moveTo(0, GROUND_Y + 5); ctx.lineTo(cv.width, GROUND_Y + 5); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const pxPerMeter = TRACK_WIDTH_PX / round.D;
+  const tickStepM = round.D / 8;
+  ctx.fillStyle = '#cfeff2'; ctx.font = '10px monospace'; ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+  for (let m = 0; m <= round.D * 1.4; m += tickStepM) {
+    const px = TRACK_ORIGIN_PX + m * pxPerMeter;
+    if (px > cv.width - 10) break;
+    ctx.beginPath(); ctx.moveTo(px, 260); ctx.lineTo(px, 270); ctx.stroke();
+    ctx.fillText(Math.round(m * 10) / 10 + 'm', px - 10, 252);
+  }
+
+  const signPx = Math.min(TRACK_ORIGIN_PX + round.D * pxPerMeter, cv.width - 14);
+  drawHighwaySign(ctx, signPx, GROUND_Y);
+
+  const carPxRaw = TRACK_ORIGIN_PX + Game.x * pxPerMeter;
+  const carPx = Math.min(carPxRaw, cv.width - 16);
+  drawCar(ctx, carPx, GROUND_Y);
+
+  drawSuccessFlash(ctx, signPx, GROUND_Y, Game.successFlashAlpha);
+  drawWarnBurst(ctx, signPx, GROUND_Y, Game.warnFlashAlpha);
+}
+
+// ===================================================================
+// Controlador del juego (FSM owner)
+// ===================================================================
+const Game = {
+  fsm: null,
+  roundIndex: 0,
+  score: 0,
+  round: ROUNDS[0],
+  elapsed: 0,
+  x: 0,
+  v: 0,
+  chosenA: ROUNDS[0].aMin,
+  xNec: 0,
+  unsafe: false,
+  lastResult: null,
+  successFlashAlpha: 0,
+  warnFlashAlpha: 0
+};
+
+let slider, metricsPanel, formulaLabel, graph, graphXT;
+
+Game.fsm = new StateMachine(Game)
+  .addState('ready', {
+    onEnter() {
+      this.round = ROUNDS[this.roundIndex];
+      this.elapsed = 0; this.x = 0; this.v = 0;
+      this.successFlashAlpha = 0; this.warnFlashAlpha = 0;
+      this.chosenA = this.round.aMin;
+
+      document.getElementById('round-num').textContent = this.roundIndex + 1;
+      document.getElementById('round-vf').textContent = this.round.vF;
+      document.getElementById('round-d').textContent = this.round.D;
+      document.getElementById('result-panel').classList.add('hidden');
+      document.getElementById('summary-panel').classList.add('hidden');
+      document.getElementById('controls-panel').classList.remove('hidden');
+
+      const host = document.getElementById('slider-host');
+      slider = new PhysicsSlider(host, {
+        name: 'accel', label: 'Aceleración', unit: 'm/s²',
+        min: this.round.aMin, max: this.round.aMax, step: this.round.aStep, value: this.round.aMin
+      });
+      slider.setEnabled(true);
+
+      const startBtn = document.getElementById('start-btn');
+      startBtn.disabled = false;
+      startBtn.textContent = '¡Acelerar!';
+
+      graph.reset();
+      graphXT.reset();
+      EventBus.emit(EVENTS.METRICS_UPDATE, { t: 0, v: 0, x: 0 });
+    }
+  })
+  .addState('running', {
+    onEnter() {
+      slider.setEnabled(false);
+      document.getElementById('start-btn').disabled = true;
+      playStartSound();
+      this.xNec = (this.round.vF * this.round.vF) / (2 * this.chosenA);
+      this.unsafe = this.xNec > this.round.D;
+    },
+    onUpdate(dt) {
+      this.elapsed += dt;
+      const vF = this.round.vF, a = this.chosenA, D = this.round.D;
+      let v = a * this.elapsed;
+      let x = 0.5 * a * this.elapsed * this.elapsed;
+      let finished = false;
+
+      if (!this.unsafe && v >= vF) {
+        this.elapsed = vF / a; v = vF; x = this.xNec; finished = true;
+      } else if (this.unsafe && x >= D) {
+        const tCross = Math.sqrt(2 * D / a);
+        this.elapsed = tCross; x = D; v = a * tCross; finished = true;
+      }
+      this.x = x; this.v = v;
+
+      EventBus.emit(EVENTS.METRICS_UPDATE, { t: this.elapsed, v: this.v, x: this.x });
+      graph.push(this.elapsed, this.v);
+      graphXT.push(this.elapsed, this.x);
+
+      if (finished) {
+        const vMerge = this.unsafe ? v : vF;
+        const acierto = !this.unsafe && Math.abs(D - this.xNec) <= this.round.tolerance;
+        if (acierto) this.score++;
+        this.lastResult = { unsafe: this.unsafe, xNec: this.xNec, vMerge, acierto, aIdeal: aIdealOf(this.round), aChosen: a };
+        this.fsm.transition('result');
+      }
+    }
+  })
+  .addState('result', {
+    onEnter() {
+      const r = this.lastResult;
+      graph.revealIdeal();
+      graphXT.revealIdeal();
+
+      if (r.unsafe) { this.warnFlashAlpha = 1; this.successFlashAlpha = 0; playMissSound(); }
+      else if (r.acierto) { this.successFlashAlpha = 1; this.warnFlashAlpha = 0; playSuccessSound(); }
+      else { this.successFlashAlpha = 0; this.warnFlashAlpha = 0; playMissSound(); }
+
+      const title = document.getElementById('result-title');
+      if (r.unsafe) { title.textContent = '¡Incorporación insegura!'; title.className = 'result-title fail'; }
+      else if (r.acierto) { title.textContent = '¡Incorporación perfecta!'; title.className = 'result-title ok'; }
+      else { title.textContent = 'Llegaste a la velocidad, pero no fue exacto'; title.className = 'result-title warn'; }
+
+      let line1;
+      if (r.unsafe) {
+        line1 = `Llegaste al final del carril a solo <b>${r.vMerge.toFixed(1)} m/s</b> — necesitabas más aceleración para alcanzar los ${this.round.vF} m/s`;
+      } else if (r.acierto) {
+        line1 = `Alcanzaste los ${this.round.vF} m/s justo a los <b>${r.xNec.toFixed(1)} m</b> (largo del carril: ${this.round.D} m)`;
+      } else {
+        line1 = `Alcanzaste los ${this.round.vF} m/s a los ${r.xNec.toFixed(1)} m, con <b>${(this.round.D - r.xNec).toFixed(1)} m</b> de carril de sobra`;
+      }
+      document.getElementById('result-line-1').innerHTML = line1;
+      document.getElementById('result-line-2').innerHTML =
+        `Elegiste <b>${r.aChosen.toFixed(2)} m/s²</b> · a ideal = v_F²/(2D) = ${this.round.vF}²/(2·${this.round.D}) = <b>${r.aIdeal.toFixed(2)} m/s²</b>`;
+
+      const isLast = this.roundIndex >= ROUNDS.length - 1;
+      document.getElementById('next-btn').textContent = isLast ? 'Ver resumen final →' : 'Siguiente ronda →';
+
+      document.getElementById('result-panel').classList.remove('hidden');
+    },
+    onExit() {
+      document.getElementById('result-panel').classList.add('hidden');
+    }
+  })
+  .addState('finished', {
+    onEnter() {
+      document.getElementById('controls-panel').classList.add('hidden');
+      document.getElementById('summary-score').textContent = `${this.score}/5 incorporaciones perfectas`;
+      const starsEl = document.getElementById('summary-stars');
+      starsEl.innerHTML = '';
+      for (let i = 0; i < 5; i++) {
+        const span = document.createElement('span');
+        span.textContent = '★';
+        span.className = i < this.score ? 'star-filled' : 'star-empty';
+        starsEl.appendChild(span);
+      }
+      document.getElementById('summary-panel').classList.remove('hidden');
+    }
+  });
+
+// ===================================================================
+// Wiring de eventos UI
+// ===================================================================
+EventBus.on(EVENTS.SLIDER_CHANGED, (data) => { Game.chosenA = data.value; });
+
+EventBus.on(EVENTS.START_PRESSED, () => { if (Game.fsm.is('ready')) Game.fsm.transition('running'); });
+
+EventBus.on(EVENTS.NEXT_ROUND, () => {
+  Game.roundIndex++;
+  if (Game.roundIndex < ROUNDS.length) Game.fsm.transition('ready');
+  else EventBus.emit(EVENTS.GAME_FINISHED);
+});
+
+EventBus.on(EVENTS.GAME_FINISHED, () => { Game.fsm.transition('finished'); });
+
+document.getElementById('start-btn').addEventListener('click', () => EventBus.emit(EVENTS.START_PRESSED));
+document.getElementById('next-btn').addEventListener('click', () => EventBus.emit(EVENTS.NEXT_ROUND));
+document.getElementById('restart-btn').addEventListener('click', () => {
+  Game.roundIndex = 0; Game.score = 0;
+  Game.fsm.transition('ready');
+});
+
+// ===================================================================
+// Inicialización
+// ===================================================================
+function main() {
+  metricsPanel = new MetricsPanel(document.getElementById('metrics-host'))
+    .addRow('t', 'Tiempo', 's', 1)
+    .addRow('v', 'Velocidad', 'm/s', 1)
+    .addRow('x', 'Recorrido', 'm', 1);
+
+  formulaLabel = new FormulaLabel(document.getElementById('formula-host'), 'v = a·t → v = {v} m/s   x = {x} m');
+
+  graph = new VTGraph(document.getElementById('graph-canvas'));
+  graphXT = new XTGraph(document.getElementById('graph-canvas-xt'));
+
+  Game.fsm.transition('ready');
+
+  const loop = new GameLoop({ fixedHz: 60 });
+  loop.onFixedUpdate = (dt) => {
+    Game.fsm.update(dt);
+    if (Game.successFlashAlpha > 0) Game.successFlashAlpha = Math.max(0, Game.successFlashAlpha - dt * 1.6);
+    if (Game.warnFlashAlpha > 0) Game.warnFlashAlpha = Math.max(0, Game.warnFlashAlpha - dt * 1.6);
+  };
+  loop.onDraw = () => {
+    drawTrack();
+    graph.draw(Game.round);
+    graphXT.draw(Game.round);
+  };
+  loop.start();
+}
+
+main();
+</script>
+</body>
+</html>

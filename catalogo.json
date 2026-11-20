@@ -1,0 +1,97 @@
+{
+  "actualizado": "2026-11-20",
+  "url": "https://laboramiro.github.io/juegos-fisica/",
+  "unidades": [
+    { "n": 1, "nombre": "Cinemática", "temas": [
+      { "n": 1, "nombre": "MRU" },
+      { "n": 2, "nombre": "MRUV / aceleración" },
+      { "n": 3, "nombre": "Caída libre y tiro vertical" },
+      { "n": 4, "nombre": "Tiro oblicuo" },
+      { "n": 5, "nombre": "Movimiento circular uniforme" } ] },
+    { "n": 2, "nombre": "Dinámica", "temas": [
+      { "n": 6, "nombre": "Leyes de Newton (1ª y 2ª)" },
+      { "n": 7, "nombre": "Acción y reacción (3ª ley)" },
+      { "n": 8, "nombre": "Fuerza de rozamiento" },
+      { "n": 9, "nombre": "Plano inclinado" },
+      { "n": 10, "nombre": "Fuerza elástica (ley de Hooke)" },
+      { "n": "2e", "nombre": "Equilibrio y momento de fuerza" } ] },
+    { "n": 3, "nombre": "Trabajo, energía e impulso", "temas": [
+      { "n": 11, "nombre": "Trabajo mecánico" },
+      { "n": 12, "nombre": "Energía y su conservación" },
+      { "n": 13, "nombre": "Potencia" },
+      { "n": 14, "nombre": "Impulso y cantidad de movimiento" } ] },
+    { "n": 4, "nombre": "Gravitación", "temas": [
+      { "n": 15, "nombre": "Gravitación universal y órbitas" },
+      { "n": 16, "nombre": "Peso y masa en otros planetas" } ] },
+    { "n": 5, "nombre": "Fluidos", "temas": [
+      { "n": 17, "nombre": "Presión hidrostática" },
+      { "n": 18, "nombre": "Principio de Pascal" },
+      { "n": 19, "nombre": "Principio de Arquímedes" },
+      { "n": 20, "nombre": "Hidrodinámica" } ] },
+    { "n": 6, "nombre": "Calor y termodinámica", "temas": [
+      { "n": 21, "nombre": "Temperatura y equilibrio térmico" },
+      { "n": 22, "nombre": "Dilatación térmica" },
+      { "n": 23, "nombre": "Calorimetría y cambios de estado" },
+      { "n": 24, "nombre": "Propagación del calor" },
+      { "n": 25, "nombre": "Gases ideales" },
+      { "n": 26, "nombre": "Máquinas térmicas" } ] },
+    { "n": 7, "nombre": "Ondas y sonido", "temas": [
+      { "n": 27, "nombre": "Ondas y oscilaciones" },
+      { "n": 28, "nombre": "Sonido y resonancia" },
+      { "n": 29, "nombre": "Efecto Doppler" } ] },
+    { "n": 8, "nombre": "Óptica", "temas": [
+      { "n": 30, "nombre": "Luz, reflexión y espejos" },
+      { "n": 31, "nombre": "Refracción" } ] },
+    { "n": 9, "nombre": "Electricidad y magnetismo", "temas": [
+      { "n": 32, "nombre": "Circuitos (ley de Ohm)" },
+      { "n": 33, "nombre": "Electrostática y campo eléctrico" },
+      { "n": 34, "nombre": "Magnetismo" } ] },
+    { "n": 10, "nombre": "Experimentos", "temas": [
+      { "n": "x", "nombre": "Exploraciones libres" } ] }
+  ],
+  "juegos": [
+    { "archivo": "mru.html", "titulo": "Carrera contra el reloj", "tema": 1, "estado": "publicado" },
+    { "archivo": "cruce-del-rio.html", "titulo": "Cruce del río", "tema": 1, "estado": "publicado" },
+    { "archivo": "carrera-mru-mrua.html", "titulo": "Carrera: ¿quién gana? (MRU vs MRUV)", "tema": 2, "estado": "publicado", "test": "test/carrera-logic-check.mjs" },
+    { "archivo": "mruv.html", "titulo": "Frenada de emergencia", "tema": 2, "estado": "publicado" },
+    { "archivo": "mruv-aceleracion.html", "titulo": "Incorporación a la autopista", "tema": 2, "estado": "publicado" },
+    { "archivo": "al-aro-2/index.html", "titulo": "¡Al Aro!", "tema": 4, "estado": "publicado" },
+    { "archivo": "movimiento-circular.html", "titulo": "Curva peligrosa", "tema": 5, "estado": "publicado" },
+    { "archivo": "newton.html", "titulo": "Depósito de cargas", "tema": 6, "estado": "publicado" },
+    { "archivo": "rozamiento.html", "titulo": "El empujón exacto", "tema": 8, "estado": "en-revision" },
+    { "archivo": "plano-inclinado-pixelart.html", "titulo": "La rampa de Galileo", "tema": 9, "estado": "publicado" },
+    { "archivo": "ley-hooke.html", "titulo": "La balanza de Hooke", "tema": 10, "estado": "en-revision" },
+    { "archivo": "masa-resorte.html", "titulo": "El resorte de Hooke", "tema": 10, "estado": "en-revision" },
+    { "archivo": "torque.html", "titulo": "Torque: momentos de fuerza", "tema": "2e", "estado": "publicado" },
+    { "archivo": "escalera-prediccion.html", "titulo": "Escalera: predicción", "tema": "2e", "estado": "publicado" },
+    { "archivo": "equilibrio.html", "titulo": "El tablón en equilibrio", "tema": "2e", "estado": "en-revision" },
+    { "archivo": "centro-masa.html", "titulo": "El punto de balance", "tema": "2e", "estado": "en-revision" },
+    { "archivo": "energia.html", "titulo": "La prueba de Émilie", "tema": 12, "estado": "en-revision" },
+    { "archivo": "conservacion-energia.html", "titulo": "La rampa de Joule", "tema": 12, "estado": "en-revision" },
+    { "archivo": "pendulo.html", "titulo": "El péndulo de Galileo", "tema": 12, "estado": "en-revision" },
+    { "archivo": "impulso.html", "titulo": "Atajá el huevo", "tema": 14, "estado": "en-revision" },
+    { "archivo": "cantidad-movimiento.html", "titulo": "Autos chocadores", "tema": 14, "estado": "en-revision" },
+    { "archivo": "colisiones.html", "titulo": "Billar real", "tema": 14, "estado": "en-revision" },
+    { "archivo": "orbital_flight.html", "titulo": "Vuelo orbital", "tema": 15, "estado": "publicado" },
+    { "archivo": "presion.html", "titulo": "Juego de playa", "tema": 17, "estado": "publicado" },
+    { "archivo": "principio-pascal.html", "titulo": "Prensa hidráulica", "tema": 18, "estado": "publicado" },
+    { "archivo": "arquimedes.html", "titulo": "Barca en el río", "tema": 19, "estado": "publicado" },
+    { "archivo": "hidrodinamica.html", "titulo": "La rueda del molino", "tema": 20, "estado": "publicado" },
+    { "archivo": "calor.html", "titulo": "Calor y equilibrio", "tema": 21, "estado": "publicado" },
+    { "archivo": "calor-motor-termico.html", "titulo": "Calor y equilibrio térmico", "tema": 21, "estado": "publicado" },
+    { "archivo": "gases-ideales.html", "titulo": "El laboratorio de presión", "tema": 25, "estado": "publicado" },
+    { "archivo": "danza_pendulos.html", "titulo": "La danza de los péndulos", "tema": 27, "estado": "publicado" },
+    { "archivo": "chladni-cosmos.html", "titulo": "Figuras de Chladni", "tema": 27, "estado": "publicado" },
+    { "archivo": "sonido-resonancia.html", "titulo": "El tubo de Kundt", "tema": 28, "estado": "publicado" },
+    { "archivo": "camara-oscura-alhazen.html", "titulo": "Alhazen y la cámara oscura", "tema": 30, "estado": "publicado" },
+    { "archivo": "espejo-plano.html", "titulo": "El espejo de Nico", "tema": 30, "estado": "publicado" },
+    { "archivo": "guardavidas.html", "titulo": "Guardavidas: rescate óptimo", "tema": 31, "estado": "publicado" },
+    { "archivo": "circuitos.html", "titulo": "Circuito vivo", "tema": 32, "estado": "publicado" },
+    { "archivo": "campo-electrico/index.html", "titulo": "Campo eléctrico", "tema": 33, "estado": "publicado", "nota": "versión Godot" },
+    { "archivo": "toroide.html", "titulo": "Toroide", "tema": "x", "estado": "publicado" }
+  ],
+  "fueraDelCatalogo": {
+    "motivo": "Versiones reemplazadas: siguen en el repo para no romper enlaces viejos.",
+    "archivos": ["escalera-equilibrio-estatico/", "guardavidas-rescate-optimo/", "torque-momentos-de-fuerza/", "arquimedes-barca/"]
+  }
+}

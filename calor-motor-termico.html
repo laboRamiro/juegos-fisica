@@ -1,0 +1,1769 @@
+<!--
+  Generado automáticamente por build.mjs a partir de index.html + style.css + src/**.
+  NO editar a mano — correr "node build.mjs" de nuevo después de tocar los fuentes.
+-->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Calor y Equilibrio Térmico</title>
+<style>
+* , *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-top: #c9915a;
+  --bg-bottom: #a8703e;
+  --panel-bg: rgba(255, 248, 238, 0.94);
+  --panel-border: #c9915a;
+  --text: #2c2117;
+  --text-light: #fff8ee;
+  --accent: #e8622c;
+}
+
+body {
+  background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text);
+  padding: 12px;
+  touch-action: none;
+}
+
+#game-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  max-width: 1200px;
+  width: 100%;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+#game-canvas {
+  background: #00000010;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  width: min(100%, 720px);
+  height: auto;
+  aspect-ratio: 960 / 640;
+  touch-action: none;
+  flex: 1 1 480px;
+}
+
+#hud {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 0 1 240px;
+  min-width: 220px;
+}
+
+.panel {
+  background: var(--panel-bg);
+  border: 2px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.panel-thermo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.thermo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.thermo-tube {
+  width: 20px;
+  height: 90px;
+  border-radius: 10px;
+  background: #ffffffaa;
+  border: 2px solid #8a8a8a;
+  display: flex;
+  align-items: flex-end;
+  overflow: hidden;
+}
+
+.thermo-fill {
+  width: 100%;
+  height: 40%;
+  transition: height 0.15s linear, background 0.3s linear;
+}
+
+.thermo-bulb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #5bb8d4;
+  margin-top: -6px;
+  border: 2px solid #8a8a8a;
+}
+
+.thermo-readout {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hud-temp {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.state-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-light);
+  background: #888;
+  width: fit-content;
+}
+
+.state-EQUILIBRIO { background: #4caf7d; }
+.state-CALENTANDO { background: #e8622c; }
+.state-ENFRIANDO { background: #5bb8d4; }
+.state-DERRITIENDO_HIELO { background: #4fb3d9; }
+
+.info-row {
+  font-size: 0.95rem;
+  margin-bottom: 6px;
+}
+
+.formula {
+  margin-top: 6px;
+  font-family: "Cambria Math", Georgia, serif;
+  font-size: 0.9rem;
+  color: var(--accent);
+  min-height: 1.2em;
+}
+
+.panel-objectives ul {
+  list-style: none;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.objective {
+  font-size: 0.9rem;
+  opacity: 0.55;
+}
+
+.objective.done {
+  opacity: 1;
+  color: #2f8a5c;
+  font-weight: 600;
+}
+
+.panel-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.panel-controls button {
+  flex: 1;
+  padding: 10px 8px;
+  border-radius: 8px;
+  border: 2px solid var(--panel-border);
+  background: var(--text-light);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.panel-controls button:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 640px) {
+  #hud { flex-direction: row; flex-wrap: wrap; flex: 1 1 100%; }
+  .panel { flex: 1 1 45%; }
+}
+
+</style>
+</head>
+<body>
+<div id="game-container">
+  <canvas id="game-canvas"></canvas>
+
+  <div id="hud">
+    <div class="panel panel-thermo">
+      <div class="thermo">
+        <div class="thermo-tube"><div id="thermo-fill" class="thermo-fill"></div></div>
+        <div class="thermo-bulb"></div>
+      </div>
+      <div class="thermo-readout">
+        <div id="hud-temp" class="hud-temp">22.0°C</div>
+        <div id="hud-state" class="state-badge">—</div>
+      </div>
+    </div>
+
+    <div class="panel panel-info">
+      <div class="info-row">💧 agua: <span id="hud-masaAgua">1.00 kg</span></div>
+      <div class="info-row">🧊 hielo: <span id="hud-masaHielo">0.00 kg</span></div>
+      <div id="hud-formula" class="formula"></div>
+    </div>
+
+    <div class="panel panel-objectives">
+      <strong>Desafíos</strong>
+      <ul id="hud-objectives"></ul>
+    </div>
+
+    <div class="panel panel-controls">
+      <button id="btn-equilibrio">Ir al equilibrio</button>
+      <button id="btn-reset">Reiniciar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- src/core/EventBus.js ----
+// Pub/sub simple para desacoplar el motor físico de cualquier capa de UI/render.
+// Uso: EventBus.on('thermal:update', handler) / EventBus.emit('thermal:update', data)
+
+class EventBusClass {
+  constructor() {
+    this._listeners = new Map();
+  }
+
+  on(event, fn) {
+    if (!this._listeners.has(event)) this._listeners.set(event, new Set());
+    this._listeners.get(event).add(fn);
+    return () => this.off(event, fn);
+  }
+
+  off(event, fn) {
+    this._listeners.get(event)?.delete(fn);
+  }
+
+  emit(event, data) {
+    this._listeners.get(event)?.forEach((fn) => fn(data));
+  }
+
+  once(event, fn) {
+    const wrapper = (data) => {
+      this.off(event, wrapper);
+      fn(data);
+    };
+    this.on(event, wrapper);
+  }
+
+  clear(event) {
+    if (event) this._listeners.delete(event);
+    else this._listeners.clear();
+  }
+}
+
+const EventBus = new EventBusClass();
+
+
+// ---- src/core/Events.js ----
+// Contrato de eventos entre el motor y cualquier capa de UI/render que se construya aparte.
+const EVENTS = {
+  // Motor térmico
+  THERMAL_UPDATE: 'thermal:update', // snapshot completo del ThermalEngine, cada tick no-silencioso
+  ICE_ADDED: 'ice:added', // se agregó una unidad de hielo al recipiente
+  HORNALLA_TOGGLE: 'hornalla:toggle', // { on: boolean } — la fuente de calor se prendió/apagó
+
+  // FSM narrativa
+  STATE_CHANGED: 'state:changed', // { from, to } — la FSM narrativa cambió de estado
+};
+
+
+// ---- src/core/StateMachine.js ----
+// Máquina de estados finita genérica. No sabe nada de termodinámica:
+// cualquier sistema del juego que necesite estados discretos puede reutilizarla.
+class StateMachine {
+  constructor(owner = null) {
+    this._owner = owner;
+    this._states = new Map();
+    this._current = null;
+  }
+
+  addState(name, { onEnter, onUpdate, onExit } = {}) {
+    this._states.set(name, { onEnter, onUpdate, onExit });
+    return this;
+  }
+
+  transition(name) {
+    if (name === this._current) return; // guard: no re-entrar al mismo estado
+    if (!this._states.has(name)) return;
+
+    if (this._current !== null) {
+      this._states.get(this._current)?.onExit?.call(this._owner);
+    }
+    this._current = name;
+    this._states.get(name)?.onEnter?.call(this._owner);
+  }
+
+  update(dt) {
+    if (this._current === null) return;
+    this._states.get(this._current)?.onUpdate?.call(this._owner, dt);
+  }
+
+  get state() {
+    return this._current;
+  }
+
+  is(name) {
+    return this._current === name;
+  }
+}
+
+
+// ---- src/core/GameLoop.js ----
+// Game loop de paso fijo: requestAnimationFrame + patrón acumulador.
+// onFixed(dt) recibe siempre el mismo dt (lógica/física determinista).
+// onDraw(alpha) recibe la fracción de paso sobrante, para interpolar render — nunca toca físicas.
+class GameLoop {
+  constructor({ fixedHz = 60, maxFrameTime = 0.1 } = {}) {
+    this.fixedDt = 1 / fixedHz;
+    this.maxFrameTime = maxFrameTime; // clamp del delta para evitar "spiral of death"
+    this.paused = false;
+
+    this._accumulator = 0;
+    this._lastTime = null;
+    this._rafId = null;
+
+    this.onFixed = null; // (dt: number) => void
+    this.onDraw = null; // (alpha: number) => void
+  }
+
+  start() {
+    const tick = (timestamp) => {
+      this._rafId = requestAnimationFrame(tick);
+
+      if (this.paused) {
+        this._lastTime = timestamp;
+        return;
+      }
+      if (this._lastTime === null) this._lastTime = timestamp;
+
+      const rawDt = Math.min((timestamp - this._lastTime) / 1000, this.maxFrameTime);
+      this._lastTime = timestamp;
+      this._accumulator += rawDt;
+
+      while (this._accumulator >= this.fixedDt) {
+        this.onFixed?.(this.fixedDt);
+        this._accumulator -= this.fixedDt;
+      }
+
+      const alpha = this._accumulator / this.fixedDt;
+      this.onDraw?.(alpha);
+    };
+    this._rafId = requestAnimationFrame(tick);
+  }
+
+  stop() {
+    if (this._rafId !== null) cancelAnimationFrame(this._rafId);
+    this._rafId = null;
+    this._lastTime = null;
+    this._accumulator = 0;
+  }
+
+  pause() {
+    this.paused = true;
+  }
+
+  resume() {
+    this.paused = false;
+    this._lastTime = null; // evita un dt gigante acumulado durante la pausa
+  }
+}
+
+
+// ---- src/core/HitTest.js ----
+// Hit-testing simple por distancia/rectángulo. Sin física de colisión real.
+// Las zonas (rects/círculos) son inyectadas desde afuera — este módulo no conoce
+// coordenadas de pantalla ni layout, sólo geometría abstracta.
+
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function pointInRect(point, rect) {
+  return (
+    point.x >= rect.x &&
+    point.x <= rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y <= rect.y + rect.height
+  );
+}
+
+function pointInCircle(point, circle) {
+  return distance(point, circle.center) <= circle.radius;
+}
+
+// zone puede ser: null, una función predicado (point) => boolean,
+// un círculo { center: {x,y}, radius } o un rect { x, y, width, height }.
+function pointInZone(point, zone) {
+  if (!zone) return false;
+  if (typeof zone === 'function') return !!zone(point);
+  if (zone.radius != null && zone.center != null) return pointInCircle(point, zone);
+  return pointInRect(point, zone);
+}
+
+
+// ---- src/physics/ThermalConstants.js ----
+// Constantes físicas del sistema agua-hielo. Magnitudes reales, todas ajustables
+// para balancear el ritmo del gameplay sin romper la coherencia física.
+
+const C_AGUA = 4186; // Calor específico del agua líquida, J/(kg·°C)
+const C_HIELO = 2090; // Calor específico del hielo, J/(kg·°C)
+const L_FUSION = 334000; // Calor latente de fusión del agua, J/kg
+const L_VAPORIZACION = 2260000; // Calor latente de vaporización del agua, J/kg
+
+const POTENCIA_FUENTE = 1500; // Potencia de la fuente de calor (hornalla), W
+
+const TEMP_AMBIENTE = 22; // Temperatura ambiente, °C
+const K_NEWTON = 0.02; // Constante de enfriamiento de Newton, s⁻¹
+
+const TEMP_HIELO_INICIAL = -10; // Temperatura del hielo recién arrastrado, °C (bajo cero)
+const MASA_INCREMENTO_HIELO = 0.05; // Masa que agrega cada unidad de hielo arrastrada, kg
+const MASA_AGUA_INICIAL = 1.0; // Masa de agua por defecto en el recipiente, kg
+
+const TEMP_EBULLICION = 100; // Umbral de evaporación, °C
+const FRACCION_POTENCIA_EVAPORACION = 0.3; // Fracción de la potencia que evapora masa (vs. sobrecalienta) por encima de TEMP_EBULLICION
+
+const CONDUCTANCIA_HIELO_AGUA = 230; // Conductancia del intercambio pasivo hielo↔agua sin fuente activa, W/°C — calibrada para que un cubito (0.05kg) tarde ~4s en derretirse a temperatura ambiente
+
+const TEMP_MIN_AGUA = 0; // Mínimo físico válido para agua líquida, °C
+// No hay TEMP_MAX separado: a presión atmosférica el agua líquida no puede superar
+// TEMP_EBULLICION (ver más abajo) — ese es el techo real, no uno arbitrario.
+
+// Parámetros del fast-forward "ir al equilibrio"
+const UMBRAL_ESTABILIDAD = 0.01; // Delta de temperatura por debajo del cual un paso se considera "estable", °C
+const UMBRAL_ESTABILIDAD_MASA = 1e-6; // Delta de masa de hielo por debajo del cual un paso se considera "estable", kg
+const PASOS_ESTABLES_REQUERIDOS = 15; // Pasos fijos consecutivos estables para declarar equilibrio
+const MAX_PASOS_FASTFORWARD = 200000; // Tope de pasos simulados (~55 min de tiempo simulado a 60Hz)
+
+// Umbral de la FSM narrativa: qué tan cerca de la temperatura ambiente cuenta como EQUILIBRIO
+const UMBRAL_EQUILIBRIO_FSM = 0.5; // °C
+
+
+// ---- src/physics/ThermalFormulas.js ----
+// Fórmulas puras de referencia pedagógica. El ThermalEngine las reutiliza internamente;
+// una capa de UI separada puede importarlas para mostrarlas junto al termómetro.
+
+// Q = m · c · ΔT — calor sensible (cambia temperatura, no de fase)
+function calorSensible(m, c, deltaT) {
+  return m * c * deltaT;
+}
+
+// Q = m · c_hielo · ΔT + m · L_fusión — calentar hielo hasta 0°C y luego fundirlo
+function calorParaCalentarYFundir(m, cHielo, deltaTHastaCero, lFusion) {
+  return m * cHielo * deltaTHastaCero + m * lFusion;
+}
+
+// T_eq = (m₁T₁ + m₂T₂) / (m₁+m₂) — temperatura de equilibrio al mezclar dos masas
+function temperaturaEquilibrio(m1, t1, m2, t2) {
+  const masaTotal = m1 + m2;
+  if (masaTotal <= 0) return 0;
+  return (m1 * t1 + m2 * t2) / masaTotal;
+}
+
+
+// ---- src/physics/ThermalEngine.js ----
+
+
+
+
+// Motor físico puro: sólo calcula números. No sabe nada de estados narrativos
+// (eso es responsabilidad de ThermalFSM, que interpreta este snapshot) ni de
+// cómo se dibuja o posiciona nada en pantalla.
+class ThermalEngine {
+  constructor(initial = {}) {
+    this.tempAgua = initial.tempAgua ?? TEMP_AMBIENTE;
+    this.tempHielo = initial.tempHielo ?? TEMP_HIELO_INICIAL;
+    this.masaAgua = initial.masaAgua ?? MASA_AGUA_INICIAL;
+    this.masaHielo = initial.masaHielo ?? 0;
+    this.fuenteOn = initial.fuenteOn ?? false;
+    this.hayVapor = false;
+  }
+
+  // --- Mecánicas de interacción (sección 6 del spec) ---
+
+  addIce({ mass = MASA_INCREMENTO_HIELO, temp = TEMP_HIELO_INICIAL } = {}) {
+    this.tempHielo =
+      this.masaHielo > 0 ? temperaturaEquilibrio(this.masaHielo, this.tempHielo, mass, temp) : temp;
+    this.masaHielo += mass;
+    EventBus.emit(EVENTS.ICE_ADDED, this.getSnapshot());
+  }
+
+  setHornalla(on) {
+    if (this.fuenteOn === on) return;
+    this.fuenteOn = on;
+    EventBus.emit(EVENTS.HORNALLA_TOGGLE, { on });
+  }
+
+  // --- Simulación ---
+
+  update(dt, { silent = false, skipNewton = false } = {}) {
+    if (this.masaHielo > 0) {
+      if (this.fuenteOn) {
+        this._calentamientoActivoConHielo(dt);
+      } else {
+        this._intercambioPasivo(dt);
+      }
+    } else if (this.fuenteOn) {
+      this._heatWater(POTENCIA_FUENTE * dt);
+      this._evaporar(dt);
+    } else if (!skipNewton) {
+      this._enfriamientoNewton(dt);
+    }
+
+    this._clampTemperaturas();
+
+    // El vapor es una señal visual de "está en el punto de ebullición": no depende
+    // de si la hornalla sigue prendida (por eso se calcula acá y no sólo dentro de
+    // _evaporar, que además gatea la pérdida de masa — esa sí necesita energía activa).
+    this.hayVapor = this.masaAgua > 0 && this.tempAgua >= TEMP_EBULLICION;
+
+    if (!silent) {
+      EventBus.emit(EVENTS.THERMAL_UPDATE, this.getSnapshot());
+    }
+  }
+
+  // Sub-paso 2+3: fuente activa con hielo presente — primero llevarlo a 0°C,
+  // después fundirlo, después calentar el agua resultante con lo que sobre.
+  _calentamientoActivoConHielo(dt) {
+    let q = POTENCIA_FUENTE * dt;
+    q = this._calentarHieloHastaCero(q);
+    if (this.masaHielo > 0 && q > 0) {
+      q = this._fundirHielo(q);
+    }
+    if (this.masaHielo <= 0 && q > 0) {
+      this._heatWater(q);
+    }
+  }
+
+  // Sub-paso 1: sin fuente activa, conducción hielo↔agua tibia proporcional a dt y ΔT.
+  // El agua sólo cede el calor que el hielo efectivamente absorbe (conservación de energía).
+  _intercambioPasivo(dt) {
+    if (this.masaAgua <= 0 || this.tempAgua <= 0) return;
+
+    let qDisponible = CONDUCTANCIA_HIELO_AGUA * this.tempAgua * dt;
+    const qMaxAgua = this.masaAgua * C_AGUA * this.tempAgua; // calor que el agua puede ceder antes de llegar a 0°C
+    qDisponible = Math.min(qDisponible, Math.max(qMaxAgua, 0));
+    if (qDisponible <= 0) return;
+
+    let restante = this._calentarHieloHastaCero(qDisponible);
+    if (this.masaHielo > 0 && restante > 0) {
+      restante = this._fundirHielo(restante);
+    }
+
+    const qUsado = qDisponible - restante;
+    if (qUsado > 0) {
+      this.tempAgua -= qUsado / (this.masaAgua * C_AGUA);
+    }
+  }
+
+  // Calor sensible: sube tempHielo hacia 0°C consumiendo hasta q. Devuelve el sobrante.
+  _calentarHieloHastaCero(q) {
+    if (this.masaHielo <= 0 || this.tempHielo >= 0 || q <= 0) return q;
+    const qNecesario = this.masaHielo * C_HIELO * (0 - this.tempHielo);
+    const qUsado = Math.min(q, qNecesario);
+    this.tempHielo += qUsado / (this.masaHielo * C_HIELO);
+    return q - qUsado;
+  }
+
+  // Calor latente: funde masa de hielo (parcial o total) consumiendo hasta q.
+  // El agua recién fundida se integra al agua existente a 0°C (mezcla ponderada por masa).
+  _fundirHielo(q) {
+    if (this.masaHielo <= 0 || this.tempHielo < 0 || q <= 0) return q;
+    const qNecesario = this.masaHielo * L_FUSION;
+    const qUsado = Math.min(q, qNecesario);
+    const masaFundida = qUsado / L_FUSION;
+
+    const masaAguaNueva = this.masaAgua + masaFundida;
+    this.tempAgua =
+      masaAguaNueva > 0 ? (this.masaAgua * this.tempAgua) / masaAguaNueva : this.tempAgua;
+    this.masaAgua = masaAguaNueva;
+    this.masaHielo -= masaFundida;
+    if (this.masaHielo <= 1e-9) {
+      this.masaHielo = 0;
+      this.tempHielo = 0;
+    }
+    return q - qUsado;
+  }
+
+  // Calor sensible directo sobre el agua: ΔT = Q/(m·c)
+  _heatWater(q) {
+    if (this.masaAgua <= 0 || q <= 0) return;
+    this.tempAgua += q / (this.masaAgua * C_AGUA);
+  }
+
+  // Sub-paso 4: enfriamiento de Newton, sólo sin hielo presente. Funciona en ambas
+  // direcciones (también "calienta" hacia el ambiente si el agua está más fría que él).
+  _enfriamientoNewton(dt) {
+    if (this.masaAgua <= 0) return;
+    this.tempAgua += -K_NEWTON * (this.tempAgua - TEMP_AMBIENTE) * dt;
+  }
+
+  // Sub-paso 5: evaporación por encima del punto de ebullición con fuente activa.
+  _evaporar(dt) {
+    if (!this.fuenteOn || this.tempAgua < TEMP_EBULLICION || this.masaAgua <= 0) return;
+    const q = POTENCIA_FUENTE * dt * FRACCION_POTENCIA_EVAPORACION;
+    this.masaAgua -= q / L_VAPORIZACION;
+    if (this.masaAgua <= 0) {
+      this.masaAgua = 0;
+      this.setHornalla(false);
+    }
+  }
+
+  _clampTemperaturas() {
+    if (this.masaAgua > 0) {
+      // A presión atmosférica el agua líquida no puede superar el punto de ebullición
+      // (el exceso de energía se va en evaporar, no en seguir calentando) — igual que
+      // el hielo no puede superar 0°C mientras sigue habiendo hielo por fundir.
+      this.tempAgua = Math.min(Math.max(this.tempAgua, TEMP_MIN_AGUA), TEMP_EBULLICION);
+    }
+    if (this.masaHielo > 0) {
+      this.tempHielo = Math.min(this.tempHielo, 0);
+    } else {
+      this.masaHielo = 0;
+    }
+    if (this.masaAgua <= 1e-9) this.masaAgua = 0;
+  }
+
+  // --- Fast-forward "ir al equilibrio" (sección 5) ---
+  // Corre muchos pasos fijos internamente sin renderizar ni emitir eventos intermedios,
+  // hasta que la temperatura se estabilice o se alcance el tope de pasos simulados.
+  fastForwardToEquilibrium({
+    fixedDt = 1 / 60,
+    umbral = UMBRAL_ESTABILIDAD,
+    pasosEstablesRequeridos = PASOS_ESTABLES_REQUERIDOS,
+    maxPasos = MAX_PASOS_FASTFORWARD,
+    skipNewton = true,
+  } = {}) {
+    let pasos = 0;
+    let pasosEnVentana = 0;
+    let ventana = {
+      tempAgua: this.tempAgua,
+      tempHielo: this.tempHielo,
+      masaHielo: this.masaHielo,
+      masaAgua: this.masaAgua,
+    };
+
+    // La estabilidad se mide contra una ventana de N pasos, no contra el paso anterior:
+    // con fuente activa y sin hielo, cada paso individual calienta el agua un poquito
+    // (ΔT por paso puede ser menor que el umbral), así que comparar paso a paso daría
+    // un falso "estable" mientras la temperatura sube sostenidamente. Comparando cada
+    // N pasos contra la ventana anterior, esa deriva sostenida sí se nota.
+    while (pasos < maxPasos) {
+      this.update(fixedDt, { silent: true, skipNewton });
+      pasos++;
+      pasosEnVentana++;
+
+      // Con fuente activa y sin hielo, el punto de ebullición es el "equilibrio" al que
+      // se puede llegar de un salto: una vez ahí, la masa nunca deja de caer por sí sola
+      // (evapora mientras haya fuente y agua), así que seguir de largo vaciaría la olla
+      // en un solo click. Cortamos apenas se toca el plateau — la evaporación real se ve
+      // después, jugando en tiempo real con la olla puesta, no de golpe en el fast-forward.
+      if (this.fuenteOn && this.masaHielo === 0 && this.tempAgua >= TEMP_EBULLICION) break;
+
+      if (pasosEnVentana < pasosEstablesRequeridos) continue;
+
+      const deltaTemp = Math.max(
+        Math.abs(this.tempAgua - ventana.tempAgua),
+        Math.abs(this.tempHielo - ventana.tempHielo)
+      );
+      // También hay que vigilar masaAgua: durante la evaporación, tempAgua queda
+      // clavada exactamente en el punto de ebullición (delta 0), así que si sólo
+      // se mira masaHielo (ya en 0) el chequeo de arriba también daría falso "estable".
+      const deltaMasa = Math.max(
+        Math.abs(this.masaHielo - ventana.masaHielo),
+        Math.abs(this.masaAgua - ventana.masaAgua)
+      );
+
+      if (deltaTemp < umbral && deltaMasa < UMBRAL_ESTABILIDAD_MASA) break;
+
+      ventana = {
+        tempAgua: this.tempAgua,
+        tempHielo: this.tempHielo,
+        masaHielo: this.masaHielo,
+        masaAgua: this.masaAgua,
+      };
+      pasosEnVentana = 0;
+    }
+
+    const snapshot = this.getSnapshot();
+    EventBus.emit(EVENTS.THERMAL_UPDATE, snapshot);
+    return { pasosSimulados: pasos, snapshot };
+  }
+
+  getSnapshot() {
+    return {
+      temperatura: this.masaAgua > 0 ? this.tempAgua : this.tempHielo,
+      tempAgua: this.tempAgua,
+      tempHielo: this.tempHielo,
+      masaAgua: this.masaAgua,
+      masaHielo: this.masaHielo,
+      fuenteOn: this.fuenteOn,
+      hayVapor: this.hayVapor,
+    };
+  }
+}
+
+
+// ---- src/state/ThermalFSM.js ----
+
+
+
+
+const THERMAL_STATES = {
+  EQUILIBRIO: 'EQUILIBRIO',
+  CALENTANDO: 'CALENTANDO',
+  ENFRIANDO: 'ENFRIANDO',
+  DERRITIENDO_HIELO: 'DERRITIENDO_HIELO',
+};
+
+// FSM narrativa: no calcula nada, sólo interpreta el snapshot del ThermalEngine
+// para exponer un estado legible. Se suscribe sola a thermal:update.
+class ThermalFSM {
+  constructor() {
+    this._sm = new StateMachine(this);
+    this._sm
+      .addState(THERMAL_STATES.EQUILIBRIO)
+      .addState(THERMAL_STATES.CALENTANDO)
+      .addState(THERMAL_STATES.ENFRIANDO)
+      .addState(THERMAL_STATES.DERRITIENDO_HIELO);
+    this._sm.transition(THERMAL_STATES.EQUILIBRIO);
+
+    this._unsubscribe = EventBus.on(EVENTS.THERMAL_UPDATE, (snapshot) => this.evaluate(snapshot));
+  }
+
+  evaluate(snapshot) {
+    const prev = this._sm.state;
+    const next = this._resolveState(snapshot);
+    this._sm.transition(next);
+    if (this._sm.state !== prev) {
+      EventBus.emit(EVENTS.STATE_CHANGED, { from: prev, to: this._sm.state });
+    }
+  }
+
+  _resolveState({ masaHielo, fuenteOn, tempAgua }) {
+    if (masaHielo > 0) return THERMAL_STATES.DERRITIENDO_HIELO;
+    if (fuenteOn) return THERMAL_STATES.CALENTANDO;
+
+    const diff = tempAgua - TEMP_AMBIENTE;
+    if (Math.abs(diff) <= UMBRAL_EQUILIBRIO_FSM) return THERMAL_STATES.EQUILIBRIO;
+    // Newton enfría o calienta según de qué lado del ambiente esté el agua.
+    return diff > 0 ? THERMAL_STATES.ENFRIANDO : THERMAL_STATES.CALENTANDO;
+  }
+
+  get state() {
+    return this._sm.state;
+  }
+
+  destroy() {
+    this._unsubscribe?.();
+  }
+}
+
+
+// ---- src/interaction/InteractionController.js ----
+
+
+// Traduce gestos de arrastre (posiciones abstractas {x,y}, sin importar si vienen
+// de mouse o touch) a llamadas sobre el ThermalEngine. Las zonas (bowlZone,
+// heatZone, homeZone) son inyectadas desde afuera — este módulo no conoce
+// coordenadas reales de pantalla, sólo geometría.
+class InteractionController {
+  constructor(engine, zones = {}) {
+    this.engine = engine;
+    this.bowlZone = zones.bowlZone ?? null;
+    this.heatZone = zones.heatZone ?? null;
+    this.homeZone = zones.homeZone ?? null;
+
+    this._draggingIce = false;
+    this._draggingContainer = false;
+    this._containerInHeatZone = false;
+  }
+
+  setZones({ bowlZone, heatZone, homeZone } = {}) {
+    if (bowlZone !== undefined) this.bowlZone = bowlZone;
+    if (heatZone !== undefined) this.heatZone = heatZone;
+    if (homeZone !== undefined) this.homeZone = homeZone;
+  }
+
+  // --- Arrastrar hielo hacia el recipiente ---
+
+  startIceDrag() {
+    this._draggingIce = true;
+  }
+
+  endIceDrag(point) {
+    const wasDragging = this._draggingIce;
+    this._draggingIce = false;
+    if (!wasDragging) return { added: false };
+
+    const overBowl = pointInZone(point, this.bowlZone);
+    if (overBowl) this.engine.addIce();
+    return { added: overBowl };
+  }
+
+  // --- Arrastrar el recipiente hacia/desde la fuente de calor ---
+
+  startContainerDrag() {
+    this._draggingContainer = true;
+    this._containerInHeatZone = this.engine.fuenteOn;
+  }
+
+  moveContainerDrag(point) {
+    if (!this._draggingContainer) return;
+    const inside = pointInZone(point, this.heatZone);
+    if (inside !== this._containerInHeatZone) {
+      this._containerInHeatZone = inside;
+      this.engine.setHornalla(inside);
+    }
+  }
+
+  // Soltar fuera de toda zona válida vuelve el recipiente a su posición original
+  // y apaga la fuente. El llamador (UI) decide cómo animar ese regreso usando
+  // shouldReturnHome — este controller no anima ni conoce posiciones.
+  endContainerDrag(point) {
+    const wasDragging = this._draggingContainer;
+    this._draggingContainer = false;
+    if (!wasDragging) return { inHeatZone: false, inHomeZone: false, shouldReturnHome: false };
+
+    const inHeatZone = pointInZone(point, this.heatZone);
+    const inHomeZone = pointInZone(point, this.homeZone);
+    const shouldReturnHome = !inHeatZone && !inHomeZone;
+
+    if (shouldReturnHome) {
+      this.engine.setHornalla(false);
+      this._containerInHeatZone = false;
+    }
+
+    return { inHeatZone, inHomeZone, shouldReturnHome };
+  }
+}
+
+
+// ---- src/ThermalGame.js ----
+
+
+
+
+
+
+// Punto de entrada único del motor: conecta ThermalEngine + ThermalFSM + GameLoop +
+// InteractionController. Una capa de UI/render (a diseñar aparte) importa esto,
+// llama start()/las mecánicas de arrastre, y escucha eventos vía EventBus — sin
+// tocar nunca directamente los sub-pasos físicos.
+class ThermalGame {
+  constructor({ initialState, loop, zones } = {}) {
+    this.engine = new ThermalEngine(initialState);
+    this.fsm = new ThermalFSM();
+    this.loop = new GameLoop(loop);
+    this.interaction = new InteractionController(this.engine, zones);
+
+    this.loop.onFixed = (dt) => this.engine.update(dt);
+  }
+
+  start() {
+    this.loop.start();
+  }
+
+  stop() {
+    this.loop.stop();
+  }
+
+  pause() {
+    this.loop.pause();
+  }
+
+  resume() {
+    this.loop.resume();
+  }
+
+  // "Ir al equilibrio" no apaga la hornalla: si la olla sigue en el fuego, avanzar
+  // rápido la lleva de un salto hasta el punto de ebullición y ahí frena (ver el
+  // corte por plateau en fastForwardToEquilibrium) — así no pierde agua de golpe
+  // en el fast-forward; si se la deja puesta, evapora de a poco jugando en tiempo
+  // real, como siempre. skipNewton:false habilita además el enfriamiento hacia el
+  // ambiente para el caso en que ya esté fuera del fuego, así la temperatura baja
+  // de verdad en vez de quedar clavada en el valor con el que llegó.
+  goToEquilibrium(options) {
+    return this.engine.fastForwardToEquilibrium({ skipNewton: false, ...options });
+  }
+
+  // Snapshot combinado: números del motor + etiqueta narrativa de la FSM.
+  // El motor y la FSM se mantienen desacoplados internamente (ver ThermalEngine
+  // y ThermalFSM); esto sólo los junta para quien consuma el estado completo.
+  getSnapshot() {
+    return { ...this.engine.getSnapshot(), estado: this.fsm.state };
+  }
+
+  on(event, fn) {
+    return EventBus.on(event, fn);
+  }
+
+  destroy() {
+    this.stop();
+    this.fsm.destroy();
+  }
+}
+
+
+
+// ---- src/visuals/Palette.js ----
+// Paleta y utilidades de color. Única capa que sabe "cómo se ve" el juego —
+// nada de esto es consumido por physics/state/interaction.
+
+const STOPS = [
+  { t: -15, rgb: [176, 224, 245] }, // hielo muy frío
+  { t: 0, rgb: [191, 228, 245] }, // agua helada / recién fundida
+  { t: 22, rgb: [91, 184, 212] }, // temperatura ambiente
+  { t: 50, rgb: [244, 165, 55] }, // tibia
+  // "Caliente" e "hirviendo" comparten el mismo naranja vivo a propósito: el agua
+  // nunca debe leerse como roja, ni siquiera hirviendo — el aviso visual de que
+  // está hirviendo es el vapor, no un cambio de color.
+  { t: 80, rgb: [255, 140, 26] }, // caliente
+  { t: 100, rgb: [255, 140, 26] }, // hirviendo
+];
+
+function lerp(a, b, f) {
+  return a + (b - a) * f;
+}
+
+// Aclara (percent > 0) u oscurece (percent < 0) un color hex, para generar las
+// sombras/luces de las caras 3D sin tener que declarar cada tono a mano en PALETTE.
+function shade(hex, percent) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const amt = Math.round(2.55 * percent);
+  const r = Math.min(255, Math.max(0, (num >> 16) + amt));
+  const g = Math.min(255, Math.max(0, ((num >> 8) & 0x00ff) + amt));
+  const b = Math.min(255, Math.max(0, (num & 0x0000ff) + amt));
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+function tempToRGB(temp) {
+  if (temp <= STOPS[0].t) return STOPS[0].rgb;
+  for (let i = 0; i < STOPS.length - 1; i++) {
+    const a = STOPS[i];
+    const b = STOPS[i + 1];
+    if (temp >= a.t && temp <= b.t) {
+      const f = (temp - a.t) / (b.t - a.t);
+      return [
+        Math.round(lerp(a.rgb[0], b.rgb[0], f)),
+        Math.round(lerp(a.rgb[1], b.rgb[1], f)),
+        Math.round(lerp(a.rgb[2], b.rgb[2], f)),
+      ];
+    }
+  }
+  return STOPS[STOPS.length - 1].rgb;
+}
+
+function tempToCSS(temp, alpha = 1) {
+  const [r, g, b] = tempToRGB(temp);
+  return alpha >= 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Igual que tempToCSS pero para un color fijo (no depende de la temperatura) — el
+// agua del recipiente usa esto en vez del gradiente térmico (ver PALETTE.water).
+function hexToRgba(hex, alpha = 1) {
+  const num = parseInt(hex.replace('#', ''), 16);
+  const r = (num >> 16) & 0xff;
+  const g = (num >> 8) & 0xff;
+  const b = num & 0xff;
+  return alpha >= 1 ? `rgb(${r}, ${g}, ${b})` : `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+const PALETTE = {
+  backgroundTop: '#c9915a',
+  backgroundBottom: '#a8703e',
+  counterLine: 'rgba(0,0,0,0.08)',
+  potBody: '#4a4a52',
+  potRim: '#6b6b76',
+  potHighlight: 'rgba(255,255,255,0.18)',
+  potShadow: 'rgba(0,0,0,0.25)',
+  // Celeste fijo: el agua siempre se ve así, hirviendo o helada — el cambio de
+  // temperatura se comunica con el vapor y el termómetro, no con el color del agua.
+  water: '#5bb8d4',
+  ice: '#e8f7fb',
+  iceOutline: '#a9dcef',
+  iceHighlight: 'rgba(255,255,255,0.7)',
+  stoveRingOff: '#4a4642',
+  stoveRingOn: '#33302e',
+  stoveGlow: 'rgba(255,140,26,0.35)',
+  flameOuter: '#ff8c1a',
+  flameInner: '#ffd23f',
+  flameCore: '#fff3c4',
+  steam: 'rgba(255,255,255,0.55)',
+  text: '#2c2117',
+  textLight: '#fff8ee',
+  panelBg: 'rgba(255,248,238,0.94)',
+  panelBorder: '#c9915a',
+  zoneHighlight: 'rgba(255,140,26,0.25)',
+  badge: {
+    EQUILIBRIO: '#4caf7d',
+    CALENTANDO: '#e8622c',
+    ENFRIANDO: '#5bb8d4',
+    DERRITIENDO_HIELO: '#4fb3d9',
+  },
+};
+
+
+// ---- src/visuals/Layout.js ----
+// Coordenadas lógicas de la escena, en un espacio de diseño fijo de 960×640
+// que después se escala al tamaño real del canvas (PC o mobile). Es la única
+// fuente de verdad para posiciones — SceneRenderer y PointerInput leen de acá,
+// nunca hardcodean números propios.
+
+const POT = {
+  width: 200,
+  height: 130,
+  homeAnchor: { x: 380, y: 320 },
+  stoveAnchor: { x: 660, y: 315 },
+};
+
+const STOVE_CENTER = { x: 760, y: 380 };
+const STOVE_RADIUS = 110;
+
+const LAYOUT = {
+  width: 960,
+  height: 640,
+
+  pot: POT,
+
+  potHomeZone: {
+    x: POT.homeAnchor.x - 25,
+    y: POT.homeAnchor.y - 25,
+    width: POT.width + 50,
+    height: POT.height + 50,
+  },
+
+  stove: {
+    center: STOVE_CENTER,
+    radius: STOVE_RADIUS,
+    zone: { center: STOVE_CENTER, radius: STOVE_RADIUS + 25 },
+  },
+
+  iceTray: {
+    cubes: [
+      { x: 70, y: 90 },
+      { x: 130, y: 90 },
+      { x: 190, y: 90 },
+    ],
+    cubeSize: 40,
+    hitRadius: 30,
+  },
+};
+
+
+// ---- src/visuals/SceneRenderer.js ----
+
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// Todo lo que se dibuja acá lee del snapshot del motor + un viewState puramente
+// visual (posición actual de la olla, si se está arrastrando algo). No conoce
+// ni modifica nada del ThermalEngine — sólo lee.
+//
+// Look 3D: no hay motor 3D real acá, es 2D con trucos de luz/sombra (isométrico
+// para el hielo, gradientes cilíndricos para la olla, gradiente radial tipo
+// "domo" para la hornalla) — suficiente para leerse como volumen sin cambiar
+// coordenadas ni el layout lógico que usa el resto del juego.
+class SceneRenderer {
+  constructor(ctx, layout) {
+    this.ctx = ctx;
+    this.layout = layout;
+    this._steam = [];
+    this._lastTime = null;
+    this._flameT = 0;
+    this._waveT = 0;
+  }
+
+  draw(snapshot, viewState) {
+    const now = performance.now();
+    const dt = this._lastTime !== null ? Math.min((now - this._lastTime) / 1000, 0.1) : 0;
+    this._lastTime = now;
+    this._flameT += dt;
+    this._waveT += dt;
+
+    const { ctx, layout } = this;
+    ctx.clearRect(0, 0, layout.width, layout.height);
+
+    this._drawBackground();
+    this._drawIceTray(viewState);
+    this._drawStove(snapshot, viewState);
+    this._updateSteam(dt, snapshot, viewState);
+    this._drawSteam();
+    this._drawPot(snapshot, viewState);
+    this._drawDraggedIceGhost(viewState);
+  }
+
+  _drawBackground() {
+    const { ctx, layout } = this;
+    const g = ctx.createLinearGradient(0, 0, 0, layout.height);
+    g.addColorStop(0, PALETTE.backgroundTop);
+    g.addColorStop(1, PALETTE.backgroundBottom);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, layout.width, layout.height);
+
+    // Cada línea de mesada se dibuja como un surco: una sombra y, justo debajo,
+    // un highlight — el par vende un pequeño relieve en vez de una línea plana.
+    for (let y = 90; y < layout.height; y += 90) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.14)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(layout.width, y);
+      ctx.stroke();
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.10)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, y + 2);
+      ctx.lineTo(layout.width, y + 2);
+      ctx.stroke();
+    }
+  }
+
+  _drawIceTray(viewState) {
+    const { ctx, layout } = this;
+    for (const cube of layout.iceTray.cubes) {
+      if (viewState.iceDrag && viewState.iceDragFrom === cube) continue; // se está arrastrando esta
+
+      const s = layout.iceTray.cubeSize;
+      ctx.beginPath();
+      ctx.ellipse(cube.x, cube.y + s * 0.4, s * 0.42, 6, 0, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.18)';
+      ctx.fill();
+
+      this._drawIceCube(cube.x, cube.y, s);
+    }
+  }
+
+  // Cubito de hielo dibujado como un cubo isométrico (cara de arriba + dos caras
+  // laterales con distinta luz) en vez de un cuadrado plano — es la pieza que
+  // más se nota como "3D" porque el jugador la manipula todo el tiempo.
+  _drawIceCube(cx, cy, size) {
+    const { ctx } = this;
+    const hw = size / 2;
+    const topH = size * 0.28; // achatamiento de la cara de arriba (perspectiva)
+    const wallH = size * 0.6; // altura de las caras laterales
+
+    const top = { x: cx, y: cy - wallH / 2 - topH };
+    const right = { x: cx + hw, y: cy - wallH / 2 };
+    const bottom = { x: cx, y: cy - wallH / 2 + topH };
+    const left = { x: cx - hw, y: cy - wallH / 2 };
+
+    const topColor = PALETTE.ice;
+    const leftColor = shade(PALETTE.ice, -8);
+    const rightColor = shade(PALETTE.ice, -22);
+    const outline = PALETTE.iceOutline;
+
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = outline;
+
+    // cara izquierda (más clara — recibe algo de luz)
+    ctx.beginPath();
+    ctx.moveTo(left.x, left.y);
+    ctx.lineTo(bottom.x, bottom.y);
+    ctx.lineTo(bottom.x, bottom.y + wallH);
+    ctx.lineTo(left.x, left.y + wallH);
+    ctx.closePath();
+    ctx.fillStyle = leftColor;
+    ctx.fill();
+    ctx.stroke();
+
+    // cara derecha (en sombra)
+    ctx.beginPath();
+    ctx.moveTo(right.x, right.y);
+    ctx.lineTo(bottom.x, bottom.y);
+    ctx.lineTo(bottom.x, bottom.y + wallH);
+    ctx.lineTo(right.x, right.y + wallH);
+    ctx.closePath();
+    ctx.fillStyle = rightColor;
+    ctx.fill();
+    ctx.stroke();
+
+    // cara de arriba
+    ctx.beginPath();
+    ctx.moveTo(top.x, top.y);
+    ctx.lineTo(right.x, right.y);
+    ctx.lineTo(bottom.x, bottom.y);
+    ctx.lineTo(left.x, left.y);
+    ctx.closePath();
+    ctx.fillStyle = topColor;
+    ctx.fill();
+    ctx.stroke();
+
+    // brillo angosto sobre la cara de arriba
+    ctx.beginPath();
+    ctx.moveTo(top.x, top.y + topH * 0.2);
+    ctx.lineTo(left.x + hw * 0.4, left.y + topH * 0.55);
+    ctx.lineTo(top.x, top.y + topH * 0.9);
+    ctx.closePath();
+    ctx.fillStyle = PALETTE.iceHighlight;
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  _drawStove(snapshot, viewState) {
+    const { ctx, layout } = this;
+    const { center, radius } = layout.stove;
+    const potNearStove = this._potOverHeatZone(viewState);
+
+    if (snapshot.fuenteOn || potNearStove) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius + 30, 0, Math.PI * 2);
+      ctx.fillStyle = PALETTE.zoneHighlight;
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Gradiente radial descentrado (luz arriba-izquierda) para que el anillo
+    // se lea como un domo metálico y no como un círculo plano.
+    const ringColor = snapshot.fuenteOn ? PALETTE.stoveRingOn : PALETTE.stoveRingOff;
+    const ringGrad = ctx.createRadialGradient(
+      center.x - radius * 0.35,
+      center.y - radius * 0.35,
+      radius * 0.1,
+      center.x,
+      center.y,
+      radius
+    );
+    ringGrad.addColorStop(0, shade(ringColor, 22));
+    ringGrad.addColorStop(0.55, ringColor);
+    ringGrad.addColorStop(1, shade(ringColor, -22));
+
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    ctx.fillStyle = ringGrad;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = shade(ringColor, -32);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius * 0.62, 0, Math.PI * 2);
+    ctx.strokeStyle = snapshot.fuenteOn ? PALETTE.flameOuter : shade('#5c5852', -10);
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    if (snapshot.fuenteOn) this._drawFlame(center);
+  }
+
+  _drawFlame(center) {
+    const { ctx } = this;
+    const flicker = 1 + Math.sin(this._flameT * 9) * 0.08 + Math.sin(this._flameT * 3.3) * 0.05;
+    ctx.save();
+    ctx.translate(center.x, center.y);
+    ctx.scale(flicker, flicker);
+    this._flameBlob(34, PALETTE.flameOuter, shade(PALETTE.flameOuter, 18));
+    this._flameBlob(22, PALETTE.flameInner, shade(PALETTE.flameInner, 15));
+    this._flameBlob(11, PALETTE.flameCore, '#ffffff');
+    ctx.restore();
+  }
+
+  // Cada lengua de fuego se rellena con un gradiente radial (núcleo más claro,
+  // borde con el color base) en vez de un color plano, para dar algo de volumen.
+  _flameBlob(size, color, glowColor) {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 1.3);
+    ctx.bezierCurveTo(size, -size * 0.4, size * 0.7, size * 0.6, 0, size * 0.9);
+    ctx.bezierCurveTo(-size * 0.7, size * 0.6, -size, -size * 0.4, 0, -size * 1.3);
+    ctx.closePath();
+    const g = ctx.createRadialGradient(0, size * 0.15, size * 0.1, 0, size * 0.05, size * 1.4);
+    g.addColorStop(0, glowColor);
+    g.addColorStop(1, color);
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+
+  _potOverHeatZone(viewState) {
+    const { center, radius } = this.layout.stove;
+    const p = this._potCenter(viewState);
+    const dx = p.x - center.x;
+    const dy = p.y - center.y;
+    return Math.hypot(dx, dy) <= radius + 25;
+  }
+
+  _potCenter(viewState) {
+    const { width, height } = this.layout.pot;
+    return { x: viewState.potPos.x + width / 2, y: viewState.potPos.y + height / 2 };
+  }
+
+  _updateSteam(dt, snapshot, viewState) {
+    if (snapshot.hayVapor && this._steam.length < 40) {
+      const mouth = this._potMouth(viewState);
+      for (let i = 0; i < 2; i++) {
+        this._steam.push({
+          x: mouth.x + (Math.random() - 0.5) * mouth.width * 0.7,
+          y: mouth.y,
+          vy: -30 - Math.random() * 20,
+          wander: Math.random() * Math.PI * 2,
+          life: 0,
+          maxLife: 1.2 + Math.random() * 0.8,
+          size: 6 + Math.random() * 6,
+        });
+      }
+    }
+    for (const p of this._steam) {
+      p.life += dt;
+      p.y += p.vy * dt;
+      p.x += Math.sin(p.life * 4 + p.wander) * 12 * dt;
+    }
+    this._steam = this._steam.filter((p) => p.life < p.maxLife);
+  }
+
+  _drawSteam() {
+    const { ctx } = this;
+    for (const p of this._steam) {
+      const f = p.life / p.maxLife;
+      const r = p.size * (0.6 + f * 0.8);
+      // Gradiente radial descentrado en vez de un disco plano: cada puff de
+      // vapor se lee como una bolita esponjosa, no como un círculo translúcido.
+      const g = ctx.createRadialGradient(p.x - r * 0.3, p.y - r * 0.3, r * 0.1, p.x, p.y, r);
+      g.addColorStop(0, 'rgba(255,255,255,0.95)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.beginPath();
+      ctx.globalAlpha = (1 - f) * 0.7;
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  _potMouth(viewState) {
+    const { width } = this.layout.pot;
+    return { x: viewState.potPos.x + width / 2, y: viewState.potPos.y + 6, width };
+  }
+
+  _drawPot(snapshot, viewState) {
+    const { ctx, layout } = this;
+    const { width, height } = layout.pot;
+    const { x, y } = viewState.potPos;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(x + width / 2, y + height + 8, width * 0.42, 10, 0, 0, Math.PI * 2);
+    ctx.fillStyle = PALETTE.potShadow;
+    ctx.fill();
+    ctx.restore();
+
+    // Interior opaco primero, recortado a la forma de la olla — si no, con el agua
+    // por debajo del borde queda un hueco transparente que muestra la hornalla/llama
+    // "a través" de la olla.
+    ctx.save();
+    roundRectPath(ctx, x, y, width, height, 18);
+    ctx.clip();
+    ctx.fillStyle = '#2f2f36';
+    ctx.fillRect(x, y, width, height);
+    this._drawWater(snapshot, x, y, width, height);
+    this._drawIceInPot(snapshot, x, y, width, height);
+    // Sombreado cilíndrico sobre todo el interior (paredes + contenido): oscuro
+    // en los bordes, un brillo angosto a un tercio del ancho — el truco clásico
+    // para que un rectángulo se lea como un cilindro visto de frente.
+    this._drawPotCylinderShading(x, y, width, height);
+    ctx.restore();
+
+    const wallGrad = ctx.createLinearGradient(x, 0, x + width, 0);
+    wallGrad.addColorStop(0, shade(PALETTE.potBody, -18));
+    wallGrad.addColorStop(0.26, shade(PALETTE.potBody, 22));
+    wallGrad.addColorStop(1, shade(PALETTE.potBody, -25));
+    ctx.lineWidth = 10;
+    ctx.strokeStyle = wallGrad;
+    roundRectPath(ctx, x, y, width, height, 18);
+    ctx.stroke();
+
+    // borde exterior de la boca (iluminado)
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = PALETTE.potRim;
+    ctx.beginPath();
+    ctx.ellipse(x + width / 2, y, width / 2, 10, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // borde interior de la boca (en sombra) — da grosor de pared a la abertura,
+    // que es lo que vende que estamos mirando un tubo y no un óvalo pegado encima.
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = shade(PALETTE.potRim, -30);
+    ctx.beginPath();
+    ctx.ellipse(x + width / 2, y + 4, width / 2 - 7, 7, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  _drawPotCylinderShading(x, y, width, height) {
+    const { ctx } = this;
+    const g = ctx.createLinearGradient(x, 0, x + width, 0);
+    g.addColorStop(0, 'rgba(0,0,0,0.35)');
+    g.addColorStop(0.22, 'rgba(255,255,255,0.10)');
+    g.addColorStop(0.45, 'rgba(0,0,0,0)');
+    g.addColorStop(1, 'rgba(0,0,0,0.4)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, y, width, height);
+  }
+
+  _drawWater(snapshot, x, y, width, height) {
+    if (snapshot.masaAgua <= 0) return;
+    const { ctx } = this;
+    const fillFrac = Math.min(0.85, 0.2 + snapshot.masaAgua * 0.5);
+    const waterTop = y + height * (1 - fillFrac);
+    const wave = Math.sin(this._waveT * 2) * 3;
+
+    ctx.save();
+    roundRectPath(ctx, x + 6, y + 6, width - 12, height - 12, 14);
+    ctx.clip();
+
+    const bodyPath = () => {
+      ctx.beginPath();
+      ctx.moveTo(x, waterTop + wave);
+      ctx.quadraticCurveTo(x + width / 2, waterTop - wave, x + width, waterTop + wave);
+      ctx.lineTo(x + width, y + height);
+      ctx.lineTo(x, y + height);
+      ctx.closePath();
+    };
+
+    bodyPath();
+    ctx.fillStyle = hexToRgba(PALETTE.water, 0.94);
+    ctx.fill();
+
+    // sombreado de profundidad: más oscuro hacia el fondo de la columna de
+    // líquido, para que el agua se lea como un volumen y no como una mancha plana
+    bodyPath();
+    const depthGrad = ctx.createLinearGradient(0, waterTop, 0, y + height);
+    depthGrad.addColorStop(0, 'rgba(0,0,0,0)');
+    depthGrad.addColorStop(1, 'rgba(0,0,0,0.3)');
+    ctx.fillStyle = depthGrad;
+    ctx.fill();
+
+    // brillo de superficie: elipse angosta siguiendo la ola — sugiere que la
+    // estamos mirando desde arriba en ángulo, como la boca de la olla
+    ctx.beginPath();
+    ctx.ellipse(x + width / 2, waterTop, width / 2 - 8, 7 + wave * 0.4, 0, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.22)';
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  _drawIceInPot(snapshot, x, y, width, height) {
+    if (snapshot.masaHielo <= 0) return;
+    const { ctx } = this;
+    const scale = Math.min(1.4, 0.4 + Math.sqrt(snapshot.masaHielo) * 1.6);
+    const baseY = y + height * 0.56;
+    const positions = [
+      { dx: -0.15, dy: 0, s: 1 },
+      { dx: 0.12, dy: -0.06, s: 0.8 },
+      { dx: 0.0, dy: 0.08, s: 0.7 },
+    ];
+    for (const p of positions) {
+      this._drawIceCube(x + width / 2 + p.dx * width, baseY + p.dy * height, 34 * scale * p.s);
+    }
+  }
+
+  _drawDraggedIceGhost(viewState) {
+    if (!viewState.iceDrag) return;
+    this._drawIceCube(viewState.iceDrag.x, viewState.iceDrag.y, this.layout.iceTray.cubeSize);
+  }
+}
+
+
+// ---- src/input/PointerInput.js ----
+
+
+// Traduce Pointer Events (mouse Y touch por igual, PC y mobile) del canvas a
+// llamadas sobre game.interaction, y mantiene el viewState puramente visual
+// (posición de la olla mientras se arrastra, fantasma de hielo) sincronizado.
+// No toca el ThermalEngine directamente — todo pasa por InteractionController.
+class PointerInput {
+  constructor(canvas, game, layout, viewState) {
+    this.canvas = canvas;
+    this.game = game;
+    this.layout = layout;
+    this.viewState = viewState;
+
+    this._pointerId = null;
+    this._mode = null; // 'pot' | 'ice' | null
+
+    canvas.addEventListener('pointerdown', (e) => this._onDown(e));
+    canvas.addEventListener('pointermove', (e) => this._onMove(e));
+    canvas.addEventListener('pointerup', (e) => this._onUp(e));
+    canvas.addEventListener('pointercancel', (e) => this._onUp(e));
+  }
+
+  _toLocal(e) {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.layout.width / rect.width;
+    const scaleY = this.layout.height / rect.height;
+    return { x: (e.clientX - rect.left) * scaleX, y: (e.clientY - rect.top) * scaleY };
+  }
+
+  _potRect() {
+    const { width, height } = this.layout.pot;
+    return { x: this.viewState.potPos.x, y: this.viewState.potPos.y, width, height };
+  }
+
+  _hitIceCube(p) {
+    return this.layout.iceTray.cubes.find((c) => distance(p, c) <= this.layout.iceTray.hitRadius);
+  }
+
+  _onDown(e) {
+    if (this._pointerId !== null) return;
+    const p = this._toLocal(e);
+
+    if (pointInRect(p, this._potRect())) {
+      this._mode = 'pot';
+      this._pointerId = e.pointerId;
+      this.canvas.setPointerCapture(e.pointerId);
+      this.game.interaction.startContainerDrag();
+      this.viewState.potDragging = true;
+      this._grabOffset = { x: p.x - this.viewState.potPos.x, y: p.y - this.viewState.potPos.y };
+      return;
+    }
+
+    const cube = this._hitIceCube(p);
+    if (cube) {
+      this._mode = 'ice';
+      this._pointerId = e.pointerId;
+      this.canvas.setPointerCapture(e.pointerId);
+      this.game.interaction.startIceDrag();
+      this.viewState.iceDragFrom = cube;
+      this.viewState.iceDrag = { x: p.x, y: p.y };
+    }
+  }
+
+  _onMove(e) {
+    if (e.pointerId !== this._pointerId) return;
+    const p = this._toLocal(e);
+
+    if (this._mode === 'pot') {
+      this.viewState.potPos = { x: p.x - this._grabOffset.x, y: p.y - this._grabOffset.y };
+      this.game.interaction.moveContainerDrag(p);
+    } else if (this._mode === 'ice') {
+      this.viewState.iceDrag = { x: p.x, y: p.y };
+    }
+  }
+
+  _onUp(e) {
+    if (e.pointerId !== this._pointerId) return;
+    const p = this._toLocal(e);
+
+    if (this._mode === 'pot') {
+      const res = this.game.interaction.endContainerDrag(p);
+      this.viewState.potDragging = false;
+      this.viewState.potTarget = res.inHeatZone ? this.layout.pot.stoveAnchor : this.layout.pot.homeAnchor;
+    } else if (this._mode === 'ice') {
+      this.game.interaction.endIceDrag(p);
+      this.viewState.iceDrag = null;
+      this.viewState.iceDragFrom = null;
+    }
+
+    this._mode = null;
+    this._pointerId = null;
+  }
+}
+
+
+// ---- src/ui/HUD.js ----
+
+
+
+const STATE_LABELS = {
+  EQUILIBRIO: 'En equilibrio',
+  CALENTANDO: 'Calentando',
+  ENFRIANDO: 'Enfriando',
+  DERRITIENDO_HIELO: 'Derritiendo hielo',
+};
+
+const STATE_FORMULAS = {
+  DERRITIENDO_HIELO: 'Q = m · c<sub>hielo</sub> · ΔT + m · L<sub>fusión</sub>',
+  CALENTANDO: 'Q = m · c · ΔT',
+  ENFRIANDO: 'Q = m · c · ΔT',
+  EQUILIBRIO: 'T<sub>eq</sub> = (m₁T₁ + m₂T₂) / (m₁+m₂)',
+};
+
+function clamp(v, min, max) {
+  return Math.min(Math.max(v, min), max);
+}
+
+// Lee el ThermalGame y actualiza elementos DOM del HUD (termómetro, badge de
+// estado, masas, fórmula pedagógica). No conoce el canvas ni el motor por dentro.
+class HUD {
+  constructor(game) {
+    this.game = game;
+    this.el = {
+      temp: document.getElementById('hud-temp'),
+      thermoFill: document.getElementById('thermo-fill'),
+      state: document.getElementById('hud-state'),
+      masaAgua: document.getElementById('hud-masaAgua'),
+      masaHielo: document.getElementById('hud-masaHielo'),
+      formula: document.getElementById('hud-formula'),
+    };
+
+    game.on(EVENTS.THERMAL_UPDATE, (s) => this._updateNumbers(s));
+    game.on(EVENTS.STATE_CHANGED, ({ to }) => this._updateState(to));
+
+    this._updateNumbers(game.engine.getSnapshot());
+    this._updateState(game.fsm.state);
+  }
+
+  _updateNumbers(s) {
+    this.el.temp.textContent = `${s.temperatura.toFixed(1)}°C`;
+    const pct = clamp((s.temperatura + 20) / 140, 0, 1) * 100;
+    this.el.thermoFill.style.height = `${pct}%`;
+    this.el.thermoFill.style.background = tempToCSS(s.temperatura);
+    this.el.masaAgua.textContent = `${s.masaAgua.toFixed(2)} kg`;
+    this.el.masaHielo.textContent = `${s.masaHielo.toFixed(2)} kg`;
+  }
+
+  _updateState(state) {
+    this.el.state.textContent = STATE_LABELS[state] ?? state;
+    this.el.state.className = `state-badge state-${state}`;
+    this.el.formula.innerHTML = STATE_FORMULAS[state] ?? '';
+  }
+}
+
+
+// ---- src/ui/Objectives.js ----
+
+
+// Objetivos livianos, sin fracaso ni puntaje — sólo dan al sandbox una
+// estructura de "juego": tres cosas para descubrir jugando con el motor.
+const DEFINITIONS = [
+  { id: 'derretir', text: 'Derretí todo el hielo' },
+  { id: 'hervir', text: 'Hacela hervir' },
+  { id: 'equilibrio', text: 'Volvé al equilibrio con el ambiente' },
+];
+
+class Objectives {
+  constructor(game) {
+    this.game = game;
+    this.done = new Set();
+    this.container = document.getElementById('hud-objectives');
+    this._prevSnapshot = game.engine.getSnapshot();
+    // El juego arranca en EQUILIBRIO por definición (agua a temperatura ambiente) —
+    // ese objetivo sólo cuenta si el jugador se aleja del equilibrio y vuelve,
+    // no por quedarse quieto desde el inicio.
+    this._salioDelEquilibrio = false;
+
+    this._render();
+    game.on(EVENTS.THERMAL_UPDATE, (s) => this._evaluateSnapshot(s));
+    game.on(EVENTS.STATE_CHANGED, ({ from, to }) => this._evaluateState(from, to));
+  }
+
+  _evaluateSnapshot(s) {
+    let changed = false;
+    if (!this.done.has('derretir') && this._prevSnapshot.masaHielo > 0 && s.masaHielo === 0) {
+      this.done.add('derretir');
+      changed = true;
+    }
+    if (!this.done.has('hervir') && s.hayVapor) {
+      this.done.add('hervir');
+      changed = true;
+    }
+    this._prevSnapshot = s;
+    if (changed) this._render();
+  }
+
+  _evaluateState(from, to) {
+    if (to !== 'EQUILIBRIO') {
+      this._salioDelEquilibrio = true;
+      return;
+    }
+    if (!this.done.has('equilibrio') && this._salioDelEquilibrio) {
+      this.done.add('equilibrio');
+      this._render();
+    }
+  }
+
+  _render() {
+    this.container.innerHTML = '';
+    for (const def of DEFINITIONS) {
+      const li = document.createElement('li');
+      const isDone = this.done.has(def.id);
+      li.textContent = (isDone ? '✓ ' : '○ ') + def.text;
+      li.className = isDone ? 'objective done' : 'objective';
+      this.container.appendChild(li);
+    }
+  }
+}
+
+
+// ---- src/main.js ----
+
+
+
+
+
+
+
+const canvas = document.getElementById('game-canvas');
+canvas.width = LAYOUT.width;
+canvas.height = LAYOUT.height;
+const ctx = canvas.getContext('2d');
+
+const viewState = {
+  potPos: { ...LAYOUT.pot.homeAnchor },
+  potTarget: { ...LAYOUT.pot.homeAnchor },
+  potDragging: false,
+  iceDrag: null,
+  iceDragFrom: null,
+};
+
+const game = new ThermalGame({
+  initialState: { tempAgua: 22, masaAgua: 1, masaHielo: 0, tempHielo: -10 },
+  zones: {
+    heatZone: LAYOUT.stove.zone,
+    homeZone: LAYOUT.potHomeZone,
+    bowlZone: { ...viewState.potPos, width: LAYOUT.pot.width, height: LAYOUT.pot.height },
+  },
+});
+
+const renderer = new SceneRenderer(ctx, LAYOUT);
+new PointerInput(canvas, game, LAYOUT, viewState);
+new HUD(game);
+new Objectives(game);
+
+game.loop.onDraw = () => {
+  // La zona donde se puede soltar hielo sigue a la olla dondequiera que esté.
+  game.interaction.setZones({
+    bowlZone: { x: viewState.potPos.x, y: viewState.potPos.y, width: LAYOUT.pot.width, height: LAYOUT.pot.height },
+  });
+
+  if (!viewState.potDragging) {
+    viewState.potPos.x += (viewState.potTarget.x - viewState.potPos.x) * 0.2;
+    viewState.potPos.y += (viewState.potTarget.y - viewState.potPos.y) * 0.2;
+  }
+
+  renderer.draw(game.getSnapshot(), viewState);
+};
+
+document.getElementById('btn-equilibrio').addEventListener('click', () => game.goToEquilibrium());
+document.getElementById('btn-reset').addEventListener('click', () => location.reload());
+
+game.start();
+
+</script>
+</body>
+</html>

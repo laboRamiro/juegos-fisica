@@ -1,0 +1,990 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0d2b2e" />
+<title>Cruce del Río</title>
+<style>
+  :root{
+    --wood-dark:#5c3a22; --wood:#8a5a34; --wood-light:#c99a63;
+    --accent:#ffd27a; --ink:#0d2b2e; --paper:#f4ead9;
+    --panel:rgba(10,25,27,0.72); --panel-border:rgba(255,255,255,0.14);
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden;
+    position:fixed; inset:0;
+    background:#0a1f21;
+    font-family:-apple-system, "Segoe UI", system-ui, sans-serif;
+    touch-action:none; overscroll-behavior:none; user-select:none;
+  }
+  #app{ position:fixed; inset:0; width:100%; height:100%; }
+  #game{ position:absolute; inset:0; display:block; touch-action:none; }
+
+  #topbar{
+    position:fixed; top:max(10px, env(safe-area-inset-top)); left:0; right:0;
+    display:flex; align-items:flex-start; justify-content:space-between;
+    padding:0 12px; pointer-events:none; z-index:20;
+  }
+  .pill{
+    pointer-events:auto;
+    background:var(--panel); border:1px solid var(--panel-border);
+    color:var(--paper); backdrop-filter:blur(6px);
+    border-radius:999px; padding:8px 14px; font-size:12px; font-weight:600;
+    letter-spacing:0.04em; display:flex; align-items:center; gap:6px;
+  }
+  .iconbtn{
+    pointer-events:auto; width:38px; height:38px; border-radius:50%;
+    background:var(--panel); border:1px solid var(--panel-border);
+    color:var(--paper); display:flex; align-items:center; justify-content:center;
+    backdrop-filter:blur(6px);
+  }
+  .iconbtn svg{ width:18px; height:18px; }
+  #topbar .right{ display:flex; gap:8px; }
+
+  #hint-toast{
+    position:fixed; left:50%; top:max(60px, calc(env(safe-area-inset-top) + 54px));
+    transform:translateX(-50%) translateY(-10px);
+    max-width:min(86vw,420px); text-align:center;
+    background:var(--panel); border:1px solid var(--panel-border);
+    color:var(--paper); font-size:13px; line-height:1.45;
+    border-radius:16px; padding:12px 16px; backdrop-filter:blur(6px);
+    opacity:0; transition:opacity .5s ease, transform .5s ease; pointer-events:none;
+    z-index:15;
+  }
+  #hint-toast.show{ opacity:1; transform:translateX(-50%) translateY(0); z-index:15; }
+
+  .overlay{
+    position:fixed; inset:0; display:flex; align-items:center; justify-content:center;
+    background:radial-gradient(ellipse at center, rgba(8,20,22,0.55), rgba(4,10,11,0.86));
+    z-index:30; opacity:0; pointer-events:none; transition:opacity .45s ease;
+  }
+  .overlay.show{ opacity:1; pointer-events:auto; }
+  .card{
+    background:linear-gradient(180deg, rgba(24,42,40,0.92), rgba(14,28,27,0.94));
+    border:1px solid rgba(255,255,255,0.12); border-radius:22px;
+    padding:28px 26px; width:min(88vw,380px); text-align:center;
+    color:var(--paper); box-shadow:0 20px 60px rgba(0,0,0,0.5);
+  }
+  .card h1{ font-size:22px; margin:0 0 6px; letter-spacing:0.02em; }
+  .card .sub{ font-size:13px; color:#bcd6cf; margin:0 0 20px; line-height:1.5; }
+  .stars{ font-size:34px; letter-spacing:6px; margin:6px 0 18px; }
+  .star{ color:rgba(255,255,255,0.18); }
+  .star.on{ color:var(--accent); text-shadow:0 0 14px rgba(255,210,122,0.7); }
+  .levelrow{ display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin:16px 0 20px; }
+  .dot{
+    width:34px;height:34px;border-radius:50%; display:flex;align-items:center;justify-content:center;
+    font-size:13px; font-weight:700; background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.16); color:#9fc3ba;
+  }
+  .dot.done{ background:var(--accent); color:#3a2a08; border-color:var(--accent); }
+  .dot.locked{ opacity:0.35; }
+  button.big{
+    font:inherit; font-weight:700; letter-spacing:0.03em; border:none; cursor:pointer;
+    background:linear-gradient(180deg, var(--wood-light), var(--wood));
+    color:#2b1a0c; border-radius:14px; padding:14px 22px; font-size:15px;
+    min-height:48px; width:100%; box-shadow:0 6px 0 var(--wood-dark), 0 10px 18px rgba(0,0,0,0.35);
+    margin-top:4px;
+  }
+  button.big:active{ transform:translateY(3px); box-shadow:0 3px 0 var(--wood-dark), 0 6px 10px rgba(0,0,0,0.3); }
+  button.ghost{
+    font:inherit; font-weight:600; border:none; cursor:pointer; margin-top:10px;
+    background:transparent; color:#9fc3ba; text-decoration:underline; font-size:13px;
+  }
+  .hidden{ display:none !important; }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <div id="topbar">
+    <div class="pill" id="level-pill">CRUCE DEL RÍO</div>
+    <div class="right">
+      <button class="iconbtn" id="mute-btn" aria-label="Silenciar">
+        <svg id="mute-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M16 8a5 5 0 0 1 0 8"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>
+      </button>
+      <button class="iconbtn" id="restart-btn" aria-label="Reiniciar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 1 3 6.7"/><path d="M3 21v-6h6"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="hint-toast"></div>
+
+  <div class="overlay show" id="menu-overlay">
+    <div class="card">
+      <h1>Cruce del Río</h1>
+      <p class="sub">Remá desde un muelle hasta el muelle de enfrente.<br>La corriente te empuja de costado: compensá remando en diagonal.</p>
+      <div class="levelrow" id="level-select"></div>
+      <button class="big" id="play-btn">JUGAR</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="win-overlay">
+    <div class="card">
+      <h1 id="win-title">¡Llegaste!</h1>
+      <p class="sub" id="win-sub">Cruzaste con estilo.</p>
+      <div class="stars" id="win-stars"><span class="star">★</span><span class="star">★</span><span class="star">★</span></div>
+      <button class="big" id="next-btn">SIGUIENTE</button>
+      <button class="ghost" id="menu-btn">Volver al mapa</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+"use strict";
+
+/* ---------- canvas & sizing ---------- */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W=0, H=0, DPR=1, SCALE=1;
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  canvas.width = Math.round(W*DPR);
+  canvas.height = Math.round(H*DPR);
+  canvas.style.width = W+'px';
+  canvas.style.height = H+'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  SCALE = Math.min(W,H)/800;
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', ()=>setTimeout(resize,50));
+resize();
+
+const toPx = (nx,ny) => [nx*W, ny*H];
+
+/* ---------- audio ---------- */
+let actx=null, muted=false, ambientNodes=null;
+function initAudio(){
+  if(actx) return;
+  try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
+  startAmbient();
+}
+function startAmbient(){
+  if(!actx) return;
+  const bufSize = actx.sampleRate*2;
+  const buf = actx.createBuffer(1, bufSize, actx.sampleRate);
+  const data = buf.getChannelData(0);
+  let last=0;
+  for(let i=0;i<bufSize;i++){ const w=Math.random()*2-1; last=(last+0.02*w)/1.02; data[i]=last*3.2; }
+  const src = actx.createBufferSource(); src.buffer=buf; src.loop=true;
+  const filt = actx.createBiquadFilter(); filt.type='bandpass'; filt.frequency.value=700; filt.Q.value=0.5;
+  const gain = actx.createGain(); gain.gain.value = muted?0:0.05;
+  src.connect(filt); filt.connect(gain); gain.connect(actx.destination);
+  src.start();
+  ambientNodes = {gain};
+}
+function setMuted(m){
+  muted=m;
+  if(ambientNodes) ambientNodes.gain.gain.setTargetAtTime(muted?0:0.05, actx.currentTime, 0.2);
+  document.getElementById('mute-icon').style.opacity = muted?0.4:1;
+}
+function blip(freq, dur, type, vol){
+  if(!actx||muted) return;
+  const o=actx.createOscillator(); const g=actx.createGain();
+  o.type=type||'sine'; o.frequency.value=freq;
+  g.gain.value=0.0001;
+  o.connect(g); g.connect(actx.destination);
+  const t=actx.currentTime;
+  g.gain.exponentialRampToValueAtTime(vol||0.12, t+0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+  o.start(t); o.stop(t+dur+0.02);
+}
+function splashSound(){
+  if(!actx||muted) return;
+  const bufSize = actx.sampleRate*0.2;
+  const buf = actx.createBuffer(1,bufSize,actx.sampleRate);
+  const data = buf.getChannelData(0);
+  for(let i=0;i<bufSize;i++) data[i]=(Math.random()*2-1)*(1-i/bufSize);
+  const src=actx.createBufferSource(); src.buffer=buf;
+  const filt=actx.createBiquadFilter(); filt.type='bandpass'; filt.frequency.value=1800; filt.Q.value=0.8;
+  const g=actx.createGain(); g.gain.value=0.07;
+  src.connect(filt); filt.connect(g); g.connect(actx.destination);
+  src.start();
+}
+function successChime(){
+  if(!actx||muted) return;
+  [523.25,659.25,783.99,1046.5].forEach((f,i)=>setTimeout(()=>blip(f,0.5,'sine',0.09),i*90));
+}
+function bumpSound(){ blip(140,0.18,'sine',0.08); }
+
+/* ---------- level data ---------- */
+function gauss(t,c,w){ const d=(t-c)/w; return Math.exp(-d*d); }
+
+const LEVELS = [
+  { id:1, name:'Aguas Tranquilas',
+    bounds:()=>({top:0.14,bottom:0.86}),
+    dockCenterX:0.5, dockHalf:0.16, current:0.055, turb:0.01, eddies:[], rocks:[], logs:0,
+    hint:'Arrastrá el dedo sobre el agua para remar. La corriente te empuja hacia un lado: remá apuntando un poco en diagonal, contra ella, para llegar derecho al muelle.' },
+  { id:2, name:'Primeras Corrientes',
+    bounds:()=>({top:0.16,bottom:0.84}),
+    dockCenterX:0.5, dockHalf:0.115, current:0.10, turb:0.015, eddies:[], rocks:[], logs:1,
+    hint:'La corriente ahora empuja más fuerte. Cuanto más fuerte el empuje, más diagonal tenés que remar.' },
+  { id:3, name:'Entre las Rocas',
+    bounds:()=>({top:0.15,bottom:0.85}),
+    dockCenterX:0.5, dockHalf:0.10, current:0.135, turb:0.02,
+    eddies:[],
+    rocks:[{cx:0.34,cy:0.42,r:42},{cx:0.63,cy:0.60,r:36}],
+    logs:2,
+    hint:'Esquivá las rocas sin dejar de compensar la corriente.' },
+  { id:4, name:'El Estrecho',
+    bounds:(nx)=>{ const b=gauss(nx,0.5,0.17); return {top:0.10+0.17*b, bottom:0.90-0.17*b}; },
+    dockCenterX:0.5, dockHalf:0.082, current:0.15, turb:0.02,
+    eddies:[{cx:0.30,cy:0.40,r:0.15,strength:0.11,spin:1}],
+    rocks:[{cx:0.72,cy:0.55,r:34}],
+    logs:2,
+    hint:'El río se angosta al medio: ahí la corriente se acelera. Hay un remolino — te va a desviar en curva, remá para contrarrestarlo.' },
+  { id:5, name:'Remolino Final',
+    bounds:(nx)=>{ const b=gauss(nx,0.5,0.16); return {top:0.08+0.20*b, bottom:0.92-0.20*b}; },
+    dockCenterX:0.5, dockHalf:0.066, current:0.195, turb:0.025,
+    eddies:[{cx:0.28,cy:0.5,r:0.17,strength:0.14,spin:-1}],
+    rocks:[{cx:0.70,cy:0.62,r:34},{cx:0.66,cy:0.30,r:30}],
+    island:{cx:0.80,cy:0.45,r:55},
+    logs:3,
+    hint:'Corriente fuerte, remolino y muelle angosto. Anticipá la curva antes de llegar al remolino.' },
+];
+LEVELS.forEach(L=>{
+  L.maxWidth = L.bounds(0).bottom - L.bounds(0).top;
+  let safeTop=-Infinity, safeBottom=Infinity;
+  for(let i=0;i<=20;i++){
+    const b = L.bounds(i/20);
+    safeTop = Math.max(safeTop, b.top);
+    safeBottom = Math.min(safeBottom, b.bottom);
+  }
+  L.safeTop = safeTop; L.safeBottom = safeBottom;
+  if(!L.eddies) L.eddies=[]; if(!L.rocks) L.rocks=[];
+});
+
+function riverBoundsAt(level, nx){ return level.bounds(Math.max(0,Math.min(1,nx))); }
+
+function currentAt(level, nx, ny, time){
+  const b = riverBoundsAt(level, nx);
+  const widthNow = Math.max(0.08, b.bottom-b.top);
+  const speedFactor = Math.min(2.2, level.maxWidth/widthNow);
+  let vx = level.current*speedFactor + level.turb*Math.sin(time*0.5+ny*6.0);
+  let vy = 0;
+  for(const e of level.eddies){
+    const dx=nx-e.cx, dy=(ny-e.cy)*(W/H||1);
+    const dist=Math.hypot(dx,dy);
+    if(dist<e.r && dist>0.001){
+      const falloff = 1-dist/e.r;
+      const tx=-dy/dist, ty=dx/dist;
+      const s = e.strength*falloff*e.spin;
+      vx += tx*s; vy += ty*s*(H/W||1);
+    }
+  }
+  return {x:vx, y:vy};
+}
+
+/* ---------- state ---------- */
+const STORAGE_KEY='cruce-rio-progress-v1';
+let progress = {unlocked:1, stars:{}};
+try{ const raw=localStorage.getItem(STORAGE_KEY); if(raw) progress=Object.assign(progress, JSON.parse(raw)); }catch(e){}
+function saveProgress(){ try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(progress)); }catch(e){} }
+
+let mode='menu'; // 'menu' | 'playing' | 'won'
+let curLevelIdx = 0;
+let level = LEVELS[0];
+
+let boat, particles, leaves, logs, wake, joystick, hintShown, elapsed, lastTime;
+
+function initGameState(idx){
+  curLevelIdx = idx;
+  level = LEVELS[idx];
+  boat = {
+    x: level.dockCenterX, y: level.bounds(level.dockCenterX).bottom-0.04,
+    rowVel:{x:0,y:0}, angle:-Math.PI/2, oarPhase:0, bob:0
+  };
+  particles = [];
+  leaves = [];
+  for(let i=0;i<14;i++) leaves.push(spawnLeaf());
+  logs = [];
+  for(let i=0;i<level.logs;i++) logs.push(spawnLog());
+  wake = [];
+  joystick = {active:false, anchor:{x:0,y:0}, drag:{x:0,y:0}};
+  hintShown = false;
+  elapsed = 0;
+}
+
+function resetLevel(idx){
+  initGameState(idx);
+  mode='playing';
+  updateTopbar();
+  if(level.hint){ showHint(level.hint); }
+}
+
+initGameState(0);
+
+function spawnLeaf(){
+  const pad=0.04;
+  const lo=level.safeTop+pad, hi=level.safeBottom-pad;
+  const y = lo + Math.random()*Math.max(0.02, hi-lo);
+  return {x:Math.random(), y, rot:Math.random()*7, spin:(Math.random()-0.5)*0.6, kind:Math.random()<0.5?0:1};
+}
+function spawnLog(){
+  const pad=0.05;
+  const lo=level.safeTop+pad, hi=level.safeBottom-pad;
+  const y = lo + Math.random()*Math.max(0.02, hi-lo);
+  return {x:Math.random(), y, len:38+Math.random()*14, rot:0};
+}
+
+/* ---------- input ---------- */
+const JOY_MAX = 62; // px
+function pointerPos(e){
+  const r = canvas.getBoundingClientRect();
+  const p = e.touches ? e.touches[0] : e;
+  return {x:p.clientX-r.left, y:p.clientY-r.top};
+}
+function onDown(e){
+  initAudio();
+  if(mode!=='playing') return;
+  const p = pointerPos(e);
+  joystick.active=true;
+  joystick.anchor={x:p.x,y:p.y};
+  joystick.drag={x:0,y:0};
+  e.preventDefault();
+}
+function onMove(e){
+  if(!joystick.active) return;
+  const p = pointerPos(e);
+  let dx=p.x-joystick.anchor.x, dy=p.y-joystick.anchor.y;
+  const d=Math.hypot(dx,dy);
+  if(d>JOY_MAX){ dx=dx/d*JOY_MAX; dy=dy/d*JOY_MAX; }
+  joystick.drag={x:dx,y:dy};
+  e.preventDefault();
+}
+function onUp(e){
+  joystick.active=false;
+  joystick.drag={x:0,y:0};
+  if(e) e.preventDefault();
+}
+canvas.addEventListener('touchstart', onDown, {passive:false});
+canvas.addEventListener('touchmove', onMove, {passive:false});
+canvas.addEventListener('touchend', onUp, {passive:false});
+canvas.addEventListener('touchcancel', onUp, {passive:false});
+canvas.addEventListener('mousedown', onDown);
+window.addEventListener('mousemove', onMove);
+window.addEventListener('mouseup', onUp);
+
+/* ---------- hint ---------- */
+let hintTimer=null;
+function showHint(text){
+  const el = document.getElementById('hint-toast');
+  el.textContent = text;
+  el.classList.add('show');
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(()=>el.classList.remove('show'), 7000);
+}
+
+/* ---------- physics update ---------- */
+const ROW_MAX = 0.30, ACCEL = 7.0, BOAT_R = 17;
+
+function update(dt, time){
+  if(mode!=='playing') return;
+  elapsed += dt;
+
+  let tx=0, ty=0;
+  if(joystick.active){
+    const d = Math.hypot(joystick.drag.x, joystick.drag.y);
+    if(d>4){
+      const nx = joystick.drag.x/d, ny = joystick.drag.y/d;
+      const mag = Math.min(1, d/JOY_MAX);
+      tx = nx*ROW_MAX*mag; ty = ny*ROW_MAX*mag;
+    }
+  }
+  const k = 1-Math.exp(-dt*ACCEL);
+  boat.rowVel.x += (tx-boat.rowVel.x)*k;
+  boat.rowVel.y += (ty-boat.rowVel.y)*k;
+
+  const cur = currentAt(level, boat.x, boat.y, time);
+  const vx = boat.rowVel.x+cur.x, vy = boat.rowVel.y+cur.y;
+  boat.x += vx*dt;
+  boat.y += vy*dt;
+
+  const rowSpeed = Math.hypot(boat.rowVel.x, boat.rowVel.y);
+  if(rowSpeed>0.02){
+    let target = Math.atan2(boat.rowVel.y, boat.rowVel.x);
+    let diff = target-boat.angle;
+    while(diff>Math.PI) diff-=Math.PI*2; while(diff<-Math.PI) diff+=Math.PI*2;
+    boat.angle += diff*Math.min(1,dt*8);
+  }
+  boat.oarPhase += rowSpeed*dt*10 + dt*1.2;
+  boat.bob = Math.sin(time*2.4)*1.0;
+
+  if(rowSpeed>0.05 && Math.floor(boat.oarPhase)%1===0){}
+  if(Math.random()<dt*1.5 && rowSpeed>0.03){
+    const [px,py] = toPx(boat.x,boat.y);
+    spawnSplash(px,py,0.5);
+  }
+
+  if(wake.length===0 || Math.hypot(boat.x-wake[wake.length-1].x, boat.y-wake[wake.length-1].y)>0.006){
+    wake.push({x:boat.x,y:boat.y,age:0});
+    if(wake.length>28) wake.shift();
+  }
+  wake.forEach(w=>w.age+=dt);
+
+  // open-water side edges: soft invisible wall, boat is always kept on screen
+  const marginX = 0.02;
+  if(boat.x < marginX){ boat.x=marginX; boat.rowVel.x=Math.max(boat.rowVel.x,0)*0.2; bump(); }
+  if(boat.x > 1-marginX){ boat.x=1-marginX; boat.rowVel.x=Math.min(boat.rowVel.x,0)*0.2; bump(); }
+
+  // shore / dock collisions (top = destination, bottom = origin)
+  const b = riverBoundsAt(level, boat.x);
+  const marginY = 0.018;
+  if(boat.y <= b.top+marginY){
+    if(Math.abs(boat.x-level.dockCenterX)<=level.dockHalf){
+      win();
+    } else {
+      boat.y=b.top+marginY; boat.rowVel.y=Math.max(boat.rowVel.y,0)*0.15; bump();
+    }
+  }
+  if(boat.y >= b.bottom-marginY){ boat.y=b.bottom-marginY; boat.rowVel.y=Math.min(boat.rowVel.y,0)*0.3; }
+
+  // rocks & island
+  const obstacles = level.rocks.concat(level.island?[level.island]:[]);
+  for(const o of obstacles){
+    const [ox,oy] = toPx(o.cx,o.cy);
+    const [bx,by] = toPx(boat.x,boat.y);
+    const dx=bx-ox, dy=by-oy;
+    const rad = o.r*SCALE + BOAT_R*SCALE;
+    const dist = Math.hypot(dx,dy);
+    if(dist<rad && dist>0.001){
+      const nX=dx/dist, nY=dy/dist;
+      const push=(rad-dist);
+      boat.x += (nX*push)/W; boat.y += (nY*push)/H;
+      const vn = boat.rowVel.x*nX+boat.rowVel.y*nY;
+      if(vn<0){ boat.rowVel.x -= vn*nX*1.4; boat.rowVel.y -= vn*nY*1.4; }
+      bump();
+    }
+  }
+
+  // logs drift with the current, parallel to the shores
+  for(const lg of logs){
+    const c = currentAt(level, lg.x, lg.y, time);
+    lg.x += c.x*dt*0.9; lg.y += c.y*dt*0.9;
+    lg.rot = Math.atan2(c.y,c.x);
+    if(lg.x>1.05){ lg.x=-0.05; }
+    if(lg.x<-0.05){ lg.x=1.05; }
+    const [ox,oy]=toPx(lg.x,lg.y), [bx,by]=toPx(boat.x,boat.y);
+    const dist=Math.hypot(bx-ox,by-oy); const rad=(lg.len*0.4)*SCALE+BOAT_R*SCALE*0.8;
+    if(dist<rad && dist>0.001){
+      const nX=(bx-ox)/dist, nY=(by-oy)/dist;
+      boat.x += nX*(rad-dist)/W*0.6; boat.y += nY*(rad-dist)/H*0.6;
+      boat.rowVel.x*=0.85; boat.rowVel.y*=0.85;
+    }
+  }
+
+  // leaves drift with the current, parallel to the shores
+  for(const lf of leaves){
+    const c = currentAt(level, lf.x, lf.y, time);
+    lf.x += c.x*dt*0.8; lf.y += c.y*dt*0.8;
+    lf.rot += lf.spin*dt;
+    const outX = lf.x>1.03 || lf.x<-0.03;
+    const outY = lf.y < level.safeTop-0.02 || lf.y > level.safeBottom+0.02;
+    if(outX || outY){
+      Object.assign(lf, spawnLeaf());
+    }
+  }
+
+  particles.forEach(p=>{ p.age+=dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.9; p.vy*=0.9; });
+  particles = particles.filter(p=>p.age<p.life);
+}
+
+let lastBump=0;
+function bump(){
+  const t = performance.now();
+  if(t-lastBump>180){ lastBump=t; splashSound(); }
+  const [px,py]=toPx(boat.x,boat.y);
+  spawnSplash(px,py,1.4);
+}
+function spawnSplash(px,py,scale){
+  const n = 3+Math.floor(Math.random()*3);
+  for(let i=0;i<n;i++){
+    const a = Math.random()*Math.PI*2;
+    particles.push({x:px/W, y:py/H, vx:Math.cos(a)*0.02*scale, vy:Math.sin(a)*0.02*scale, age:0, life:0.35+Math.random()*0.25, r:(2+Math.random()*2)*scale});
+  }
+}
+
+function win(){
+  mode='won';
+  const stars = elapsed<7 ? 3 : elapsed<12 ? 2 : 1;
+  progress.stars[level.id] = Math.max(progress.stars[level.id]||0, stars);
+  progress.unlocked = Math.max(progress.unlocked, level.id+1);
+  saveProgress();
+  successChime();
+  document.getElementById('win-title').textContent = curLevelIdx===LEVELS.length-1 ? '¡Cruzaste los cinco ríos!' : '¡Llegaste!';
+  document.getElementById('win-sub').textContent = curLevelIdx===LEVELS.length-1 ? 'Dominaste la corriente. Podés volver a jugar cualquier río.' : 'Muelle alcanzado con estilo.';
+  const starEls = document.querySelectorAll('#win-stars .star');
+  starEls.forEach((s,i)=> s.classList.toggle('on', i<stars));
+  document.getElementById('next-btn').textContent = curLevelIdx===LEVELS.length-1 ? 'VOLVER AL MAPA' : 'SIGUIENTE';
+  document.getElementById('win-overlay').classList.add('show');
+}
+
+/* ---------- rendering ---------- */
+const PAL = {
+  grass1:'#5c8a45', grass2:'#3e6a34', grass3:'#7ba85a',
+  waterDeep:'#12484f', waterMid:'#1c6a6a', waterLight:'#2f8b83',
+  foam:'rgba(255,255,255,0.55)', sand:'#cdb27a',
+  wood:'#8a5a34', woodDark:'#5c3a22', woodLight:'#c99a63',
+};
+
+function drawBackground(){
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'#6b9a4f'); g.addColorStop(0.5,'#5c8a45'); g.addColorStop(1,'#4a7638');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+
+function riverPolygonPoints(steps){
+  const top=[], bottom=[];
+  for(let i=0;i<=steps;i++){
+    const nx=i/steps;
+    const b=riverBoundsAt(level,nx);
+    top.push([nx*W, b.top*H]);
+    bottom.push([nx*W, b.bottom*H]);
+  }
+  return {top,bottom};
+}
+
+function drawRiver(time){
+  const steps=28;
+  const {top,bottom} = riverPolygonPoints(steps);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(top[0][0],top[0][1]);
+  for(const p of top) ctx.lineTo(p[0],p[1]);
+  for(let i=bottom.length-1;i>=0;i--) ctx.lineTo(bottom[i][0],bottom[i][1]);
+  ctx.closePath();
+  ctx.clip();
+
+  const g = ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,PAL.waterMid); g.addColorStop(0.5,PAL.waterDeep); g.addColorStop(1,PAL.waterMid);
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+
+  // sun glint band
+  const glint = ctx.createRadialGradient(W*0.65,H*0.3,10,W*0.65,H*0.3,W*0.6);
+  glint.addColorStop(0,'rgba(255,240,200,0.16)');
+  glint.addColorStop(1,'rgba(255,240,200,0)');
+  ctx.fillStyle=glint; ctx.fillRect(0,0,W,H);
+
+  // flow streak lines, horizontal — parallel to the shores, current runs left-to-right
+  ctx.strokeStyle='rgba(255,255,255,0.16)';
+  ctx.lineWidth=2*SCALE;
+  const rows=16;
+  const dashLen = 26*SCALE, gap=34*SCALE;
+  const off = (time*level.current*W*0.6)%(dashLen+gap);
+  ctx.setLineDash([dashLen,gap]);
+  ctx.lineDashOffset = -off;
+  for(let r=0;r<rows;r++){
+    const rowY = (r+0.5)/rows*H;
+    ctx.beginPath();
+    ctx.moveTo(-40, rowY);
+    ctx.lineTo(W+40, rowY);
+    ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // caustic dapples
+  ctx.globalCompositeOperation='lighter';
+  for(let i=0;i<18;i++){
+    const seed=i*13.7;
+    const nx = (Math.sin(seed)+1)/2;
+    const b = riverBoundsAt(level,nx);
+    const ny = b.top + ((Math.cos(seed*1.7)+1)/2)*(b.bottom-b.top);
+    const [px,py] = toPx(nx,ny);
+    const wob = Math.sin(time*1.3+seed)*8*SCALE;
+    const r = (10+8*Math.sin(seed*2.3+time*0.7))*SCALE;
+    const grd = ctx.createRadialGradient(px+wob,py,0,px+wob,py,Math.max(2,r));
+    grd.addColorStop(0,'rgba(255,255,255,0.10)');
+    grd.addColorStop(1,'rgba(255,255,255,0)');
+    ctx.fillStyle=grd;
+    ctx.beginPath(); ctx.arc(px+wob,py,Math.max(2,r),0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalCompositeOperation='source-over';
+
+  // foam along the shorelines
+  ctx.strokeStyle='rgba(255,255,255,0.35)';
+  ctx.lineWidth=3*SCALE;
+  for(let side=0; side<2; side++){
+    ctx.beginPath();
+    for(let i=0;i<=steps;i++){
+      const nx=i/steps; const b=riverBoundsAt(level,nx);
+      const x = nx*W;
+      const y = (side===0?b.top:b.bottom)*H + (side===0?1:-1)*(6*SCALE + 3*SCALE*Math.sin(nx*20+time*2));
+      if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function drawBanks(){
+  const steps=28;
+  const {top,bottom} = riverPolygonPoints(steps);
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(0,0); ctx.lineTo(W,0); ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+  ctx.moveTo(top[0][0],top[0][1]);
+  for(const p of top) ctx.lineTo(p[0],p[1]);
+  for(let i=bottom.length-1;i>=0;i--) ctx.lineTo(bottom[i][0],bottom[i][1]);
+  ctx.closePath();
+  ctx.clip('evenodd');
+
+  ctx.fillStyle=PAL.grass1; ctx.fillRect(0,0,W,H);
+
+  // sandy edge along the shorelines
+  ctx.strokeStyle=PAL.sand; ctx.lineWidth=10*SCALE; ctx.lineJoin='round';
+  ctx.beginPath(); ctx.moveTo(top[0][0],top[0][1]); for(const p of top) ctx.lineTo(p[0],p[1]); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(bottom[0][0],bottom[0][1]); for(const p of bottom) ctx.lineTo(p[0],p[1]); ctx.stroke();
+
+  // scattered rocks/flowers/reeds decoration (deterministic pseudo-random)
+  function rand(seed){ const x=Math.sin(seed*999.7)*43758.5453; return x-Math.floor(x); }
+  for(let i=0;i<40;i++){
+    const s=i*7.13+level.id*31;
+    const nx=rand(s);
+    const b=riverBoundsAt(level,nx);
+    const side = rand(s+1)<0.5?-1:1;
+    const dist = 18*SCALE + rand(s+2)*70*SCALE;
+    const x = nx*W;
+    const y = side<0 ? b.top*H-dist : b.bottom*H+dist;
+    if(y<-20||y>H+20) continue;
+    const kind = rand(s+3);
+    if(kind<0.4){
+      ctx.fillStyle = rand(s+4)<0.5?'#f2e07a':'#f2f2f2';
+      ctx.beginPath(); ctx.arc(x-4*SCALE,y,2.6*SCALE,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x+4*SCALE,y,2.6*SCALE,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y-4*SCALE,2.6*SCALE,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x,y+4*SCALE,2.6*SCALE,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#e8b23a'; ctx.beginPath(); ctx.arc(x,y,2.4*SCALE,0,Math.PI*2); ctx.fill();
+    } else if(kind<0.7){
+      ctx.fillStyle='#8a8578';
+      ctx.beginPath(); ctx.ellipse(x,y,9*SCALE,6*SCALE,rand(s+5)*3,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.25)';
+      ctx.beginPath(); ctx.ellipse(x-2*SCALE,y-2*SCALE,4*SCALE,2.4*SCALE,0,0,Math.PI*2); ctx.fill();
+    } else {
+      ctx.strokeStyle='#4a7a3a'; ctx.lineWidth=2.2*SCALE; ctx.lineCap='round';
+      for(let k=0;k<3;k++){
+        const bend = Math.sin(performance.now()*0.001+ s+k)*4*SCALE;
+        ctx.beginPath();
+        ctx.moveTo(x+k*3*SCALE,y);
+        ctx.quadraticCurveTo(x+k*3*SCALE+bend,y-10*SCALE, x+k*3*SCALE+bend*1.4, y-20*SCALE);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // background trees along the far edges of each shore
+  for(let i=0;i<9;i++){
+    const s=i*17.3;
+    const nx = rand(s);
+    const b = riverBoundsAt(level,nx);
+    const yAbove = Math.max(14*SCALE, b.top*H - (18*SCALE + rand(s+1)*40*SCALE));
+    drawTree(nx*W, yAbove, 16*SCALE+rand(s+2)*10*SCALE);
+    const yBelow = Math.min(H-14*SCALE, b.bottom*H + (18*SCALE + rand(s+3)*40*SCALE));
+    drawTree(nx*W+30*SCALE, yBelow, 16*SCALE+rand(s+4)*10*SCALE);
+  }
+
+  ctx.restore();
+}
+
+function drawTree(x,y,r){
+  ctx.fillStyle='rgba(0,0,0,0.12)';
+  ctx.beginPath(); ctx.ellipse(x,y+r*0.7,r*0.9,r*0.3,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='#2e5a2a';
+  ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.10)';
+  ctx.beginPath(); ctx.arc(x-r*0.3,y-r*0.3,r*0.5,0,Math.PI*2); ctx.fill();
+}
+
+function drawDock(which, label){
+  const b = riverBoundsAt(level, level.dockCenterX);
+  const shoreY = which==='top' ? b.top : b.bottom;
+  const centerX = level.dockCenterX*W;
+  const halfW = level.dockHalf*W;
+  const outward = which==='top' ? -1 : 1;
+  const len = 46*SCALE;
+  const y0 = shoreY*H;
+  const y1 = y0 + outward*len;
+
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.18)';
+  ctx.fillRect(centerX-halfW-4*SCALE, Math.min(y0,y1)+4*SCALE, halfW*2+8*SCALE, Math.abs(y1-y0));
+
+  const g = ctx.createLinearGradient(0,Math.min(y0,y1),0,Math.max(y0,y1));
+  g.addColorStop(0,PAL.woodLight); g.addColorStop(1,PAL.wood);
+  ctx.fillStyle=g;
+  ctx.fillRect(centerX-halfW, Math.min(y0,y1), halfW*2, Math.abs(y1-y0));
+
+  ctx.strokeStyle='rgba(0,0,0,0.25)'; ctx.lineWidth=2*SCALE;
+  const planks=6;
+  for(let i=1;i<planks;i++){
+    const px = centerX-halfW+ (i/planks)*halfW*2;
+    ctx.beginPath(); ctx.moveTo(px,Math.min(y0,y1)); ctx.lineTo(px,Math.max(y0,y1)); ctx.stroke();
+  }
+  ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=1*SCALE;
+  ctx.beginPath(); ctx.moveTo(centerX-halfW,(y0+y1)/2); ctx.lineTo(centerX+halfW,(y0+y1)/2); ctx.stroke();
+
+  // posts
+  ctx.fillStyle=PAL.woodDark;
+  [-1,1].forEach(sx=>{
+    [0,1].forEach(sy=>{
+      const px = centerX+sx*halfW;
+      const py = sy===0?y0:y1;
+      ctx.beginPath(); ctx.arc(px,py,5*SCALE,0,Math.PI*2); ctx.fill();
+    });
+  });
+  ctx.restore();
+
+  if(label){
+    const pulse = 0.5+0.5*Math.sin(performance.now()*0.003);
+    ctx.save();
+    ctx.strokeStyle=`rgba(255,210,122,${0.35+0.3*pulse})`;
+    ctx.lineWidth=3*SCALE;
+    ctx.beginPath(); ctx.ellipse(centerX,(y0+y1)/2, halfW+8*SCALE, len*0.7, 0,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawObstacles(){
+  for(const rk of level.rocks){
+    const [x,y] = toPx(rk.cx, rk.cy);
+    const r = rk.r*SCALE;
+    ctx.save();
+    ctx.fillStyle='rgba(0,0,0,0.2)';
+    ctx.beginPath(); ctx.ellipse(x,y+r*0.35,r*1.05,r*0.5,0,0,Math.PI*2); ctx.fill();
+    const g = ctx.createRadialGradient(x-r*0.3,y-r*0.3,r*0.1,x,y,r);
+    g.addColorStop(0,'#9b968a'); g.addColorStop(1,'#5f5a4e');
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='rgba(90,120,60,0.5)';
+    ctx.beginPath(); ctx.arc(x+r*0.3,y+r*0.2,r*0.35,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  if(level.island){
+    const isl = level.island;
+    const [x,y] = toPx(isl.cx, isl.cy);
+    const r = isl.r*SCALE;
+    ctx.save();
+    ctx.fillStyle='rgba(0,0,0,0.22)';
+    ctx.beginPath(); ctx.ellipse(x,y+r*0.4,r*1.15,r*0.55,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=PAL.sand;
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=PAL.grass3;
+    ctx.beginPath(); ctx.arc(x,y,r*0.78,0,Math.PI*2); ctx.fill();
+    drawTree(x-r*0.15,y-r*0.1,r*0.55);
+    ctx.restore();
+  }
+}
+
+function drawLogs(){
+  for(const lg of logs){
+    const [x,y] = toPx(lg.x, lg.y);
+    const len = lg.len*SCALE, w=len*0.32;
+    ctx.save();
+    ctx.translate(x,y); ctx.rotate(lg.rot);
+    ctx.fillStyle='rgba(0,0,0,0.18)';
+    ctx.beginPath(); ctx.ellipse(2,3,len/2,w/2,0,0,Math.PI*2); ctx.fill();
+    const g = ctx.createLinearGradient(0,-w/2,0,w/2);
+    g.addColorStop(0,'#7a5230'); g.addColorStop(1,'#4a3018');
+    ctx.fillStyle=g;
+    ctx.beginPath(); ctx.ellipse(0,0,len/2,w/2,0,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1.4*SCALE;
+    ctx.beginPath(); ctx.ellipse(len*0.32,0,w*0.28,w*0.42,0,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawLeaves(){
+  for(const lf of leaves){
+    const [x,y] = toPx(lf.x, lf.y);
+    ctx.save();
+    ctx.translate(x,y); ctx.rotate(lf.rot);
+    ctx.fillStyle = lf.kind===0? 'rgba(196,120,40,0.85)':'rgba(150,168,60,0.85)';
+    ctx.beginPath();
+    ctx.ellipse(0,0,5*SCALE,3*SCALE,0,0,Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function drawWake(){
+  if(wake.length<2) return;
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,0.35)';
+  ctx.lineCap='round';
+  for(let i=1;i<wake.length;i++){
+    const a=wake[i-1], b2=wake[i];
+    const alpha = Math.max(0,1-b2.age/1.6);
+    if(alpha<=0) continue;
+    ctx.globalAlpha = alpha*0.4;
+    ctx.lineWidth = (5*SCALE)*alpha;
+    const [ax,ay]=toPx(a.x,a.y), [bx,by]=toPx(b2.x,b2.y);
+    ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+function drawParticles(){
+  ctx.save();
+  for(const p of particles){
+    const a = Math.max(0,1-p.age/p.life);
+    const [x,y] = toPx(p.x,p.y);
+    ctx.globalAlpha = a*0.7;
+    ctx.fillStyle='#ffffff';
+    ctx.beginPath(); ctx.arc(x,y,p.r*SCALE*(0.6+0.4*a),0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+  ctx.restore();
+}
+
+function drawBoat(){
+  const [x,y0] = toPx(boat.x, boat.y);
+  const y = y0+boat.bob*SCALE;
+  ctx.save();
+  ctx.translate(x,y);
+  ctx.rotate(boat.angle+Math.PI/2);
+  const L=64*SCALE, Wd=29*SCALE;
+
+  ctx.fillStyle='rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(2*SCALE,4*SCALE,L*0.52,Wd*0.5,0,0,Math.PI*2); ctx.fill();
+
+  // oars
+  const stroke = Math.sin(boat.oarPhase);
+  ctx.strokeStyle=PAL.woodDark; ctx.lineWidth=4.5*SCALE; ctx.lineCap='round';
+  [-1,1].forEach(side=>{
+    const baseX = side*Wd*0.55, baseY = -L*0.05;
+    const swing = stroke*0.5*side*-1;
+    const tipX = baseX + side*27*SCALE*(0.6+Math.abs(stroke)*0.4);
+    const tipY = baseY + 32*SCALE*(0.3+swing*0.5);
+    ctx.beginPath(); ctx.moveTo(baseX,baseY); ctx.lineTo(tipX,tipY); ctx.stroke();
+    ctx.fillStyle=PAL.woodDark;
+    ctx.beginPath(); ctx.ellipse(tipX,tipY,5.5*SCALE,10*SCALE,0,0,Math.PI*2); ctx.fill();
+  });
+
+  // hull
+  ctx.beginPath();
+  ctx.moveTo(0,-L/2);
+  ctx.quadraticCurveTo(Wd/2,-L*0.15, Wd*0.42,L*0.28);
+  ctx.quadraticCurveTo(Wd*0.3,L/2, 0,L/2);
+  ctx.quadraticCurveTo(-Wd*0.3,L/2, -Wd*0.42,L*0.28);
+  ctx.quadraticCurveTo(-Wd/2,-L*0.15, 0,-L/2);
+  ctx.closePath();
+  const hg = ctx.createLinearGradient(-Wd/2,0,Wd/2,0);
+  hg.addColorStop(0,PAL.woodDark); hg.addColorStop(0.5,PAL.woodLight); hg.addColorStop(1,PAL.wood);
+  ctx.fillStyle=hg; ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,0.3)'; ctx.lineWidth=1.6*SCALE; ctx.stroke();
+
+  ctx.strokeStyle='rgba(0,0,0,0.18)'; ctx.lineWidth=1*SCALE;
+  ctx.beginPath(); ctx.moveTo(0,-L*0.4); ctx.lineTo(0,L*0.42); ctx.stroke();
+
+  ctx.fillStyle='rgba(255,255,255,0.25)';
+  ctx.beginPath(); ctx.ellipse(-Wd*0.12,-L*0.05,Wd*0.16,L*0.28,0,0,Math.PI*2); ctx.fill();
+
+  ctx.restore();
+}
+
+function drawJoystick(){
+  if(!joystick.active) return;
+  ctx.save();
+  ctx.globalAlpha=0.85;
+  ctx.strokeStyle='rgba(255,255,255,0.55)';
+  ctx.lineWidth=2;
+  ctx.beginPath(); ctx.arc(joystick.anchor.x,joystick.anchor.y,JOY_MAX,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.18)';
+  ctx.beginPath(); ctx.arc(joystick.anchor.x,joystick.anchor.y,JOY_MAX,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(255,210,122,0.9)';
+  ctx.beginPath();
+  ctx.arc(joystick.anchor.x+joystick.drag.x, joystick.anchor.y+joystick.drag.y, 22, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function render(time){
+  drawBackground();
+  drawBanks();
+  drawRiver(time);
+  drawObstacles();
+  drawLogs();
+  drawLeaves();
+  drawDock('bottom', false);
+  drawDock('top', true);
+  drawWake();
+  drawBoat();
+  drawParticles();
+  drawJoystick();
+}
+
+/* ---------- main loop ---------- */
+function frame(now){
+  const t = now/1000;
+  const dt = lastTime ? Math.min(0.033, t-lastTime) : 0;
+  lastTime = t;
+  update(dt, t);
+  render(t);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------- UI wiring ---------- */
+function updateTopbar(){
+  document.getElementById('level-pill').textContent = `${curLevelIdx+1} · ${level.name.toUpperCase()}`;
+}
+function buildLevelSelect(){
+  const wrap = document.getElementById('level-select');
+  wrap.innerHTML='';
+  LEVELS.forEach((L,i)=>{
+    const d = document.createElement('div');
+    const unlocked = L.id<=progress.unlocked;
+    d.className='dot'+(progress.stars[L.id]?' done':'')+(unlocked?'':' locked');
+    d.textContent = unlocked ? L.id : '🔒';
+    d.style.fontSize = unlocked?'13px':'12px';
+    d.addEventListener('click', ()=>{ if(unlocked){ document.getElementById('menu-overlay').classList.remove('show'); resetLevel(i); } });
+    wrap.appendChild(d);
+  });
+}
+buildLevelSelect();
+
+document.getElementById('play-btn').addEventListener('click', ()=>{
+  initAudio();
+  document.getElementById('menu-overlay').classList.remove('show');
+  const idx = Math.min(progress.unlocked-1, LEVELS.length-1);
+  resetLevel(idx);
+});
+document.getElementById('next-btn').addEventListener('click', ()=>{
+  document.getElementById('win-overlay').classList.remove('show');
+  if(curLevelIdx>=LEVELS.length-1){
+    buildLevelSelect();
+    document.getElementById('menu-overlay').classList.add('show');
+    mode='menu';
+  } else {
+    resetLevel(curLevelIdx+1);
+  }
+});
+document.getElementById('menu-btn').addEventListener('click', ()=>{
+  document.getElementById('win-overlay').classList.remove('show');
+  buildLevelSelect();
+  document.getElementById('menu-overlay').classList.add('show');
+  mode='menu';
+});
+document.getElementById('restart-btn').addEventListener('click', ()=>{
+  if(mode==='playing') resetLevel(curLevelIdx);
+});
+document.getElementById('mute-btn').addEventListener('click', ()=>{
+  initAudio();
+  setMuted(!muted);
+});
+
+})();
+</script>
+</body>
+</html>

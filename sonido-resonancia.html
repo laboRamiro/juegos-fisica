@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Resonancia: El Tubo de Kundt</title>
+<style>
+:root {
+  --teal-dark: #0f4a50;
+  --teal: #1a7070;
+  --teal-light: #cfeff2;
+  --gold: #e8b84b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 20px;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  background: #06262a; color: var(--teal-light);
+  display: flex; justify-content: center;
+}
+.game-container { width: 840px; }
+header { text-align: center; margin-bottom: 10px; }
+header h1 { color: var(--gold); margin: 0 0 4px; font-size: 22px; }
+.subtitle { font-size: 13px; color: #9fd0d4; margin: 0; }
+.hidden { display: none; }
+
+.objective-panel {
+  background: rgba(15,74,80,0.85); border: 1px solid var(--teal);
+  border-radius: 6px; padding: 8px 14px; margin: 10px auto; max-width: 760px;
+  font-family: monospace; font-size: 14px; color: var(--teal-light);
+  text-align: center;
+}
+.objective-panel span { color: var(--gold); font-weight: bold; }
+
+.canvases-row {
+  display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin-top: 12px;
+}
+.canvas-box { text-align: center; }
+.canvas-title { font-size: 11px; color: var(--teal-light); margin-bottom: 4px; }
+.canvas-box canvas {
+  display: block; border: 2px solid var(--teal); border-radius: 8px; background: var(--teal-dark);
+}
+
+.controls-panel {
+  display: flex; gap: 18px; align-items: flex-start; margin-top: 14px; flex-wrap: wrap;
+}
+.slider-wrap { flex: 1 1 260px; margin: 6px 0; }
+.slider-label { display: block; font-size: 12px; color: var(--teal-light); margin-bottom: 3px; }
+input[type=range] { width: 100%; accent-color: var(--gold); }
+input[type=range]:disabled { opacity: 0.4; }
+
+#play-btn, #next-btn, #restart-btn {
+  background: var(--gold); color: var(--teal-dark); border: none;
+  padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px;
+  margin-top: 4px;
+}
+#play-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+#play-btn:hover:not(:disabled), #next-btn:hover, #restart-btn:hover { background: #f5d98a; }
+
+.metrics-panel {
+  background: rgba(15,74,80,0.85); border: 1px solid var(--teal);
+  border-radius: 6px; padding: 10px 14px; min-width: 160px;
+  font-family: monospace; font-size: 13px;
+}
+.metric-row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; }
+.metric-label { color: var(--teal-light); }
+.metric-value { color: var(--gold); font-weight: bold; min-width: 60px; text-align: right; }
+.metric-unit  { color: #7fb8bd; width: 50px; }
+
+.formula-label {
+  font-family: monospace; font-size: 14px; color: var(--teal-light);
+  background: rgba(15,74,80,0.6); border-left: 3px solid var(--gold);
+  padding: 6px 10px; margin: 8px 0; border-radius: 0 4px 4px 0;
+  flex: 1 1 100%;
+}
+.formula-value { color: var(--gold); font-weight: bold; }
+.formula-pending { color: #7fb8bd; }
+
+.result-panel, .summary-panel {
+  margin-top: 14px; text-align: center;
+  border: 2px solid var(--teal); border-radius: 8px; padding: 14px 18px;
+  background: rgba(15,74,80,0.92);
+}
+.result-title { font-size: 18px; font-weight: bold; margin-bottom: 6px; }
+.result-line { font-size: 14px; margin: 4px 0; color: var(--teal-light); }
+.result-panel.res-perfecta            .result-title { color: var(--gold); }
+.result-panel.res-armonico_equivocado .result-title { color: #f0a83c; }
+.result-panel.res-cerca               .result-title { color: var(--teal-light); }
+.result-panel.res-fuera               .result-title { color: #9fd0d4; }
+
+.stars { font-size: 28px; letter-spacing: 4px; }
+.star-filled { color: var(--gold); }
+.star-empty  { color: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+<div class="game-container">
+  <header>
+    <h1>Resonancia: El Tubo de Kundt</h1>
+    <p class="subtitle">Ajustá la frecuencia del generador de sonido para hacer resonar el tubo en su modo fundamental. El modelo de amplitud es una curva de resonancia simplificada, no la impedancia acústica exacta de un tubo real.</p>
+  </header>
+
+  <div class="objective-panel" id="objective-panel">
+    Ronda <span id="round-num">1</span>/5 — Longitud del tubo: <span id="round-l">0.85</span> m
+    — Velocidad del sonido: <span id="round-v">340</span> m/s
+  </div>
+
+  <div class="canvases-row">
+    <div class="canvas-box">
+      <div class="canvas-title">Tubo de Kundt</div>
+      <canvas id="tube" width="420" height="420"></canvas>
+    </div>
+    <div class="canvas-box">
+      <div class="canvas-title">Amplitud vs Frecuencia</div>
+      <canvas id="amplitudeGraph" width="360" height="260"></canvas>
+    </div>
+  </div>
+
+  <div class="controls-panel" id="controls-panel">
+    <div id="slider-host" class="slider-wrap"></div>
+    <button id="play-btn">🔊 Tocar</button>
+    <div id="metrics-host" class="metrics-panel"></div>
+    <div id="formula-host" class="formula-label"></div>
+  </div>
+
+  <div class="result-panel hidden" id="result-panel">
+    <div class="result-title" id="result-title"></div>
+    <div class="result-line" id="result-line-1"></div>
+    <div class="result-line" id="result-line-2"></div>
+    <button id="next-btn">Siguiente ronda →</button>
+  </div>
+
+  <div class="summary-panel hidden" id="summary-panel">
+    <div class="result-title" id="summary-title">¡Resonancia explorada!</div>
+    <div class="result-line" id="summary-score"></div>
+    <div class="stars" id="summary-stars"></div>
+    <button id="restart-btn">Jugar de nuevo</button>
+  </div>
+</div>
+
+<script>
+// ===================================================================
+// CONSTANTES — Resonancia: El Tubo de Kundt
+// v=340 m/s constante en las 5 rondas. Solo L cambia por ronda.
+// f1Ideal = v/(4L) (tubo cerrado-abierto, solo armónicos impares).
+// ===================================================================
+const V_SONIDO = 340;            // m/s
+const DELTA_PICO = 12;           // Hz — ancho de cada pico Lorentziano del modelo de amplitud
+const BANDA_CERCA_HZ = 20;       // Hz — margen adicional sobre la tolerancia para "cerca"
+const SLIDER_F_MIN = 50;         // Hz
+const SLIDER_F_MAX = 400;        // Hz
+const SLIDER_F_STEP = 1;         // Hz
+const N_ARMONICOS_AMPLITUD = 3;  // armónicos impares considerados en computeAmplitude (n=1,2,3)
+const AMPLITUD_RAMPA_S = 1.5;    // s — subida de amplitud 0 -> A(f) en 'running'
+const AMPLITUD_DURACION_TOTAL_S = 2.5; // s — duración total de 'running' (rampa + sostenido)
+const AUDIO_GAIN_SCALE = 0.18;   // ganancia máxima del oscilador (evita volumen molesto)
+const RIPPLE_DURATION_S = 0.5;   // s — duración del efecto de ondas concéntricas en 'perfecta'
+
+// Tabla de rondas — L (m) decreciente, f1Ideal (Hz) y tolerancia (Hz).
+// f1Ideal = V_SONIDO/(4*L), verificado a mano: 100, 125, 170, 250, 340 Hz.
+const RONDAS = [
+  { numero: 1, L: 0.85, f1Ideal: 100, tolerancia: 10 },
+  { numero: 2, L: 0.68, f1Ideal: 125, tolerancia: 7 },
+  { numero: 3, L: 0.50, f1Ideal: 170, tolerancia: 5 },
+  { numero: 4, L: 0.34, f1Ideal: 250, tolerancia: 3 },
+  { numero: 5, L: 0.25, f1Ideal: 340, tolerancia: 0 },
+];
+
+const RoundManager = {
+  totalRounds() { return RONDAS.length; },
+  getRound(index) { return RONDAS[index]; },
+  getCurrentRound() { return RONDAS[Game.roundIndex]; }
+};
+
+// ===================================================================
+// EventBus — pub/sub simple, mismo vocabulario que Newton/MRUV/MRU.
+// ===================================================================
+const EventBus = {
+  _listeners: {},
+  on(event, cb) { (this._listeners[event] = this._listeners[event] || []).push(cb); },
+  off(event, cb) {
+    if (!this._listeners[event]) return;
+    this._listeners[event] = this._listeners[event].filter(fn => fn !== cb);
+  },
+  emit(event, data) { (this._listeners[event] || []).forEach(cb => cb(data)); }
+};
+
+const EVENTS = {
+  SLIDER_CHANGED: 'slider_changed',
+  START_PRESSED:  'start_pressed',
+  METRICS_UPDATE: 'metrics_update',
+  NEXT_ROUND:     'next_round',
+  GAME_FINISHED:  'game_finished'
+};
+
+// ===================================================================
+// PHYSICIST — resonancia de tubo cerrado-abierto (armónicos impares)
+// f_n = (2n-1)*v/(4L). Modelo de amplitud declarado como aproximación
+// pedagógica (no impedancia acústica exacta) — ver game-spec.md.
+// ===================================================================
+const Physicist = {
+  // f: Hz, L: m -> A(f) en (0,1]: suma de picos Lorentzianos sobre los
+  // armónicos impares f_n, peso 1/n decreciente.
+  computeAmplitude(f, L) {
+    let mejorPico = 0;
+    for (let n = 1; n <= N_ARMONICOS_AMPLITUD; n++) {
+      const fn = (2 * n - 1) * V_SONIDO / (4 * L); // Hz
+      const x = (f - fn) / DELTA_PICO;
+      const pico = (1 / n) / Math.sqrt(1 + x * x);
+      if (pico > mejorPico) mejorPico = pico;
+    }
+    return mejorPico;
+  },
+
+  // f: Hz, round: {L, f1Ideal, tolerancia} -> {categoria, f1Ideal, n?}
+  // Resolución analítica ANTES de animar.
+  resolveRoundOutcome(f, round) {
+    const { f1Ideal, tolerancia } = round;
+
+    if (Math.abs(f - f1Ideal) <= tolerancia) {
+      return { categoria: 'perfecta', f1Ideal };
+    }
+    for (let n = 2; n <= 3; n++) {
+      const fn = (2 * n - 1) * f1Ideal; // Hz — algebraicamente igual a (2n-1)*v/(4L)
+      if (Math.abs(f - fn) <= tolerancia) {
+        return { categoria: 'armonico_equivocado', f1Ideal, n };
+      }
+    }
+    if (Math.abs(f - f1Ideal) <= tolerancia + BANDA_CERCA_HZ) {
+      return { categoria: 'cerca', f1Ideal };
+    }
+    return { categoria: 'fuera', f1Ideal };
+  }
+};
+
+// ===================================================================
+// ARTIST — funciones de dibujo Canvas 2D puro. Paleta estricta del
+// portal, sin gradientes. Reciben ctx + parámetros, sin estado propio.
+// ===================================================================
+const KUNDT_COLOR_TEAL_DARK  = '#0f4a50';
+const KUNDT_COLOR_TEAL       = '#1a7070';
+const KUNDT_COLOR_TEAL_LIGHT = '#cfeff2';
+const KUNDT_COLOR_GOLD       = '#e8b84b';
+
+function drawKundtTube(ctx, x, yTop, yBottom, width, waterRatio = 0.18) {
+  const halfW = width / 2;
+  const left = x - halfW;
+  const right = x + halfW;
+  const tubeHeight = yBottom - yTop;
+  const waterLevelY = yBottom - tubeHeight * waterRatio;
+
+  ctx.save();
+  ctx.globalAlpha = 0.35;
+  ctx.fillStyle = KUNDT_COLOR_TEAL_LIGHT;
+  ctx.fillRect(left, yTop, width, waterLevelY - yTop);
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = KUNDT_COLOR_TEAL_LIGHT;
+  ctx.fillRect(left, waterLevelY, width, yBottom - waterLevelY);
+
+  ctx.strokeStyle = KUNDT_COLOR_TEAL;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(left, waterLevelY);
+  ctx.lineTo(right, waterLevelY);
+  ctx.stroke();
+
+  ctx.strokeStyle = KUNDT_COLOR_TEAL_DARK;
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(left, yTop);
+  ctx.lineTo(left, yBottom);
+  ctx.lineTo(right, yBottom);
+  ctx.lineTo(right, yTop);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawKundtMembrane(ctx, x, yTop, width, stripHeight = 14) {
+  const halfW = width / 2;
+  ctx.save();
+  ctx.strokeStyle = KUNDT_COLOR_TEAL;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(x - halfW, yTop - stripHeight);
+  ctx.lineTo(x + halfW, yTop - stripHeight);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
+// harmonicOrder = k: k=1 fundamental (1 nodo, 1 antinodo), k=2 -> 3er
+// armónico (2 nodos, 2 antinodos), k=3 -> 5to armónico (3 y 3). El
+// exponente físico real del armónico es (2k-1) — coincide con el `n`
+// que devuelve Physicist.resolveRoundOutcome en 'armonico_equivocado'.
+// Sin esto, el dibujo mostraría siempre el modo fundamental aunque el
+// jugador haya resonado en otro armónico (validado por scientific-validator).
+function drawStandingWave(ctx, x, yTop, yBottom, amplitud, harmonicOrder = 1, maxAmplitudePx = 28) {
+  const a = Math.max(0, Math.min(1, amplitud));
+  if (a <= 0.01) return;
+
+  const columnHeight = yBottom - yTop;
+  if (columnHeight <= 0) return;
+
+  const k = Math.max(1, harmonicOrder);
+  const order = 2 * k - 1; // (2k-1): exponente real del armónico impar
+  const ampPx = a * maxAmplitudePx;
+  const steps = 60;
+  ctx.save();
+  ctx.strokeStyle = KUNDT_COLOR_GOLD;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i++) {
+    const s = i / steps;
+    const y = yBottom - s * columnHeight;
+    const dx = ampPx * Math.sin(order * s * Math.PI / 2);
+    const px = x + dx;
+    if (i === 0) ctx.moveTo(px, y); else ctx.lineTo(px, y);
+  }
+  ctx.stroke();
+
+  // Nodos (desplazamiento cero): s = 2m/order, m=0..k-1
+  ctx.fillStyle = KUNDT_COLOR_TEAL_DARK;
+  for (let m = 0; m < k; m++) {
+    const s = (2 * m) / order;
+    const y = yBottom - s * columnHeight;
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Antinodos (desplazamiento máximo): s = (1+2m)/order, m=0..k-1
+  ctx.fillStyle = KUNDT_COLOR_GOLD;
+  ctx.shadowColor = KUNDT_COLOR_GOLD;
+  ctx.shadowBlur = 6 * a;
+  for (let m = 0; m < k; m++) {
+    const s = (1 + 2 * m) / order;
+    const y = yBottom - s * columnHeight;
+    const dx = ampPx * Math.sin(order * s * Math.PI / 2);
+    ctx.beginPath();
+    ctx.arc(x + dx, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+function drawKundtDust(ctx, x, yMembrane, width, amplitud, ordenado, t = 0, montones = 4) {
+  const a = Math.max(0, Math.min(1, amplitud));
+  const halfW = width / 2;
+  const left = x - halfW;
+
+  ctx.save();
+  ctx.fillStyle = KUNDT_COLOR_TEAL_DARK;
+
+  if (ordenado) {
+    const gap = width / montones;
+    for (let m = 0; m < montones; m++) {
+      const cx = left + gap * (m + 0.5);
+      const grainsPerPile = 7;
+      for (let g = 0; g < grainsPerPile; g++) {
+        const seed = m * 13 + g * 7;
+        const spreadX = (((seed * 9301 + 49297) % 233280) / 233280 - 0.5) * (gap * 0.4);
+        const spreadY = (((seed * 4517 + 12345) % 233280) / 233280 - 0.5) * 4;
+        ctx.beginPath();
+        ctx.arc(cx + spreadX, yMembrane + spreadY, 1.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  } else {
+    const grains = 26;
+    const jitterAmp = a * 5;
+    for (let i = 0; i < grains; i++) {
+      const seed = i * 17;
+      const baseX = left + (((seed * 9301 + 49297) % 233280) / 233280) * width;
+      const baseY = yMembrane + ((((seed * 4517 + 12345) % 233280) / 233280) - 0.5) * 6;
+      const jitterX = Math.sin(t * 9 + i * 1.7) * jitterAmp;
+      const jitterY = Math.cos(t * 11 + i * 2.3) * jitterAmp * 0.4;
+      ctx.beginPath();
+      ctx.arc(baseX + jitterX, baseY + jitterY, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function drawKundtFace(ctx, x, yFace, width, state, amplitud = 0) {
+  const a = Math.max(0, Math.min(1, amplitud));
+  const eyeOffsetX = width * 0.18;
+  const eyeY = yFace;
+  const eyeRadius = width * 0.05;
+
+  ctx.save();
+  ctx.strokeStyle = KUNDT_COLOR_TEAL_DARK;
+  ctx.fillStyle = KUNDT_COLOR_TEAL_DARK;
+  ctx.lineWidth = 2;
+
+  if (state === 'feliz') {
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = KUNDT_COLOR_GOLD;
+    ctx.beginPath();
+    ctx.arc(x, yFace, width * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  const drawEye = (ex, openness, raised = false) => {
+    ctx.beginPath();
+    if (openness <= 0.05) {
+      ctx.moveTo(ex - eyeRadius, eyeY);
+      ctx.lineTo(ex + eyeRadius, eyeY);
+      ctx.stroke();
+    } else {
+      const ry = eyeRadius * openness;
+      ctx.ellipse(ex, eyeY - (raised ? eyeRadius * 0.3 : 0), eyeRadius, Math.max(1, ry), 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+
+  switch (state) {
+    case 'reposo':
+      drawEye(x - eyeOffsetX, 0.15);
+      drawEye(x + eyeOffsetX, 0.15);
+      ctx.beginPath();
+      ctx.moveTo(x - width * 0.12, yFace + width * 0.16);
+      ctx.lineTo(x + width * 0.12, yFace + width * 0.16);
+      ctx.stroke();
+      break;
+    case 'vibrando':
+      drawEye(x - eyeOffsetX, 0.2 + 0.8 * a);
+      drawEye(x + eyeOffsetX, 0.2 + 0.8 * a);
+      ctx.beginPath();
+      ctx.ellipse(x, yFace + width * 0.17, width * 0.09, width * 0.05 * (0.3 + a), 0, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    case 'feliz':
+      drawEye(x - eyeOffsetX, 1);
+      drawEye(x + eyeOffsetX, 1);
+      ctx.beginPath();
+      ctx.arc(x, yFace + width * 0.12, width * 0.14, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+      break;
+    case 'confundido':
+      drawEye(x - eyeOffsetX, 0.9, true);
+      drawEye(x + eyeOffsetX, 0.5);
+      ctx.beginPath();
+      ctx.moveTo(x - eyeOffsetX - eyeRadius, eyeY - eyeRadius * 1.8);
+      ctx.lineTo(x - eyeOffsetX + eyeRadius * 0.6, eyeY - eyeRadius * 2.4);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x - width * 0.1, yFace + width * 0.15);
+      ctx.quadraticCurveTo(x + width * 0.02, yFace + width * 0.22, x + width * 0.13, yFace + width * 0.13);
+      ctx.stroke();
+      break;
+    case 'esforzado':
+      drawEye(x - eyeOffsetX, 0.1);
+      drawEye(x + eyeOffsetX, 0.1);
+      ctx.beginPath();
+      ctx.moveTo(x - width * 0.1, yFace + width * 0.17);
+      ctx.lineTo(x, yFace + width * 0.13);
+      ctx.lineTo(x + width * 0.1, yFace + width * 0.17);
+      ctx.stroke();
+      break;
+    case 'aburrido':
+    default:
+      ctx.beginPath();
+      ctx.arc(x - eyeOffsetX, eyeY + eyeRadius * 0.3, eyeRadius, Math.PI, 0, false);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x + eyeOffsetX, eyeY + eyeRadius * 0.3, eyeRadius, Math.PI, 0, false);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(x, yFace + width * 0.24, width * 0.1, 1.2 * Math.PI, 1.8 * Math.PI);
+      ctx.stroke();
+      break;
+  }
+  ctx.restore();
+}
+
+function getKundtShakeOffset(t, amplitud, maxShakePx = 3) {
+  const a = Math.max(0, Math.min(1, amplitud));
+  return Math.sin(t * 40) * maxShakePx * a;
+}
+
+function drawPerfectResonanceRipples(ctx, x, yTop, progreso, rings = 3, maxRadiusPx = 70) {
+  const p = Math.max(0, Math.min(1, progreso));
+  if (p >= 1) return;
+
+  ctx.save();
+  ctx.strokeStyle = KUNDT_COLOR_GOLD;
+  ctx.lineWidth = 2;
+
+  for (let i = 0; i < rings; i++) {
+    const delay = i * 0.18;
+    const localP = Math.max(0, Math.min(1, (p - delay) / (1 - delay)));
+    if (localP <= 0) continue;
+    const radius = localP * maxRadiusPx;
+    const alpha = 1 - localP;
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.beginPath();
+    ctx.ellipse(x, yTop, radius, radius * 0.45, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Escala VISUAL (no física) del nivel de agua según L de la ronda: a
+// mayor L, columna de aire más larga (agua más abajo); a menor L,
+// columna más corta (agua sube). Referencia: L=TUBE_REFERENCE_L llena
+// casi todo el contenedor del tubo. Sin esto, el dibujo del tubo sería
+// idéntico en las 5 rondas y el jugador nunca vería que el tubo "se
+// acorta" — el punto pedagógico central de la progresión de rondas
+// (detectado en la validación científica).
+const TUBE_REFERENCE_L = 0.85;       // m — L de la ronda 1 (la más larga)
+const TUBE_MAX_AIR_COLUMN_PX = 300;  // px — alto visual de la columna de aire cuando L=TUBE_REFERENCE_L
+
+function computeWaterLevelY(L, tubeYTop) {
+  const airColumnPx = (L / TUBE_REFERENCE_L) * TUBE_MAX_AIR_COLUMN_PX;
+  return tubeYTop + airColumnPx; // px — límite cerrado (nodo) de la columna de aire
+}
+
+// ===================================================================
+// INTERFACE — HUD, controles, gráfico de amplitud.
+// ===================================================================
+class AmplitudeSlider {
+  constructor(parentEl, { name, label, min, max, step, value, unit }) {
+    this._name = name; this._value = value; this._step = step;
+    parentEl.innerHTML = `
+      <label class="slider-label">${label}: <span id="sv-${name}">${value.toFixed(0)}</span> ${unit}</label>
+      <input type="range" id="si-${name}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+    this._input = parentEl.querySelector(`#si-${name}`);
+    this._display = parentEl.querySelector(`#sv-${name}`);
+    this._input.addEventListener('input', () => {
+      this._value = parseFloat(this._input.value);
+      this._display.textContent = this._value.toFixed(0);
+      EventBus.emit(EVENTS.SLIDER_CHANGED, { name: this._name, value: this._value });
+    });
+  }
+  get value() { return this._value; }
+  setEnabled(enabled) { this._input.disabled = !enabled; }
+  setValue(v) {
+    this._value = v; this._input.value = v;
+    this._display.textContent = v.toFixed(0);
+  }
+}
+
+class MetricsPanel {
+  constructor(parentEl) {
+    this._rows = new Map(); this._el = parentEl;
+    EventBus.on(EVENTS.METRICS_UPDATE, data => this.update(data));
+  }
+  addRow(key, label, unit, decimals) {
+    const row = document.createElement('div');
+    row.className = 'metric-row';
+    row.innerHTML = `<span class="metric-label">${label}</span>
+                      <span class="metric-value" id="mv-${key}">--</span>
+                      <span class="metric-unit">${unit}</span>`;
+    this._el.appendChild(row);
+    this._rows.set(key, { el: row.querySelector(`#mv-${key}`), decimals });
+    return this;
+  }
+  update(data) {
+    for (const [key, { el, decimals }] of this._rows) {
+      if (data[key] !== undefined) el.textContent = data[key].toFixed(decimals);
+    }
+  }
+}
+
+class FormulaLabel {
+  constructor(parentEl, template) {
+    this._template = template; this._el = parentEl;
+    this._render({});
+    EventBus.on(EVENTS.METRICS_UPDATE, data => this._render(data));
+  }
+  _render(data) {
+    this._el.innerHTML = this._template.replace(/\{(\w+)\}/g, (_, key) => {
+      const v = data[key];
+      if (v === undefined) return `<span class="formula-pending">?</span>`;
+      return `<span class="formula-value">${typeof v === 'number' ? (key === 'f1' ? v.toFixed(0) : v.toFixed(2)) : v}</span>`;
+    });
+  }
+}
+
+class AmplitudeGraph {
+  constructor(canvas) {
+    this._canvas = canvas; this._ctx = canvas.getContext('2d');
+    this._fMin = SLIDER_F_MIN; this._fMax = SLIDER_F_MAX;
+    this._showCurve = false;
+    this._markerF = this._fMin;
+    this._markerA = 0;
+    this._round = null;
+  }
+  setRound(round) { this._round = round; }
+  reset() { this._showCurve = false; }
+  revealCurve() { this._showCurve = true; }
+  setMarker(f, amplitud) { this._markerF = f; this._markerA = amplitud; }
+
+  _toPx(f, a, padL, padB, padT, w, h) {
+    const x = padL + ((f - this._fMin) / (this._fMax - this._fMin)) * w;
+    const y = padT + h - a * h;
+    return [x, y];
+  }
+
+  draw() {
+    const ctx = this._ctx, cv = this._canvas;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = 'rgba(15,74,80,0.92)'; ctx.fillRect(0, 0, cv.width, cv.height);
+
+    const padL = 30, padB = 18, padT = 12, padR = 10;
+    const w = cv.width - padL - padR, h = cv.height - padT - padB;
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT); ctx.lineTo(padL, cv.height - padB); ctx.lineTo(cv.width - padR, cv.height - padB);
+    ctx.stroke();
+    ctx.fillStyle = '#cfeff2'; ctx.font = '9px monospace';
+    ctx.fillText('A(f)', 2, 10);
+    ctx.fillText('f(Hz)', cv.width - 28, cv.height - 3);
+    ctx.fillText(String(this._fMin), padL - 4, cv.height - padB + 11);
+    ctx.fillText(String(this._fMax), cv.width - padR - 14, cv.height - padB + 11);
+
+    if (this._showCurve && this._round) {
+      ctx.strokeStyle = '#e8b84b'; ctx.lineWidth = 2; ctx.beginPath();
+      const STEPS = 140;
+      for (let i = 0; i <= STEPS; i++) {
+        const f = this._fMin + ((this._fMax - this._fMin) * i) / STEPS;
+        const a = Physicist.computeAmplitude(f, this._round.L);
+        const [px, py] = this._toPx(f, a, padL, padB, padT, w, h);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = '#e8b84b';
+      for (let n = 1; n <= 5; n++) {
+        const fn = (2 * n - 1) * V_SONIDO / (4 * this._round.L);
+        if (fn < this._fMin || fn > this._fMax) continue;
+        const a = Physicist.computeAmplitude(fn, this._round.L);
+        const [px, py] = this._toPx(fn, a, padL, padB, padT, w, h);
+        ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.font = '8px monospace'; ctx.fillStyle = '#cfeff2';
+        ctx.fillText(`n${n}`, px - 6, py - 7);
+        ctx.fillStyle = '#e8b84b';
+      }
+    }
+
+    const [mx, my] = this._toPx(this._markerF, this._markerA, padL, padB, padT, w, h);
+    ctx.fillStyle = '#1a7070';
+    ctx.strokeStyle = '#cfeff2'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(mx, my, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+}
+
+function renderResult(categoria, resultado, chosenF) {
+  const ORDINAL = { 2: '3er', 3: '5to' };
+  const cfg = {
+    perfecta:             { title: '¡Resonancia perfecta!',                cls: 'res-perfecta' },
+    armonico_equivocado:  { title: 'Resonó, pero no en la fundamental',    cls: 'res-armonico_equivocado' },
+    cerca:                { title: 'Casi... el tubo se agita',            cls: 'res-cerca' },
+    fuera:                { title: 'Fuera de resonancia',                 cls: 'res-fuera' }
+  }[categoria];
+
+  const panel = document.getElementById('result-panel');
+  document.getElementById('result-title').textContent = cfg.title;
+  panel.classList.remove('res-perfecta', 'res-armonico_equivocado', 'res-cerca', 'res-fuera');
+  panel.classList.add(cfg.cls);
+
+  document.getElementById('result-line-1').innerHTML =
+    `Elegiste <b>f = ${chosenF} Hz</b> · frecuencia fundamental ideal = <b>${resultado.f1Ideal.toFixed(0)} Hz</b>`;
+
+  const ord = resultado.n ? (ORDINAL[resultado.n] || `${2 * resultado.n - 1}°`) : '';
+  const linea2 = {
+    perfecta:
+      `El polvo se ordenó en montoncitos regulares — ¡encontraste el modo fundamental! Punto.`,
+    armonico_equivocado:
+      `Resonó, ¡pero en el ${ord} armónico, no en la fundamental! El tubo sí "cantó", en otro patrón de polvo más fino. Sin punto.`,
+    cerca:
+      `El polvo se agitó pero no llegó a ordenarse — estuviste cerca de la resonancia, pero no lo suficiente. Sin punto.`,
+    fuera:
+      `El polvo quedó disperso y el tubo casi no vibró — muy lejos de cualquier frecuencia de resonancia. Sin punto.`
+  }[categoria];
+  document.getElementById('result-line-2').innerHTML = linea2;
+}
+
+function renderSummary(score, totalRounds) {
+  document.getElementById('summary-score').textContent = `${score}/${totalRounds} resonancias perfectas`;
+  const starsEl = document.getElementById('summary-stars');
+  starsEl.innerHTML = '';
+  for (let i = 0; i < totalRounds; i++) {
+    const span = document.createElement('span');
+    span.textContent = '★';
+    span.className = i < score ? 'star-filled' : 'star-empty';
+    starsEl.appendChild(span);
+  }
+}
+
+function renderObjectivePanel(roundIndex, round) {
+  document.getElementById('round-num').textContent = roundIndex + 1;
+  document.getElementById('round-l').textContent = round.L.toFixed(2);
+  document.getElementById('round-v').textContent = String(V_SONIDO);
+}
+
+function showEl(id) { document.getElementById(id).classList.remove('hidden'); }
+function hideEl(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ===================================================================
+// ARCHITECT — StateMachine, GameLoop, FSM, RoundManager, InputManager.
+// ===================================================================
+class StateMachine {
+  constructor(owner) { this._owner = owner; this._states = new Map(); this._current = null; }
+  addState(name, { onEnter, onExit, onUpdate } = {}) {
+    this._states.set(name, { onEnter, onExit, onUpdate });
+    return this;
+  }
+  transition(nextName) {
+    if (!this._states.has(nextName)) return;
+    if (this._current) this._states.get(this._current)?.onExit?.call(this._owner);
+    this._current = nextName;
+    this._states.get(nextName)?.onEnter?.call(this._owner);
+  }
+  update(dt) { if (!this._current) return; this._states.get(this._current)?.onUpdate?.call(this._owner, dt); }
+  is(name) { return this._current === name; }
+  get state() { return this._current; }
+}
+
+class GameLoop {
+  constructor({ fixedHz = 60, maxFrameTime = 0.1 } = {}) {
+    this.fixedDt = 1 / fixedHz;
+    this.maxFrame = maxFrameTime;
+    this.paused = false;
+    this._accumulator = 0;
+    this._lastTime = 0;
+    this.onFixedUpdate = null;
+    this.onDraw = null;
+  }
+  start() {
+    const tick = (timestamp) => {
+      requestAnimationFrame(tick);
+      if (this.paused) { this._lastTime = timestamp; return; }
+      const rawDt = Math.min((timestamp - this._lastTime) / 1000, this.maxFrame);
+      this._lastTime = timestamp;
+      this._accumulator += rawDt;
+      while (this._accumulator >= this.fixedDt) {
+        this.onFixedUpdate?.(this.fixedDt);
+        this._accumulator -= this.fixedDt;
+      }
+      this.onDraw?.();
+    };
+    requestAnimationFrame((t) => { this._lastTime = t; requestAnimationFrame(tick); });
+  }
+  pause()  { this.paused = true; }
+  resume() { this.paused = false; }
+}
+
+const Game = {
+  fsm: null,
+  roundIndex: 0,
+  score: 0,
+  round: null,
+  chosenF: SLIDER_F_MIN,
+  lastResult: null,
+  runElapsed: 0,
+  currentAmplitude: 0,
+  clock: 0,
+  faceState: 'reposo',
+  dustOrdenado: false,
+  rippleElapsed: null,
+  activeHarmonic: 1 // k: 1=fundamental, 2=3er armónico, 3=5to armónico (ver resolveRoundOutcome)
+};
+
+// Lección aplicada (lessons-learned.md): en cada onEnter de un estado
+// activo, la primera línea ejecuta la acción de juego correspondiente.
+function buildGameFSM(hooks) {
+  const h = Object.assign({
+    onReadyEnter() {}, onRunningStart() {}, onRunningTick() {},
+    onResultEnter() {}, onResultExit() {}, onFinishedEnter() {}, onFinishedExit() {}
+  }, hooks || {});
+
+  return new StateMachine(Game)
+    .addState('ready', {
+      onEnter() {
+        this.round = RoundManager.getCurrentRound();
+        this.chosenF = SLIDER_F_MIN;
+        this.lastResult = null;
+        this.runElapsed = 0;
+        this.currentAmplitude = 0;
+        h.onReadyEnter(this.round, this.roundIndex);
+      }
+    })
+    .addState('running', {
+      onEnter() {
+        this.lastResult = Physicist.resolveRoundOutcome(this.chosenF, this.round);
+        this.runElapsed = 0;
+        this.currentAmplitude = 0;
+        h.onRunningStart(this.chosenF, this.round, this.lastResult);
+      },
+      onUpdate(dt) {
+        this.runElapsed += dt;
+        const targetA = Physicist.computeAmplitude(this.chosenF, this.round.L);
+        if (this.runElapsed <= AMPLITUD_RAMPA_S) {
+          this.currentAmplitude = targetA * (this.runElapsed / AMPLITUD_RAMPA_S);
+        } else {
+          this.currentAmplitude = targetA;
+        }
+        h.onRunningTick(this.chosenF, this.round, this.currentAmplitude, dt);
+        if (this.runElapsed >= AMPLITUD_DURACION_TOTAL_S) this.fsm.transition('result');
+      }
+    })
+    .addState('result', {
+      onEnter() {
+        if (this.lastResult.categoria === 'perfecta') this.score++;
+        const isLast = this.roundIndex >= RoundManager.totalRounds() - 1;
+        h.onResultEnter(this.lastResult, this.chosenF, this.round, this.roundIndex, isLast);
+      },
+      onExit() { h.onResultExit(); }
+    })
+    .addState('finished', {
+      onEnter() { h.onFinishedEnter(this.score, RoundManager.totalRounds()); },
+      onExit() { h.onFinishedExit(); }
+    });
+}
+
+const InputManager = {
+  init() {
+    document.getElementById('play-btn')?.addEventListener('click', () => EventBus.emit(EVENTS.START_PRESSED));
+    document.getElementById('next-btn')?.addEventListener('click', () => EventBus.emit(EVENTS.NEXT_ROUND));
+    document.getElementById('restart-btn')?.addEventListener('click', () => {
+      Game.roundIndex = 0;
+      Game.score = 0;
+      Game.fsm.transition('ready');
+    });
+  },
+  setPlayButtonEnabled(enabled) {
+    const btn = document.getElementById('play-btn');
+    if (btn) btn.disabled = !enabled;
+  }
+};
+
+// ===================================================================
+// PUBLISHER — audio real con Web Audio API. Un oscilador sine a la
+// frecuencia exacta elegida por el jugador, ganancia proporcional a la
+// envolvente de amplitud. Se detiene siempre al salir de 'running' o al
+// reiniciar — nunca queda un oscilador colgado.
+// ===================================================================
+const KundtAudio = {
+  ctx: null, osc: null, gain: null,
+  _ensure() {
+    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (this.ctx.state === 'suspended') this.ctx.resume();
+  },
+  start(frequency) {
+    this._ensure();
+    this.stop();
+    this.osc = this.ctx.createOscillator();
+    this.gain = this.ctx.createGain();
+    this.osc.type = 'sine';
+    this.osc.frequency.value = frequency; // Hz — exactamente la frecuencia elegida por el jugador
+    this.gain.gain.value = 0;
+    this.osc.connect(this.gain);
+    this.gain.connect(this.ctx.destination);
+    this.osc.start();
+  },
+  setAmplitude(amplitud) {
+    if (!this.gain) return;
+    this.gain.gain.value = Math.max(0, Math.min(1, amplitud)) * AUDIO_GAIN_SCALE;
+  },
+  stop() {
+    if (this.osc) {
+      try { this.osc.stop(); } catch (e) {}
+      this.osc.disconnect();
+      this.osc = null;
+    }
+    if (this.gain) { this.gain.disconnect(); this.gain = null; }
+  }
+};
+
+// ===================================================================
+// PUBLISHER — wiring final + bootstrap.
+// ===================================================================
+let amplitudeSlider, metricsPanel, formulaLabel, amplitudeGraph;
+
+const TUBE_LAYOUT = { tubeX: 210, tubeYTop: 40, tubeYBottom: 380, tubeWidth: 140 };
+
+function makeHooks() {
+  const FACE_BY_CATEGORIA = { perfecta: 'feliz', armonico_equivocado: 'confundido', cerca: 'esforzado', fuera: 'aburrido' };
+  return {
+    onReadyEnter(round, roundIndex) {
+      KundtAudio.stop();
+      Game.faceState = 'reposo';
+      Game.dustOrdenado = false;
+      Game.rippleElapsed = null;
+      Game.activeHarmonic = 1;
+      hideEl('result-panel');
+      hideEl('summary-panel');
+      amplitudeSlider.setEnabled(true);
+      amplitudeSlider.setValue(SLIDER_F_MIN);
+      amplitudeGraph.setRound(round);
+      amplitudeGraph.reset();
+      renderObjectivePanel(roundIndex, round);
+      const a0 = Physicist.computeAmplitude(SLIDER_F_MIN, round.L);
+      amplitudeGraph.setMarker(SLIDER_F_MIN, a0);
+      EventBus.emit(EVENTS.METRICS_UPDATE, { f: SLIDER_F_MIN, L: round.L, v: V_SONIDO, amplitud: a0 });
+    },
+    onRunningStart(f, round, result) {
+      amplitudeSlider.setEnabled(false);
+      Game.faceState = 'vibrando';
+      Game.dustOrdenado = (result.categoria === 'perfecta' || result.categoria === 'armonico_equivocado');
+      Game.activeHarmonic = (result.categoria === 'armonico_equivocado') ? result.n : 1;
+      KundtAudio.start(f);
+    },
+    onRunningTick(f, round, amplitude) {
+      KundtAudio.setAmplitude(amplitude);
+      EventBus.emit(EVENTS.METRICS_UPDATE, { f, L: round.L, v: V_SONIDO, amplitud: amplitude });
+    },
+    onResultEnter(result, f, round) {
+      KundtAudio.stop();
+      Game.faceState = FACE_BY_CATEGORIA[result.categoria];
+      Game.rippleElapsed = (result.categoria === 'perfecta') ? 0 : null;
+      amplitudeGraph.revealCurve();
+      EventBus.emit(EVENTS.METRICS_UPDATE, { f, L: round.L, v: V_SONIDO, amplitud: Game.currentAmplitude, f1: result.f1Ideal });
+      renderResult(result.categoria, result, f);
+      showEl('result-panel');
+    },
+    onResultExit() { hideEl('result-panel'); },
+    onFinishedEnter(score, totalRounds) { renderSummary(score, totalRounds); showEl('summary-panel'); },
+    onFinishedExit() { hideEl('summary-panel'); }
+  };
+}
+
+function fixedUpdate(dt) {
+  Game.clock += dt;
+  if (Game.rippleElapsed !== null) Game.rippleElapsed += dt;
+  Game.fsm.update(dt);
+}
+
+function render() {
+  const tubeCanvas = document.getElementById('tube');
+  const ctx = tubeCanvas.getContext('2d');
+  ctx.clearRect(0, 0, tubeCanvas.width, tubeCanvas.height);
+
+  const round = Game.round || RONDAS[0];
+  const { tubeX, tubeYTop, tubeYBottom, tubeWidth } = TUBE_LAYOUT;
+  const waterLevelY = computeWaterLevelY(round.L, tubeYTop);
+  const waterRatio = (tubeYBottom - waterLevelY) / (tubeYBottom - tubeYTop);
+
+  const shakeX = Game.faceState === 'vibrando' ? getKundtShakeOffset(Game.clock, Game.currentAmplitude) : 0;
+  const drawX = tubeX + shakeX;
+  const montones = 2 * Game.activeHarmonic + 1; // más montoncitos y más finos en armónicos altos
+
+  drawKundtTube(ctx, drawX, tubeYTop, tubeYBottom, tubeWidth, waterRatio);
+  drawStandingWave(ctx, drawX, tubeYTop, waterLevelY, Game.currentAmplitude, Game.activeHarmonic);
+  drawKundtMembrane(ctx, drawX, tubeYTop, tubeWidth);
+  drawKundtDust(ctx, drawX, tubeYTop - 14, tubeWidth, Game.currentAmplitude, Game.dustOrdenado, Game.clock, montones);
+  drawKundtFace(ctx, drawX, waterLevelY - 18, tubeWidth, Game.faceState, Game.currentAmplitude);
+
+  if (Game.rippleElapsed !== null) {
+    drawPerfectResonanceRipples(ctx, drawX, tubeYTop, Math.min(1, Game.rippleElapsed / RIPPLE_DURATION_S));
+  }
+  amplitudeGraph.draw();
+}
+
+function main() {
+  amplitudeSlider = new AmplitudeSlider(document.getElementById('slider-host'), {
+    name: 'frequency', label: 'f — Frecuencia', min: SLIDER_F_MIN, max: SLIDER_F_MAX,
+    step: SLIDER_F_STEP, value: SLIDER_F_MIN, unit: 'Hz'
+  });
+  metricsPanel = new MetricsPanel(document.getElementById('metrics-host'))
+    .addRow('f', 'f', 'Hz', 0).addRow('L', 'L', 'm', 2).addRow('v', 'v', 'm/s', 0).addRow('amplitud', 'A(f)', '', 2);
+  formulaLabel = new FormulaLabel(document.getElementById('formula-host'), 'f₁ = v / (4·L) = {v} / (4·{L}) = {f1} Hz');
+  amplitudeGraph = new AmplitudeGraph(document.getElementById('amplitudeGraph'));
+
+  Game.fsm = buildGameFSM(makeHooks());
+
+  // Wiring consolidado (reconciliación Publisher): un único listener por
+  // evento, fija Game.chosenF, actualiza el marcador del gráfico y
+  // reemite METRICS_UPDATE — todo en un solo lugar.
+  EventBus.on(EVENTS.SLIDER_CHANGED, (data) => {
+    if (data.name !== 'frequency') return;
+    Game.chosenF = data.value;
+    if (!Game.fsm.is('ready')) return;
+    const round = Game.round;
+    const amplitud = Physicist.computeAmplitude(Game.chosenF, round.L);
+    amplitudeGraph.setMarker(Game.chosenF, amplitud);
+    EventBus.emit(EVENTS.METRICS_UPDATE, { f: Game.chosenF, L: round.L, v: V_SONIDO, amplitud });
+  });
+  EventBus.on(EVENTS.START_PRESSED, () => { if (Game.fsm.is('ready')) Game.fsm.transition('running'); });
+  EventBus.on(EVENTS.NEXT_ROUND, () => {
+    Game.roundIndex++;
+    if (Game.roundIndex < RoundManager.totalRounds()) Game.fsm.transition('ready');
+    else EventBus.emit(EVENTS.GAME_FINISHED);
+  });
+  EventBus.on(EVENTS.GAME_FINISHED, () => Game.fsm.transition('finished'));
+
+  InputManager.init();
+
+  const loop = new GameLoop();
+  loop.onFixedUpdate = fixedUpdate;
+  loop.onDraw = render;
+  loop.start();
+
+  Game.fsm.transition('ready');
+}
+window.addEventListener('load', main);
+</script>
+</body>
+</html>

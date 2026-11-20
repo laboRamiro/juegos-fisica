@@ -1,0 +1,2274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gases Ideales - El Laboratorio de Presion</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #0a1628;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 10px 24px;
+    color: #fff;
+    user-select: none;
+  }
+  #game-container {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 1200px;
+  }
+  #canvas-wrap { display: flex; flex-direction: column; align-items: center; }
+  canvas#game-canvas {
+    border-radius: 14px;
+    box-shadow: 0 0 40px rgba(0,150,255,0.25);
+    display: block;
+    background: #0a1628;
+    max-width: 100%;
+    height: auto;
+  }
+  @media (max-width: 900px) {
+    #game-container { flex-direction: column; align-items: center; }
+    .side-panel { max-width: 100% !important; width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="canvas-wrap">
+      <canvas id="game-canvas" width="800" height="500"></canvas>
+    </div>
+    <div id="side-panel-mount"></div>
+  </div>
+  <script>
+  'use strict';
+
+  const PIXELS_PER_METER = 100;
+  const TARGET_FPS = 60;
+  const CANVAS_WIDTH = 800;
+  const CANVAS_HEIGHT = 500;
+  const ANIMATION_DURATION_MS = 2500;
+
+
+// EventBus.js — Gases Ideales: El Laboratorio de Presión
+// Patrón: html-patterns-observer (singleton pub/sub).
+// SIN import/export ES6: este archivo se inlinea tal cual dentro de un único <script>
+// armado por el Publisher junto con el resto de los módulos del juego. Convención del
+// portal (Hidrodinámica/Resonancia/Newton/MCU): clases globales sin export, el HTML
+// final debe abrir con doble clic (file://, sin servidor, sin bundler).
+//
+// Eventos exactos del contrato común (briefs/contrato-comun.md) — son 7, no agregar
+// otros sin documentarlo en el resumen final del agente que los necesite:
+//   SLIDER_CHANGED        → { valor } — en vivo mientras se mueve el slider, fase SETUP.
+//   ACTION_TRIGGERED       → sin payload — botón primario, SETUP -> RUNNING.
+//   ROUND_RESOLVED         → { capituloId, ronda, valorLibre, valorLogrado, objetivo,
+//                              categoria, error, sobra, exploto } — al terminar la
+//                              animación de ANIMATION_DURATION_MS.
+//   NEXT_ROUND_REQUESTED   → sin payload — botón "Siguiente ronda", RESULT -> SETUP
+//                              (ronda+1) o CHAPTER_END_REACHED si ronda===3.
+//   CHAPTER_END_REACHED    → { capituloId } — tras resolver la ronda 3 de un capítulo.
+//   NEXT_CHAPTER_REQUESTED → sin payload — botón "Siguiente experimento", CHAPTER_END
+//                              -> SETUP (capítulo+1) o GAME_SUMMARY_READY si capituloId===3.
+//   GAME_SUMMARY_READY     → { resultados: [...] } — los 9 resultados de ronda acumulados.
+
+class EventBusClass {
+  constructor() {
+    this._listeners = new Map();
+  }
+
+  on(event, fn) {
+    if (!this._listeners.has(event)) this._listeners.set(event, new Set());
+    this._listeners.get(event).add(fn);
+    return () => this.off(event, fn); // función de desuscripción
+  }
+
+  off(event, fn) {
+    this._listeners.get(event)?.delete(fn);
+  }
+
+  emit(event, data) {
+    this._listeners.get(event)?.forEach((fn) => fn(data));
+  }
+
+  once(event, fn) {
+    const wrapper = (data) => {
+      fn(data);
+      this.off(event, wrapper);
+    };
+    this.on(event, wrapper);
+  }
+
+  clear(event) {
+    if (event) this._listeners.delete(event);
+    else this._listeners.clear();
+  }
+}
+
+// Singleton global — todos los demás módulos (Physicist, Artist, Interface, Publisher)
+// usan esta misma instancia para comunicarse sin referencias directas entre sí.
+const EventBus = new EventBusClass();
+
+// Constantes de nombre de evento — usar siempre estas constantes, nunca strings sueltos,
+// para evitar el bug recurrente de typos entre agentes (ver lessons-learned.md: caso
+// `tolerance` vs `tolerancia` en Resonancia).
+const EVENTS = {
+  SLIDER_CHANGED: 'SLIDER_CHANGED',
+  ACTION_TRIGGERED: 'ACTION_TRIGGERED',
+  ROUND_RESOLVED: 'ROUND_RESOLVED',
+  NEXT_ROUND_REQUESTED: 'NEXT_ROUND_REQUESTED',
+  CHAPTER_END_REACHED: 'CHAPTER_END_REACHED',
+  NEXT_CHAPTER_REQUESTED: 'NEXT_CHAPTER_REQUESTED',
+  GAME_SUMMARY_READY: 'GAME_SUMMARY_READY',
+};
+
+// GasEngine.js
+// Motor físico de "Gases Ideales: El Laboratorio de Presión".
+// Para una cantidad fija de gas ideal (n y R constantes): P*V = n*R*T, de donde P*V/T = constante.
+// Cada capítulo aísla una de las 3 leyes clásicas manteniendo una variable fija, partiendo
+// todos del mismo estado de referencia (100 kPa, 2.0 L, 300 K).
+//
+// Bloque JS plano. SIN import/export ES6 (se carga vía <script> directo en
+// el HTML autocontenido del juego, igual que el resto de módulos del portal).
+//
+// Nombres y firmas EXACTOS según gases-ideales/briefs/contrato-comun.md —
+// no renombrar, no modificar fórmulas ni umbrales de categoría.
+
+const KELVIN_OFFSET = 273;   // T_K = T_°C + 273 (simplificación declarada, no 273.15, escuela media)
+const P0_REF = 100;          // kPa — presión del estado de referencia común a los 3 capítulos
+const V0_REF = 2.0;          // L — volumen del estado de referencia común a los 3 capítulos
+const T0_REF = 300;          // K (= 27 °C) — temperatura del estado de referencia común a los 3 capítulos
+const P_MAX_SEGURIDAD = 200; // kPa, SOLO Capítulo 3 (Gay-Lussac) — línea roja del manómetro/tanque
+
+// Conversión de temperatura: °C → K.
+function toKelvin(tCelsius) { return tCelsius + KELVIN_OFFSET; } // K
+
+// Capítulo 1 — Boyle-Mariotte (T fija = 300 K). Variable libre: V (L). Calculada: P (kPa).
+// P1*V1 = P2*V2  →  con estado de referencia (P0_REF, V0_REF): P = (P0_REF*V0_REF)/V
+function computeP_boyle(V) { return (P0_REF * V0_REF) / V; } // kPa
+
+// Capítulo 2 — Charles (P fija = 100 kPa, pistón libre). Variable libre: T_C (°C). Calculada: V (L).
+// V1/T1 = V2/T2  →  con estado de referencia (V0_REF, T0_REF): V = V0_REF*(T_K/T0_REF)
+function computeV_charles(tCelsius) { return V0_REF * (toKelvin(tCelsius) / T0_REF); } // L
+
+// Capítulo 3 — Gay-Lussac (V fija, tanque rígido sellado). Variable libre: T_C (°C). Calculada: P (kPa).
+// P1/T1 = P2/T2  →  con estado de referencia (P0_REF, T0_REF): P = P0_REF*(T_K/T0_REF) = T_K/3
+function computeP_gaylussac(tCelsius) { return toKelvin(tCelsius) / 3; } // kPa = P0_REF*(toKelvin(t)/T0_REF)
+
+// Array de los 3 capítulos con sus 9 rondas — única fuente de verdad de los números del juego.
+// Ni Architect ni Interface deben tener su propia copia de estos valores.
+const CAPITULOS = [
+  {
+    id: 1, clave: 'boyle', nombre: 'Ley de Boyle-Mariotte', fija: 'T = 300 K (27°C)',
+    variableLibre: 'V', unidadLibre: 'L', variableCalculada: 'P', unidadCalculada: 'kPa',
+    sliderMin: 0.3, sliderMax: 6.0, sliderStep: 0.05, sliderInicial: 2.0,
+    rondas: [
+      { ronda: 1, vCorrecto: 1.0, objetivo: 200 },
+      { ronda: 2, vCorrecto: 4.0, objetivo: 50 },
+      { ronda: 3, vCorrecto: 0.5, objetivo: 400 },
+    ],
+    compute: computeP_boyle,
+  },
+  {
+    id: 2, clave: 'charles', nombre: 'Ley de Charles', fija: 'P = 100 kPa (pistón libre)',
+    variableLibre: 'T', unidadLibre: '°C', variableCalculada: 'V', unidadCalculada: 'L',
+    sliderMin: -100, sliderMax: 300, sliderStep: 1, sliderInicial: 27,
+    rondas: [
+      { ronda: 1, vCorrecto: 87, objetivo: 2.4 },
+      { ronda: 2, vCorrecto: -33, objetivo: 1.6 },
+      { ronda: 3, vCorrecto: 267, objetivo: 3.6 },
+    ],
+    compute: computeV_charles,
+  },
+  {
+    id: 3, clave: 'gaylussac', nombre: 'Ley de Gay-Lussac', fija: 'V fijo (tanque rígido sellado)',
+    variableLibre: 'T', unidadLibre: '°C', variableCalculada: 'P', unidadCalculada: 'kPa',
+    sliderMin: -50, sliderMax: 350, sliderStep: 1, sliderInicial: 27,
+    rondas: [
+      { ronda: 1, vCorrecto: 117, objetivo: 130 },
+      { ronda: 2, vCorrecto: 237, objetivo: 170 },
+      { ronda: 3, vCorrecto: 297, objetivo: 190 },
+    ],
+    compute: computeP_gaylussac,
+    limiteSeguridad: P_MAX_SEGURIDAD,
+  },
+];
+
+// Clasifica el resultado de una ronda según el error relativo contra el objetivo.
+// error relativo = |valorLogrado - objetivo| / objetivo (fracción, no porcentaje).
+// Umbrales: óptima ≤3%, aceptable ≤8%, forzada ≤20%, si no rotura.
+// Override de seguridad: SOLO Gay-Lussac pasa limiteSeguridad (200 kPa). Si valorLogrado lo
+// supera (estrictamente >), la categoría es SIEMPRE 'rotura' sin importar el error relativo
+// — condición categórica, no gradual. Es el punto pedagógico central del Capítulo 3.
+function resolveRoundOutcome(valorLogrado, objetivo, limiteSeguridad) {
+  const error = Math.abs(valorLogrado - objetivo) / objetivo; // fracción, no porcentaje
+  let categoria;
+  if (error <= 0.03) categoria = 'optima';
+  else if (error <= 0.08) categoria = 'aceptable';
+  else if (error <= 0.20) categoria = 'forzada';
+  else categoria = 'rotura';
+  // Override de seguridad: SOLO Gay-Lussac pasa limiteSeguridad (200). Si se supera, es SIEMPRE rotura.
+  const exploto = (limiteSeguridad !== undefined) && (valorLogrado > limiteSeguridad);
+  if (exploto) categoria = 'rotura';
+  return { error, categoria, sobra: valorLogrado > objetivo, exploto };
+}
+
+// ---------------------------------------------------------------------------
+// CASOS DE PRUEBA VERIFICADOS A MANO (gases-ideales/briefs/physicist-brief.md)
+// ---------------------------------------------------------------------------
+//
+// 1) Boyle ronda 1: computeP_boyle(1.0)
+//    P = (P0_REF*V0_REF)/V = (100*2.0)/1.0 = 200/1.0 = 200 kPa
+//    → coincide EXACTAMENTE con objetivo=200 de la tabla. OK.
+//
+// 2) Boyle ronda 2: computeP_boyle(4.0)
+//    P = (100*2.0)/4.0 = 200/4.0 = 50 kPa
+//    → coincide con objetivo=50. OK.
+//
+// 3) Boyle ronda 3: computeP_boyle(0.5)
+//    P = (100*2.0)/0.5 = 200/0.5 = 400 kPa
+//    → coincide con objetivo=400. OK.
+//
+// 4) Charles ronda 1: computeV_charles(87)
+//    toKelvin(87) = 87 + 273 = 360 K
+//    V = V0_REF*(T_K/T0_REF) = 2.0*(360/300) = 2.0*1.2 = 2.4 L
+//    → coincide con objetivo=2.4. OK.
+//
+// 5) Charles ronda 2: computeV_charles(-33)
+//    toKelvin(-33) = -33 + 273 = 240 K
+//    V = 2.0*(240/300) = 2.0*0.8 = 1.6 L
+//    → coincide con objetivo=1.6. OK.
+//
+// 6) Charles ronda 3 (verificación adicional, no listada en el brief pero sí en game-spec):
+//    computeV_charles(267) → toKelvin(267) = 267+273 = 540 K
+//    V = 2.0*(540/300) = 2.0*1.8 = 3.6 L
+//    → coincide con objetivo=3.6 de la tabla. OK.
+//
+// 7) Gay-Lussac ronda 3 (jugador da en el blanco): computeP_gaylussac(297)
+//    toKelvin(297) = 297+273 = 570 K
+//    P = 570/3 = 190 kPa
+//    → coincide con objetivo=190. resolveRoundOutcome(190, 190, 200):
+//    error = |190-190|/190 = 0 → categoria='optima'. exploto: 190 > 200 es false. OK.
+//
+// 8) Gay-Lussac ronda 3, jugador se va por arriba pero SIN romper el límite: T=320°C
+//    toKelvin(320) = 320+273 = 593 K
+//    P = 593/3 = 197.666... ≈ 197.67 kPa
+//    resolveRoundOutcome(197.67, 190, 200):
+//      error = |197.67-190|/190 = 7.67/190 = 0.04035... ≈ 4.04% → 0.03 < 0.0404 <= 0.08 → 'aceptable'
+//      exploto: 197.67 > 200 es FALSE (no llega al límite) → categoria queda 'aceptable'. OK,
+//      coincide con el caso de prueba del brief (~4% de error, exploto:false).
+//
+// 9) *** CASO CRÍTICO — override de seguridad de Gay-Lussac *** T=340°C
+//    toKelvin(340) = 340+273 = 613 K
+//    P = 613/3 = 204.333... ≈ 204.33 kPa
+//    Cálculo del error "crudo" (antes del override):
+//      error = |204.33-190|/190 = 14.33/190 = 0.07543... ≈ 7.54%
+//      0.03 < 0.0754 <= 0.08 → sin override esto clasificaría como 'aceptable'.
+//    Pero limiteSeguridad=200 SÍ está definido (es el capítulo 3) y 204.33 > 200 → exploto=true.
+//    El override es categórico: if (exploto) categoria = 'rotura' SIEMPRE pisa el resultado
+//    "crudo" del error relativo. Resultado final de resolveRoundOutcome(204.33, 190, 200):
+//      { error: ≈0.0754, categoria: 'rotura', sobra: true, exploto: true }
+//    → Confirma el punto pedagógico central del capítulo: pasarse de 200 kPa es SIEMPRE
+//    explosión/rotura, sin importar que el error contra el objetivo de la ronda (190) sea
+//    pequeño (~7.5%, que aislado caería en 'aceptable'). La seguridad del tanque no admite
+//    gradientes. Implementación verificada: respeta el override. OK.
+//
+// 10) Límite exacto, sin superarlo: resolveRoundOutcome(200, 190, 200)
+//     error = |200-190|/190 = 10/190 = 0.05263... ≈ 5.26% → 'aceptable' (crudo)
+//     exploto: la condición es valorLogrado > limiteSeguridad → 200 > 200 es FALSE
+//     (operador estrictamentamente mayor, no mayor-o-igual) → exploto:false, categoria
+//     queda 'aceptable' (no se fuerza rotura). Coincide exactamente con lo exigido por el
+//     brief: "justo en el límite, no lo supera → exploto:false". OK, operador `>` confirmado
+//     en la implementación (no `>=`).
+//
+// 11) Síntesis (verificación de consistencia con game-spec, no pedida como caso de prueba
+//     explícito pero usada para confirmar que las 3 leyes son casos particulares de la misma
+//     ecuación general): constante combinada del estado de referencia
+//     (P0_REF*V0_REF)/T0_REF = (100*2.0)/300 = 200/300 = 0.6666... ≈ 0.6667 kPa·L/K.
+//     Esta es la cifra que debe mostrarse en SUMMARY (Interface/Publisher), no recalculada
+//     aquí con otros valores.
+
+// GasParticles.js
+// Cinemática simplificada de las partículas de gas dentro del cilindro/tanque de
+// "Gases Ideales: El Laboratorio de Presión". Calcula posición y jitter de cada
+// partícula para que el Artist las dibuje — este módulo NO dibuja nada.
+//
+// Modelo cualitativo, declarado "no a escala real" (la velocidad real de moléculas
+// de gas es del orden de cientos de m/s; acá la velocidad de jitter es solo una señal
+// visual de "más caliente = más agitado", proporcional a √T_K).
+//
+// Bloque JS plano. SIN import/export ES6 (se carga vía <script> directo en
+// el HTML autocontenido del juego, igual que el resto de módulos del portal).
+//
+// Depende de KELVIN_OFFSET, V0_REF y toKelvin definidos en GasEngine.js (mismo
+// <script> concatenado por el Publisher) — no redefine esas constantes.
+
+const N_PARTICULAS = 16;          // cantidad fija de partículas de gas a dibujar
+const JITTER_BASE = 0.012;        // unidades normalizadas/seg en T0_REF=300K — escala visual de referencia
+const JITTER_REF_SQRT_TK = Math.sqrt(300); // √T0_REF, usado para normalizar el jitter a la referencia
+
+// Estado interno de cada partícula: posición normalizada [0,1]x[0,1] dentro del
+// volumen ocupado, más una fase aleatoria para que el jitter no se vea sincronizado.
+let particulas = [];
+
+// Crea las N_PARTICULAS con posiciones iniciales distribuidas pseudo-aleatoriamente
+// pero deterministas en su semilla de fase (no en su posición, que sí es random),
+// dentro del volumen ocupado inicial (rango completo [0,1] en x e y).
+function resetParticles() {
+  particulas = [];
+  for (let i = 0; i < N_PARTICULAS; i++) {
+    particulas.push({
+      x: Math.random(),          // posición normalizada [0,1] dentro del rango ocupado en x
+      y: Math.random(),          // posición normalizada [0,1] dentro del rango ocupado en y
+      fase: Math.random() * Math.PI * 2, // rad, desfasaje individual del jitter (look orgánico)
+      dirX: Math.random() < 0.5 ? -1 : 1, // sentido inicial del jitter en x
+      dirY: Math.random() < 0.5 ? -1 : 1, // sentido inicial del jitter en y
+    });
+  }
+  return particulas;
+}
+
+// Calcula la magnitud de jitter (velocidad de agitación, unidades normalizadas/seg)
+// proporcional a sqrt(T_K), normalizada contra la referencia T0_REF=300K de modo que
+// a T_K=300 el jitter sea exactamente JITTER_BASE.
+// Cualitativo y declarado "no a escala" — ver nota de simplificación del game-spec.
+function computeJitterSpeed(T_K) {
+  return JITTER_BASE * (Math.sqrt(T_K) / JITTER_REF_SQRT_TK); // unidades normalizadas/seg
+}
+
+// Calcula el rango ocupado en x (fracción normalizada [xMin,xMax] dentro de [0,1])
+// a partir del volumen actual relativo al volumen de referencia V0_REF.
+// volumenRelativo = V_actual / V0_REF. Un volumenRelativo menor a 1 comprime el rango
+// (las partículas quedan más juntas, más cerca del lado izquierdo del pistón);
+// mayor a 1 lo expande. Se clampea a [0.08, 1.0] para que nunca colapse a un punto
+// ni se salga del cilindro/tanque dibujado.
+function computeOccupiedRangeX(volumenRelativo) {
+  const frac = Math.max(0.08, Math.min(1.0, volumenRelativo));
+  return { xMin: 0, xMax: frac };
+}
+
+// Actualiza la posición y fase de jitter de todas las partículas un paso dt (s).
+//
+// estadoActual: {
+//   T_C            : number   — temperatura actual en °C (variable libre en Charles/Gay-Lussac,
+//                                fija en Boyle: siempre 27°C en este juego)
+//   volumenRelativo: number   — V_actual / V0_REF (1.0 = volumen de referencia, sin cambios).
+//                                Boyle: cambia con el slider de V. Charles: cambia con V
+//                                calculado a partir de T. Gay-Lussac: SIEMPRE 1.0 (tanque rígido,
+//                                el volumen ocupado nunca cambia, solo el jitter).
+// }
+//
+// Reglas del brief:
+// - Boyle (V cambia, T fija): el rango ocupado en x se contrae/expande con volumenRelativo,
+//   pero el jitter NO cambia (T constante a lo largo de todo el capítulo) — misma agitación,
+//   distinta densidad de partículas en el espacio.
+// - Charles (T cambia): el jitter cambia con T Y el rango ocupado también cambia (V calculado
+//   a partir de T, pistón libre).
+// - Gay-Lussac (T cambia): el jitter cambia con T pero el rango ocupado NUNCA cambia
+//   (volumenRelativo se pasa siempre en 1.0 — tanque rígido sellado).
+function updateParticles(dt, estadoActual) {
+  const T_K = toKelvin(estadoActual.T_C);              // K — conversión vía GasEngine.toKelvin
+  const jitterSpeed = computeJitterSpeed(T_K);          // unidades normalizadas/seg
+  const rango = computeOccupiedRangeX(estadoActual.volumenRelativo); // {xMin, xMax} en x
+
+  for (let i = 0; i < particulas.length; i++) {
+    const p = particulas[i];
+
+    // Jitter: paso aleatorio pequeño escalado por jitterSpeed y dt, con fase individual
+    // para que cada partícula se mueva con un patrón ligeramente distinto (look orgánico,
+    // no sincronizado). Si la magnitud de paso supera un umbral se invierte el sentido,
+    // simulando un "rebote" contra paredes vecinas sin física de colisión real.
+    p.fase += dt * (2 + i * 0.05); // rad — avance de fase, distinto por partícula
+    const pasoX = jitterSpeed * dt * Math.sin(p.fase) * p.dirX;
+    const pasoY = jitterSpeed * dt * Math.cos(p.fase * 1.3) * p.dirY;
+
+    p.x += pasoX;
+    p.y += pasoY;
+
+    // Rebote contra los bordes del rango ocupado actual (en x) y del volumen (en y,
+    // siempre [0,1] — el alto del cilindro/tanque no cambia en ningún capítulo).
+    if (p.x < rango.xMin) { p.x = rango.xMin; p.dirX *= -1; }
+    if (p.x > rango.xMax) { p.x = rango.xMax; p.dirX *= -1; }
+    if (p.y < 0) { p.y = 0; p.dirY *= -1; }
+    if (p.y > 1) { p.y = 1; p.dirY *= -1; }
+  }
+
+  return particulas;
+}
+
+// ---------------------------------------------------------------------------
+// CASOS DE PRUEBA VERIFICADOS A MANO (gases-ideales/briefs/physicist-brief.md)
+// ---------------------------------------------------------------------------
+//
+// 1) Jitter en el estado de referencia (T0_REF=300K, es decir T_C=27°C, Boyle inicial):
+//    T_K = toKelvin(27) = 27+273 = 300 K
+//    computeJitterSpeed(300) = JITTER_BASE * (sqrt(300)/sqrt(300)) = JITTER_BASE * 1 = JITTER_BASE
+//    → jitter exactamente igual a la base de referencia cuando T=300K. OK por construcción.
+//
+// 2) Boyle, ronda 1 (V_correcto=1.0 L, T fija=300K en todo el capítulo):
+//    volumenRelativo = 1.0/V0_REF = 1.0/2.0 = 0.5 → computeOccupiedRangeX(0.5) = {xMin:0, xMax:0.5}
+//    (rango comprimido a la mitad respecto al inicial, partículas más juntas).
+//    jitterSpeed sigue siendo computeJitterSpeed(300) = JITTER_BASE, IGUAL que antes de mover
+//    el pistón, porque T no cambió — confirma la regla del brief: "mismo jitter, distinta
+//    densidad" en Boyle. OK.
+//
+// 3) Boyle, ronda 3 (V_correcto=0.5 L):
+//    volumenRelativo = 0.5/2.0 = 0.25 → computeOccupiedRangeX(0.25) = {xMin:0, xMax:0.25}
+//    (rango aún más comprimido, gas muy denso). jitterSpeed sin cambios (T=300K constante). OK.
+//
+// 4) Charles, ronda 3 (T_correcto=267°C=540K, V_objetivo=3.6L):
+//    T_K = toKelvin(267) = 540 K
+//    computeJitterSpeed(540) = JITTER_BASE*(sqrt(540)/sqrt(300)) = JITTER_BASE*(23.237.../17.320...)
+//      = JITTER_BASE * 1.3416... ≈ JITTER_BASE*1.342 → jitter ~34% mayor que en la referencia
+//      (gas más agitado al calentar). volumenRelativo = 3.6/2.0 = 1.8 →
+//      computeOccupiedRangeX(1.8) = clamp a 1.0 → {xMin:0, xMax:1.0} (rango ocupa todo el ancho
+//      dibujable del cilindro — V por encima del de referencia, pistón empujado al máximo
+//      visual permitido). Ambos cambian con T, como exige el brief para Charles. OK.
+//
+// 5) Charles, ronda 2 (T_correcto=-33°C=240K, V_objetivo=1.6L):
+//    computeJitterSpeed(240) = JITTER_BASE*(sqrt(240)/sqrt(300)) = JITTER_BASE*(15.491.../17.320...)
+//      = JITTER_BASE*0.8944... ≈ JITTER_BASE*0.894 → jitter menor que la referencia (gas frío,
+//      menos agitado, consistente con el gradiente de color frío del brief del Artist).
+//    volumenRelativo = 1.6/2.0 = 0.8 → computeOccupiedRangeX(0.8) = {xMin:0, xMax:0.8}. OK.
+//
+// 6) Gay-Lussac, ronda 3 (T_correcto=297°C=570K): volumenRelativo se pasa SIEMPRE en 1.0
+//    (tanque rígido, V no puede cambiar nunca, ni siquiera visualmente) →
+//    computeOccupiedRangeX(1.0) = {xMin:0, xMax:1.0} — rango idéntico en las 3 rondas del
+//    capítulo, solo cambia jitterSpeed:
+//    computeJitterSpeed(570) = JITTER_BASE*(sqrt(570)/sqrt(300)) = JITTER_BASE*(23.874.../17.320...)
+//      = JITTER_BASE*1.3784... ≈ JITTER_BASE*1.378 → partículas visiblemente más agitadas que
+//      en la referencia, pero el rango en x nunca se mueve. Confirma la regla del brief:
+//      "el rango ocupado NUNCA cambia (tanque rígido) — solo cambia el jitter". OK.
+//
+// 7) Límite de clamp inferior de computeOccupiedRangeX: un volumenRelativo extremo, por ejemplo
+//    0.3/2.0 = 0.15 (cerca del mínimo de slider de Boyle, V=0.3L) →
+//    computeOccupiedRangeX(0.15) = max(0.08, min(1.0, 0.15)) = 0.15 (no llega a clampear,
+//    0.15 > 0.08). Con un V hipotético aún menor, p.ej. volumenRelativo=0.03 →
+//    computeOccupiedRangeX(0.03) = max(0.08, 0.03) = 0.08 → el clamp evita que las 16
+//    partículas colapsen visualmente en una franja de ancho cero. OK, clamp verificado.
+
+// Drawing.js — Gases Ideales: El Laboratorio de Presión
+// Rol: Artist. Bloque JS plano, SIN import/export ES6 (se inlinea en el <script> final
+// del HTML autocontenido, igual que el resto de módulos del portal: convención ya usada
+// en Hidrodinámica/Resonancia/Newton/MCU — HTML que abre con doble clic, file://, sin
+// servidor ni bundler).
+//
+// Todas las funciones son puras: reciben `ctx` y datos, no leen estado global de la FSM
+// ni del Physicist (excepto las constantes de layout/paleta definidas en este archivo).
+// El Publisher/HUD son responsables de pasarles los datos correctos (fraccionV, T en
+// °C, array de partículas, etc.) en cada frame.
+//
+// Estilo "Lab Moderno" plano ya establecido en el portal — NO pixel art, NO Stardew.
+// Paleta exacta de gases-ideales/briefs/artist-brief.md (no se inventan colores nuevos).
+
+// ---------------------------------------------------------------------------
+// 1) Layout fijo del aparato — cilindro (Boyle/Charles) y tanque (Gay-Lussac)
+//    comparten el MISMO rectángulo interior de gas, para que las partículas
+//    (calculadas por GasParticles del Physicist, normalizadas en [0,1]x[0,1])
+//    se dibujen siempre en el lugar correcto sin importar qué capítulo está activo.
+// ---------------------------------------------------------------------------
+const GAS_RECT = { x: 220, y: 150, w: 420, h: 160 }; // interior máximo de gas, px
+const CYL_CAP_X = 190;     // borde izquierdo del cilindro/tanque (tapa/extremo sellado)
+const CYL_WALL = 14;       // grosor de pared metálica dibujada arriba/abajo del rect interior
+const PISTON_HEAD_W = 26;  // ancho del cabezal del pistón (Boyle/Charles)
+const ROD_END_X = 760;     // extremo visible del vástago del pistón + manija
+
+// ---------------------------------------------------------------------------
+// 2) Paleta exacta (artist-brief.md)
+// ---------------------------------------------------------------------------
+const COLOR_METAL = { cuerpo: '#5c6b7a', sombra: '#3a4654', brillo: '#8a99a8' };
+const COLOR_GAUGE_FACE = '#f5f0e6';
+const COLOR_FLAME = { nucleo: '#ff8c42', borde: '#ffd166' };
+const COLOR_LIMITE_SEGURIDAD = '#ff1744'; // línea roja del manómetro de Gay-Lussac
+
+// Gradiente de temperatura del gas (frío -> templado -> cálido -> caliente).
+// Stops en °C con su color RGB — interpolación lineal entre stops, clampeada en los
+// extremos. T≤0°C usa el primer color, T≥250°C usa el último (artist-brief.md).
+const GAS_TEMP_STOPS = [
+  { c: 0, rgb: [91, 175, 214] },   // #5bafd6 frío
+  { c: 27, rgb: [170, 223, 247] }, // #aadff7 templado (estado de referencia, 27°C)
+  { c: 150, rgb: [255, 209, 102] }, // #ffd166 cálido
+  { c: 250, rgb: [255, 107, 107] }, // #ff6b6b caliente
+];
+
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+
+function rgbToHex([r, g, b]) {
+  return '#' + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+}
+
+// Color del gas/partículas según temperatura actual en °C. Usar la MISMA función para
+// las partículas y para el tinte de fondo del cilindro/tanque (artist-brief.md).
+function gasColorForTemperature(tCelsius) {
+  const stops = GAS_TEMP_STOPS;
+  if (tCelsius <= stops[0].c) return rgbToHex(stops[0].rgb);
+  if (tCelsius >= stops[stops.length - 1].c) return rgbToHex(stops[stops.length - 1].rgb);
+  for (let i = 0; i < stops.length - 1; i++) {
+    const a = stops[i], b = stops[i + 1];
+    if (tCelsius >= a.c && tCelsius <= b.c) {
+      const t = (tCelsius - a.c) / (b.c - a.c);
+      const rgb = [0, 1, 2].map((k) => a.rgb[k] + (b.rgb[k] - a.rgb[k]) * t);
+      return rgbToHex(rgb);
+    }
+  }
+  return rgbToHex(stops[stops.length - 1].rgb);
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// ---------------------------------------------------------------------------
+// 3) Decoraciones internas (no forman parte de la lista de 7 funciones del brief,
+//    pero las usa drawCylinder para diferenciar Boyle/Charles sin romper su firma).
+// ---------------------------------------------------------------------------
+function drawFixedThermometerIcon(ctx, x, y) {
+  // Termómetro con mercurio fijo a media escala + candado: comunica "T constante"
+  // en el capítulo de Boyle, sin que el dibujo cambie nunca entre rondas.
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = '#1c2733';
+  roundRect(ctx, 0, 0, 10, 40, 4); ctx.fill();
+  ctx.beginPath(); ctx.arc(5, 44, 8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#aadff7'; // templado fijo (27°C de referencia, nunca cambia)
+  roundRect(ctx, 2, 20, 6, 20, 3); ctx.fill();
+  ctx.beginPath(); ctx.arc(5, 44, 5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(5, -6, 5, Math.PI, 0); ctx.stroke();
+  ctx.fillStyle = '#ffd166'; ctx.fillRect(0, -6, 10, 8);
+  ctx.restore();
+}
+
+function drawBurnerStand(ctx, x, y) {
+  // Soporte/trípode del mechero, debajo del cilindro en Charles. La llama en sí la
+  // dibuja drawFlame por separado (HUD/Publisher decide cuándo mostrarla).
+  ctx.save();
+  ctx.strokeStyle = COLOR_METAL.sombra; ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(x - 18, y + 26); ctx.lineTo(x, y);
+  ctx.moveTo(x + 18, y + 26); ctx.lineTo(x, y);
+  ctx.moveTo(x, y); ctx.lineTo(x, y + 30);
+  ctx.stroke();
+  ctx.fillStyle = COLOR_METAL.cuerpo;
+  ctx.fillRect(x - 14, y - 4, 28, 6);
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// 4) Las 7 funciones del artist-brief.md
+// ---------------------------------------------------------------------------
+
+// Cilindro con pistón móvil (Boyle y Charles). fraccionV en [0,1]: 0 = pistón al
+// mínimo (gas muy comprimido, casi tocando la tapa), 1 = pistón al máximo (gas
+// ocupa todo el largo dibujable). El caller debe pasar la MISMA fracción clampeada
+// que usó para `volumenRelativo` en GasParticles, así el borde visible del gas
+// coincide con la posición del cabezal del pistón.
+function drawCylinder(ctx, fraccionV, capituloClave) {
+  const frac = clamp01(fraccionV);
+  const r = GAS_RECT;
+  ctx.save();
+
+  const wallGrad = ctx.createLinearGradient(0, r.y - CYL_WALL, 0, r.y + r.h + CYL_WALL);
+  wallGrad.addColorStop(0, COLOR_METAL.brillo);
+  wallGrad.addColorStop(0.5, COLOR_METAL.cuerpo);
+  wallGrad.addColorStop(1, COLOR_METAL.sombra);
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(CYL_CAP_X, r.y - CYL_WALL, ROD_END_X - CYL_CAP_X, r.h + CYL_WALL * 2);
+
+  // Tapa cerrada (extremo izquierdo, sellada: el gas nunca escapa por ahí)
+  ctx.fillStyle = COLOR_METAL.sombra;
+  ctx.fillRect(CYL_CAP_X - 10, r.y - CYL_WALL - 6, 14, r.h + CYL_WALL * 2 + 12);
+
+  // Interior visible (recorte oscuro de base; el tinte térmico real lo pone
+  // drawGasParticles con su propio color de fondo sutil si el caller lo desea)
+  ctx.fillStyle = 'rgba(10,22,40,0.55)';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+
+  // Pistón: cabezal + vástago + manija
+  const pistonX = r.x + r.w * frac;
+  ctx.fillStyle = COLOR_METAL.sombra;
+  ctx.fillRect(pistonX + PISTON_HEAD_W, r.y + r.h / 2 - 6, Math.max(0, ROD_END_X - (pistonX + PISTON_HEAD_W) - 12), 12);
+
+  const headGrad = ctx.createLinearGradient(pistonX, r.y - CYL_WALL, pistonX, r.y + r.h + CYL_WALL);
+  headGrad.addColorStop(0, COLOR_METAL.brillo);
+  headGrad.addColorStop(1, COLOR_METAL.sombra);
+  ctx.fillStyle = headGrad;
+  ctx.fillRect(pistonX, r.y - CYL_WALL, PISTON_HEAD_W, r.h + CYL_WALL * 2);
+  ctx.strokeStyle = COLOR_METAL.sombra; ctx.lineWidth = 2;
+  ctx.strokeRect(pistonX, r.y - CYL_WALL, PISTON_HEAD_W, r.h + CYL_WALL * 2);
+
+  ctx.beginPath();
+  ctx.arc(ROD_END_X, r.y + r.h / 2, 10, 0, Math.PI * 2);
+  ctx.fillStyle = COLOR_METAL.cuerpo; ctx.fill();
+  ctx.strokeStyle = COLOR_METAL.sombra; ctx.lineWidth = 2; ctx.stroke();
+
+  // Diferenciación visual por capítulo (artist-brief.md)
+  if (capituloClave === 'boyle') drawFixedThermometerIcon(ctx, CYL_CAP_X - 4, r.y - CYL_WALL - 34);
+  if (capituloClave === 'charles') drawBurnerStand(ctx, r.x + r.w * 0.35, r.y + r.h + CYL_WALL);
+
+  ctx.restore();
+}
+
+// Tanque rígido sellado (Gay-Lussac): silueta más robusta, sin pistón, remaches y
+// válvula de seguridad pintada arriba. Debe leerse de inmediato como "esto no se
+// puede agrandar ni achicar".
+function drawSealedTank(ctx) {
+  const r = GAS_RECT;
+  const rightCapX = r.x + r.w + 30;
+  ctx.save();
+
+  const wallGrad = ctx.createLinearGradient(0, r.y - CYL_WALL - 6, 0, r.y + r.h + CYL_WALL + 6);
+  wallGrad.addColorStop(0, COLOR_METAL.brillo);
+  wallGrad.addColorStop(0.5, COLOR_METAL.cuerpo);
+  wallGrad.addColorStop(1, COLOR_METAL.sombra);
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(CYL_CAP_X, r.y - CYL_WALL - 6, rightCapX - CYL_CAP_X, r.h + (CYL_WALL + 6) * 2);
+
+  // Tapas redondeadas en AMBOS extremos (sellado, sin pistón ni vástago)
+  ctx.fillStyle = COLOR_METAL.sombra;
+  ctx.beginPath();
+  ctx.ellipse(CYL_CAP_X, r.y + r.h / 2, 14, r.h / 2 + CYL_WALL + 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(rightCapX, r.y + r.h / 2, 14, r.h / 2 + CYL_WALL + 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Remaches (silueta más "robusta" que el cilindro de pistón)
+  ctx.fillStyle = '#2a323c';
+  for (let i = 0; i < 7; i++) {
+    const rx = CYL_CAP_X + 30 + i * ((r.x + r.w - CYL_CAP_X - 30) / 6);
+    ctx.beginPath(); ctx.arc(rx, r.y - CYL_WALL - 2, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(rx, r.y + r.h + CYL_WALL + 2, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Interior visible
+  ctx.fillStyle = 'rgba(10,22,40,0.55)';
+  ctx.fillRect(r.x, r.y, r.w, r.h);
+
+  // Válvula de seguridad pintada (decorativa, fija) arriba al centro
+  ctx.fillStyle = COLOR_METAL.sombra;
+  ctx.fillRect(r.x + r.w * 0.5 - 8, r.y - CYL_WALL - 22, 16, 16);
+  ctx.fillStyle = '#ff6b6b';
+  ctx.beginPath();
+  ctx.moveTo(r.x + r.w * 0.5, r.y - CYL_WALL - 22);
+  ctx.lineTo(r.x + r.w * 0.5 - 6, r.y - CYL_WALL - 30);
+  ctx.lineTo(r.x + r.w * 0.5 + 6, r.y - CYL_WALL - 30);
+  ctx.closePath(); ctx.fill();
+
+  ctx.restore();
+}
+
+// Partículas de gas (vienen de GasParticles.updateParticles del Physicist, ya
+// normalizadas en [0,1]x[0,1] dentro del rango ocupado). colorGas: usar
+// gasColorForTemperature(T_actual_en_C) calculado por el caller (HUD/Publisher).
+function drawGasParticles(ctx, particles, colorGas) {
+  const r = GAS_RECT;
+  ctx.save();
+  ctx.fillStyle = colorGas;
+  ctx.shadowColor = colorGas;
+  ctx.shadowBlur = 4;
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    const px = r.x + clamp01(p.x) * r.w;
+    const py = r.y + clamp01(p.y) * r.h;
+    ctx.beginPath();
+    ctx.arc(px, py, 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Manómetro circular reutilizable (Boyle: limiteSeguridad=undefined; Gay-Lussac:
+// limiteSeguridad=200, dibuja SIEMPRE la línea roja de límite, incluso en SETUP).
+// x,y = centro del dial. Pensado para un canvas pequeño (~90x90), radio fijo 34px.
+function drawPressureGauge(ctx, x, y, label, presionKPa, presionMax, limiteSeguridad) {
+  const radius = 34;
+  ctx.save();
+
+  ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = COLOR_GAUGE_FACE; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = COLOR_METAL.sombra; ctx.stroke();
+
+  // Arco de zonas verde->ámbar->rojo (270° de recorrido, empieza a 135°)
+  const startAngle = Math.PI * 0.75;
+  const sweep = Math.PI * 1.5;
+  const zonas = [
+    { frac: 0.5, color: '#81c784' },
+    { frac: 0.3, color: '#ffd166' },
+    { frac: 0.2, color: '#ff6b6b' },
+  ];
+  let acumulado = 0;
+  zonas.forEach((z) => {
+    ctx.beginPath();
+    ctx.arc(x, y, radius - 6, startAngle + sweep * acumulado, startAngle + sweep * (acumulado + z.frac));
+    ctx.lineWidth = 6; ctx.strokeStyle = z.color; ctx.stroke();
+    acumulado += z.frac;
+  });
+
+  // Línea de límite de seguridad — SIEMPRE visible si se pasa el parámetro (Gay-Lussac)
+  if (limiteSeguridad !== undefined) {
+    const fracLim = clamp01(limiteSeguridad / presionMax);
+    const angLim = startAngle + sweep * fracLim;
+    ctx.beginPath();
+    ctx.moveTo(x + Math.cos(angLim) * (radius - 14), y + Math.sin(angLim) * (radius - 14));
+    ctx.lineTo(x + Math.cos(angLim) * (radius + 2), y + Math.sin(angLim) * (radius + 2));
+    ctx.lineWidth = 3; ctx.strokeStyle = COLOR_LIMITE_SEGURIDAD; ctx.stroke();
+  }
+
+  // Aguja
+  const fracVal = clamp01(presionKPa / presionMax);
+  const angVal = startAngle + sweep * fracVal;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + Math.cos(angVal) * (radius - 10), y + Math.sin(angVal) * (radius - 10));
+  ctx.lineWidth = 3; ctx.strokeStyle = '#ff6b6b'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fillStyle = COLOR_METAL.sombra; ctx.fill();
+
+  ctx.fillStyle = '#0a1628';
+  ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(label, x, y + radius - 6);
+  ctx.font = '9px sans-serif';
+  ctx.fillText(`${Math.round(presionKPa)} kPa`, x, y - radius + 16);
+  if (limiteSeguridad !== undefined) {
+    ctx.fillStyle = COLOR_LIMITE_SEGURIDAD; ctx.font = 'bold 8px sans-serif';
+    ctx.fillText(`LÍMITE ${limiteSeguridad}`, x, y + radius + 12);
+  }
+  ctx.restore();
+}
+
+// Regla/escala vertical de volumen (Charles — donde la variable de interés es V,
+// no P). x,y = esquina superior izquierda de la regla.
+function drawVolumeRuler(ctx, x, y, volumenL, volumenMax) {
+  const w = 30, h = 140;
+  ctx.save();
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = COLOR_METAL.sombra; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, h);
+
+  const frac = clamp01(volumenL / volumenMax);
+  const fillH = Math.max(0, h * frac - 6);
+  const grad = ctx.createLinearGradient(0, y + h - fillH, 0, y + h);
+  grad.addColorStop(0, '#aadff7'); grad.addColorStop(1, '#64b5f6');
+  ctx.fillStyle = grad;
+  ctx.fillRect(x + 3, y + h - fillH - 3, w - 6, fillH);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const ty = y + h * (i / 4);
+    ctx.beginPath(); ctx.moveTo(x, ty); ctx.lineTo(x + w, ty); ctx.stroke();
+  }
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#9ac'; ctx.font = '9px sans-serif';
+  ctx.fillText(`${volumenMax.toFixed(1)} L`, x + w + 4, y + 6);
+  ctx.fillText('0 L', x + w + 4, y + h);
+  ctx.fillStyle = '#64b5f6'; ctx.font = 'bold 10px sans-serif';
+  ctx.fillText(`${volumenL.toFixed(2)} L`, x + w + 4, Math.max(y + 10, y + h - fillH));
+  ctx.restore();
+}
+
+// Llama animada del mechero (Charles/Gay-Lussac al calentar). intensidad en [0,1]
+// solo afecta tamaño/color, no la física — el caller decide cuándo mostrarla
+// (RUNNING con T_objetivo > T_actual) y dónde (x,y debajo del aparato correspondiente).
+function drawFlame(ctx, x, y, intensidad) {
+  const t = clamp01(intensidad);
+  if (t <= 0) return;
+  const wobble = Math.sin(performance.now() / 180) * 3 * t;
+  const h = 18 + 28 * t;
+  ctx.save();
+  ctx.translate(x + wobble, y);
+  const grad = ctx.createLinearGradient(0, 0, 0, -h);
+  grad.addColorStop(0, COLOR_FLAME.borde);
+  grad.addColorStop(1, COLOR_FLAME.nucleo);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(9 * t, -h * 0.5, 0, -h);
+  ctx.quadraticCurveTo(-9 * t, -h * 0.5, 0, 0);
+  ctx.fill();
+  ctx.restore();
+}
+
+// Ruptura/explosión del tanque (SOLO Gay-Lussac, cuando exploto:true). t en [0,1]
+// recorre la animación completa (~0.8s dentro de los ANIMATION_DURATION_MS de
+// RUNNING/RESULT). Dramático pero no gráfico: grieta + fragmentos metálicos, sin
+// elementos humanos, tono coherente con el resto del portal.
+function drawTankExplosion(ctx, x, y, t) {
+  const f = clamp01(t);
+  ctx.save();
+
+  if (f < 0.3) {
+    ctx.fillStyle = `rgba(255,209,102,${0.6 * (1 - f / 0.3)})`;
+    ctx.beginPath(); ctx.arc(x, y, 80, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.strokeStyle = '#0a1628'; ctx.lineWidth = 3;
+  const crackLen = 10 + 70 * Math.min(f / 0.5, 1);
+  for (let i = 0; i < 5; i++) {
+    const ang = (i / 5) * Math.PI * 2 + f * 0.6;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x + Math.cos(ang) * crackLen, y + Math.sin(ang) * crackLen);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = COLOR_METAL.cuerpo;
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    const dist = f * 60;
+    const fx = x + Math.cos(ang) * dist;
+    const fy = y + Math.sin(ang) * dist - f * 30;
+    ctx.globalAlpha = 1 - f;
+    ctx.fillRect(fx - 3, fy - 3, 6, 6);
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------------------
+// CASOS DE VERIFICACIÓN MANUAL (consistencia geométrica/paleta, no hay física acá)
+// ---------------------------------------------------------------------------
+// 1) gasColorForTemperature(27) debe dar exactamente '#aadff7' (estado de referencia,
+//    coincide con el 2º stop sin interpolar): t=(27-27)/(150-27)=0 → rgb=[170,223,247]
+//    → '#aadff7'. OK.
+// 2) gasColorForTemperature(-50) clampea al primer stop → '#5bafd6' (frío). OK.
+// 3) gasColorForTemperature(300) clampea al último stop → '#ff6b6b' (caliente). OK.
+// 4) drawCylinder(ctx, 1.0, 'boyle') → pistonX = GAS_RECT.x + GAS_RECT.w*1.0 = 220+420 = 640,
+//    dentro del rango dibujable (ROD_END_X=760 deja 120px de vástago visible). OK, no se sale.
+// 5) drawCylinder(ctx, 0.08, 'boyle') (mínimo clamp de GasParticles) → pistonX = 220+420*0.08
+//    = 220+33.6 = 253.6, todavía a la derecha de CYL_CAP_X=190 con margen — el pistón nunca
+//    choca contra la tapa. OK, consistente con el clamp [0.08,1.0] de computeOccupiedRangeX.
+
+// GameFSM.js — Gases Ideales: El Laboratorio de Presión
+// Patrón: html-patterns-state (FSM con Map de estados + onEnter/onExit/onUpdate).
+// SIN import/export ES6 — bloque plano para inlinear en el <script> final.
+//
+// Estados (contrato-comun.md / architect-brief.md): INTRO, SETUP, RUNNING, RESULT,
+// CHAPTER_END, SUMMARY. Esta FSM tiene más estados que los juegos anteriores del
+// portal porque hay 3 "capítulos" (Boyle, Charles, Gay-Lussac) de 3 rondas cada uno:
+//
+//   INTRO         --"Empezar"-->                                  SETUP(1, 1)
+//   SETUP(cap, r) --ACTION_TRIGGERED-->                            RUNNING
+//   RUNNING       --timer ANIMATION_DURATION_MS termina-->         RESULT (emite ROUND_RESOLVED)
+//   RESULT        --NEXT_ROUND_REQUESTED-->
+//                     si ronda < 3   -> SETUP(capituloActual, ronda+1)
+//                     si ronda === 3 -> emite CHAPTER_END_REACHED, va a CHAPTER_END
+//   CHAPTER_END   --NEXT_CHAPTER_REQUESTED-->
+//                     si capituloId < 3   -> SETUP(capituloId+1, 1)
+//                     si capituloId === 3 -> emite GAME_SUMMARY_READY, va a SUMMARY
+//   SUMMARY       --"Jugar de nuevo"--> restart() -> SETUP(1, 1)
+//
+// IMPORTANTE: este archivo NO calcula física. Para resolver una ronda (valorLogrado,
+// categoria, error, sobra, exploto) delega en las funciones/datos globales planos que
+// define el Physicist con los nombres EXACTOS del contrato común (briefs/contrato-comun.md):
+//   CAPITULOS[capituloId-1]            → { id, clave, nombre, fija, variableLibre,
+//                                           unidadLibre, variableCalculada, unidadCalculada,
+//                                           sliderMin, sliderMax, sliderStep, sliderInicial,
+//                                           rondas: [{ronda, vCorrecto, objetivo}, ...],
+//                                           compute(valorLibre), limiteSeguridad? }
+//   resolveRoundOutcome(valorLogrado, objetivo, limiteSeguridad)
+//                                       → { error, categoria, sobra, exploto }
+// El GameFSM solo LEE estos símbolos (CAPITULOS[*].compute y resolveRoundOutcome), no
+// los redefine ni reimplementa el cálculo. Si no existen todavía en window cuando se
+// carga este archivo en el portal vacío, RUNNING._resolveRound() fallará — el
+// Publisher debe garantizar el orden de scripts (Physicist antes que GameFSM, o todo
+// en un único <script> en el orden EventBus -> [funciones físicas + CAPITULOS] ->
+// GameFSM -> ... -> bootstrap).
+
+// StateMachine genérica reutilizable (igual a la de html-patterns-state, sin imports).
+class StateMachine {
+  constructor(owner) {
+    this._owner = owner;
+    this._states = new Map();
+    this._current = null;
+  }
+
+  addState(name, { onEnter, onExit, onUpdate } = {}) {
+    this._states.set(name, { onEnter, onExit, onUpdate });
+    return this;
+  }
+
+  transition(nextName, payload) {
+    if (!this._states.has(nextName)) return;
+    if (this._current) {
+      this._states.get(this._current)?.onExit?.call(this._owner);
+    }
+    this._current = nextName;
+    this._states.get(nextName)?.onEnter?.call(this._owner, payload);
+  }
+
+  update(dt) {
+    if (!this._current) return;
+    this._states.get(this._current)?.onUpdate?.call(this._owner, dt);
+  }
+
+  get state() {
+    return this._current;
+  }
+
+  is(name) {
+    return this._current === name;
+  }
+}
+
+// GameFSM — estado + wiring de la partida completa (3 capítulos x 3 rondas + intro +
+// resumen final). No es la FSM de una entidad física puntual: es la FSM del juego.
+class GameFSM {
+  constructor({ eventBus, inputManager, capituloActual = 1, rondaActual = 1 } = {}) {
+    this.eventBus = eventBus || EventBus;
+    this.inputManager = inputManager || null;
+
+    // Estado de partida expuesto para que Interface/Artist lo lean (solo lectura
+    // desde afuera; el Architect es el único que lo muta). Interface lo necesita
+    // constantemente para el badge "Capítulo X/3 — Ronda Y/3" (architect-brief.md).
+    this.capituloActual = capituloActual;  // 1..3
+    this.rondaActual = rondaActual;        // 1..3 dentro del capítulo actual
+    this.capituloData = null;              // CAPITULOS[capituloActual-1]
+    this.rondaData = null;                 // capituloData.rondas[rondaActual-1]
+    this.valorLibreActual = 0;             // último valor leído del slider en SETUP
+    this.resultadoActual = null;           // payload de ROUND_RESOLVED de la ronda actual
+    this.resultados = [];                  // acumulado de las 9 rondas (para GAME_SUMMARY_READY)
+
+    // Hooks opcionales que Interface puede registrar (no son parte del contrato de
+    // 7 eventos, son llamadas directas de lectura, igual que onRoundChanged):
+    //   onActionButtonLabel(): string  → texto del botón primario en SETUP, depende
+    //                                     del capítulo/sentido del cambio (interface-brief.md).
+    //   onRoundChanged(): void         → notifica que SETUP cargó una ronda nueva.
+    //   onIntroEntered(): void         → notifica que la FSM (re)entró a INTRO (incluye
+    //                                     el "Jugar de nuevo" desde SUMMARY, que vuelve a
+    //                                     INTRO en vez de ir directo a SETUP). Agregado en
+    //                                     fase Publisher: sin este hook, la pantalla de
+    //                                     bienvenida no tenía forma de volver a mostrarse
+    //                                     tras un restart sin agregar un evento nuevo al
+    //                                     contrato común de 7 eventos.
+    this.onActionButtonLabel = null;
+    this.onRoundChanged = null;
+    this.onIntroEntered = null;
+
+    this._runningElapsedMs = 0; // acumulador del timer de animación de RUNNING
+
+    this.fsm = new StateMachine(this);
+    this._buildStates();
+    this._wireEvents();
+  }
+
+  _buildStates() {
+    this.fsm
+      .addState('INTRO', {
+        // INTRO no hace nada físico (architect-brief.md): solo espera el botón
+        // "Empezar". El GameLoop sigue corriendo para que Artist anime el estado de
+        // referencia común (100 kPa, 2.0 L, 300 K) en preview si quiere.
+        onEnter() {
+          this.capituloActual = 1;
+          this.rondaActual = 1;
+          this.resultados = [];
+          this.resultadoActual = null;
+          if (this.inputManager) {
+            this.inputManager.enableSlider(false);
+            this.inputManager.setActionButtonLabel('Empezar');
+            this.inputManager.enableActionButton(true);
+          }
+          if (typeof this.onIntroEntered === 'function') this.onIntroEntered();
+        },
+      })
+      .addState('SETUP', {
+        // SETUP(capituloId, ronda): carga CAPITULOS[capituloId-1].rondas[ronda-1],
+        // fija el slider de la variable libre con sliderMin/Max/Step de ESE CAPÍTULO
+        // (no cambia entre rondas de un mismo capítulo, solo entre capítulos) y
+        // resetea el panel de resultado oculto.
+        onEnter(payload) {
+          const capituloId = payload?.capituloId || this.capituloActual;
+          const ronda = payload?.ronda || this.rondaActual;
+          const capituloCambio = capituloId !== this.capituloActual || this.capituloData === null;
+
+          this.capituloActual = capituloId;
+          this.rondaActual = ronda;
+          this.capituloData = CAPITULOS[capituloId - 1];
+          this.rondaData = this.capituloData.rondas[ronda - 1];
+          this.resultadoActual = null;
+
+          if (this.inputManager) {
+            // El rango del slider SOLO se recalcula al cambiar de capítulo (regla
+            // explícita del architect-brief.md): si seguimos en el mismo capítulo,
+            // no tocar min/max/step ni reiniciar el valor entre rondas.
+            if (capituloCambio) {
+              this.inputManager.setSliderRange({
+                min: this.capituloData.sliderMin,
+                max: this.capituloData.sliderMax,
+                step: this.capituloData.sliderStep,
+                value: this.capituloData.sliderInicial,
+              });
+              this.valorLibreActual = this.capituloData.sliderInicial;
+            } else if (this.inputManager.getValor) {
+              this.valorLibreActual = this.inputManager.getValor();
+            }
+            this.inputManager.enableSlider(true);
+            // El TEXTO del botón primario ("Mover pistón" / "Encender mechero" /
+            // "Calentar tanque") es decisión de Interface (interface-brief.md, punto 6),
+            // no del Architect. Si Interface registró this.onActionButtonLabel, se usa
+            // ese label; si no, se cae a un genérico neutro para no dejar el botón sin texto.
+            const label = typeof this.onActionButtonLabel === 'function'
+              ? this.onActionButtonLabel()
+              : 'Iniciar experimento';
+            this.inputManager.setActionButtonLabel(label);
+            this.inputManager.enableActionButton(true);
+          }
+
+          // Hook opcional para que Interface/Publisher refresquen el HUD al entrar a
+          // una ronda nueva (no agrega un evento nuevo al contrato común).
+          if (typeof this.onRoundChanged === 'function') this.onRoundChanged();
+        },
+        onExit() {
+          if (this.inputManager) this.inputManager.enableSlider(false);
+        },
+      })
+      .addState('RUNNING', {
+        // Arranca el timer de ANIMATION_DURATION_MS; al terminar resuelve la ronda y
+        // transiciona a RESULT. Lección de Tiro Libre (lessons-learned.md): bloquear
+        // el parámetro físico apenas arranca la simulación.
+        onEnter() {
+          this._runningElapsedMs = 0;
+          if (this.inputManager) {
+            this.inputManager.enableSlider(false);
+            this.inputManager.enableActionButton(false);
+          }
+        },
+        onUpdate(dt) {
+          this._runningElapsedMs += dt * 1000;
+          if (this._runningElapsedMs >= ANIMATION_DURATION_MS) {
+            this._resolveRound();
+            this.fsm.transition('RESULT');
+          }
+        },
+      })
+      .addState('RESULT', {
+        // Espera NEXT_ROUND_REQUESTED: si ronda<3 vuelve a SETUP(capituloId, ronda+1);
+        // si ronda===3 emite CHAPTER_END_REACHED y va a CHAPTER_END (ver _wireEvents).
+        onEnter() {
+          if (this.inputManager) {
+            this.inputManager.setActionButtonLabel(
+              this.rondaActual === 3 ? 'Ver síntesis final' : 'Siguiente ronda'
+            );
+            this.inputManager.enableActionButton(true);
+          }
+        },
+      })
+      .addState('CHAPTER_END', {
+        // Mini-resumen del capítulo recién cerrado. Espera NEXT_CHAPTER_REQUESTED:
+        // si capituloId<3 vuelve a SETUP(capituloId+1, 1); si capituloId===3 emite
+        // GAME_SUMMARY_READY y va a SUMMARY (ver _wireEvents).
+        onEnter() {
+          if (this.inputManager) {
+            this.inputManager.enableSlider(false);
+            this.inputManager.setActionButtonLabel(
+              this.capituloActual === 3 ? 'Ver síntesis final' : 'Siguiente experimento'
+            );
+            this.inputManager.enableActionButton(true);
+          }
+        },
+      })
+      .addState('SUMMARY', {
+        // Tras CHAPTER_END del capítulo 3: emite GAME_SUMMARY_READY con los 9
+        // resultados acumulados y revela la ley general combinada P·V/T = cte.
+        onEnter() {
+          this.eventBus.emit(EVENTS.GAME_SUMMARY_READY, { resultados: this.resultados.slice() });
+          if (this.inputManager) {
+            this.inputManager.enableSlider(false);
+            this.inputManager.setActionButtonLabel('Jugar de nuevo');
+            this.inputManager.enableActionButton(true);
+          }
+        },
+      });
+  }
+
+  _wireEvents() {
+    this.eventBus.on(EVENTS.SLIDER_CHANGED, (payload) => {
+      if (!this.fsm.is('SETUP')) return; // el slider solo es válido en SETUP
+      // El Architect SOLO reenvía: no calcula el valor calculado (P o V según
+      // capítulo) acá, eso es 100% del Physicist/Interface escuchando este mismo
+      // SLIDER_CHANGED (regla explícita del architect-brief.md).
+      this.valorLibreActual = payload.valor;
+    });
+
+    this.eventBus.on(EVENTS.ACTION_TRIGGERED, () => {
+      if (this.fsm.is('INTRO')) {
+        this.fsm.transition('SETUP', { capituloId: 1, ronda: 1 });
+      } else if (this.fsm.is('SETUP')) {
+        this.fsm.transition('RUNNING');
+      }
+      // En RESULT/CHAPTER_END/SUMMARY el botón primario emite otros eventos
+      // (NEXT_ROUND_REQUESTED / NEXT_CHAPTER_REQUESTED / restart directo), no
+      // ACTION_TRIGGERED — responsabilidad del InputManager elegir el evento
+      // correcto según el estado actual (ver InputManager.js).
+    });
+
+    this.eventBus.on(EVENTS.NEXT_ROUND_REQUESTED, () => {
+      if (!this.fsm.is('RESULT')) return;
+      if (this.rondaActual < 3) {
+        this.fsm.transition('SETUP', { capituloId: this.capituloActual, ronda: this.rondaActual + 1 });
+      } else {
+        const capituloId = this.capituloActual;
+        this.eventBus.emit(EVENTS.CHAPTER_END_REACHED, { capituloId });
+        this.fsm.transition('CHAPTER_END');
+      }
+    });
+
+    this.eventBus.on(EVENTS.NEXT_CHAPTER_REQUESTED, () => {
+      if (!this.fsm.is('CHAPTER_END')) return;
+      if (this.capituloActual < 3) {
+        this.fsm.transition('SETUP', { capituloId: this.capituloActual + 1, ronda: 1 });
+      } else {
+        this.fsm.transition('SUMMARY');
+      }
+    });
+  }
+
+  _resolveRound() {
+    const capitulo = this.capituloData;
+    const ronda = this.rondaData;
+    const valorLibre = this.valorLibreActual;
+    const valorLogrado = capitulo.compute(valorLibre);
+    const { error, categoria, sobra, exploto } = resolveRoundOutcome(
+      valorLogrado,
+      ronda.objetivo,
+      capitulo.limiteSeguridad
+    );
+
+    const payload = {
+      capituloId: this.capituloActual,
+      ronda: this.rondaActual,
+      valorLibre,
+      valorLogrado,
+      objetivo: ronda.objetivo,
+      categoria,
+      error,
+      sobra,
+      exploto,
+    };
+    this.resultadoActual = payload;
+    this.resultados.push(payload);
+    this.eventBus.emit(EVENTS.ROUND_RESOLVED, payload);
+  }
+
+  // Reinicio completo para "Jugar de nuevo" desde SUMMARY.
+  restart() {
+    this.resultados = [];
+    this.resultadoActual = null;
+    this.fsm.transition('INTRO');
+  }
+
+  start() {
+    this.fsm.transition('INTRO');
+  }
+
+  update(dt) {
+    this.fsm.update(dt);
+  }
+
+  get state() {
+    return this.fsm.state;
+  }
+}
+
+// GameLoop.js — Gases Ideales: El Laboratorio de Presión
+// Patrón: html-systems-loop (requestAnimationFrame + acumulador + fixed timestep).
+// SIN import/export ES6 — bloque plano para inlinear en el <script> final (convención
+// del portal: HTML autocontenido que abre con doble clic, sin servidor ni bundler).
+//
+// Corre SIEMPRE, en cualquier estado de GameFSM (INTRO, SETUP, RUNNING, RESULT,
+// CHAPTER_END, SUMMARY) — architect-brief.md es explícito: "el gas nunca está
+// completamente estático, siempre tiene jitter mínimo". Las partículas de gas que
+// dibuja el Artist necesitan ese tick incluso cuando el jugador todavía no presionó
+// ningún botón (preview en INTRO, slider quieto en SETUP, paneles de resultado en
+// RESULT/CHAPTER_END/SUMMARY). Por eso GameFSM.update(dt) se llama desde
+// onFixedUpdate sin condicionar por estado — cada estado de la FSM decide internamente
+// si hace algo con ese dt (solo RUNNING cuenta el timer de ANIMATION_DURATION_MS; el
+// resto de los estados no avanzan lógica de partida, pero el loop sigue latiendo para
+// que Artist pueda animar jitter de partículas, llama del mechero, aguja del manómetro).
+//
+// Usa la constante global TARGET_FPS (=60, contrato-comun.md / game-spec.md) como
+// frecuencia por defecto del fixedUpdate.
+
+class GameLoop {
+  constructor({ fixedHz = TARGET_FPS, maxFrameTime = 0.1 } = {}) {
+    this.fixedDt = 1 / fixedHz;
+    this.maxFrame = maxFrameTime; // cap para evitar spiral of death
+    this.timeScale = 1.0;
+    this.paused = false;
+
+    this._accumulator = 0;
+    this._lastTime = 0;
+    this._rafId = null;
+
+    this.onFixedUpdate = null; // (dt: number) => void  — FSM/estado de partida, 60Hz fijo
+    this.onDraw = null; // (alpha: number) => void — rendering con interpolación (Artist)
+  }
+
+  start() {
+    const tick = (timestamp) => {
+      this._rafId = requestAnimationFrame(tick);
+      if (this.paused) return;
+
+      const rawDt = Math.min((timestamp - this._lastTime) / 1000, this.maxFrame);
+      this._lastTime = timestamp;
+      const scaledDt = rawDt * this.timeScale;
+      this._accumulator += scaledDt;
+
+      while (this._accumulator >= this.fixedDt) {
+        this.onFixedUpdate?.(this.fixedDt);
+        this._accumulator -= this.fixedDt;
+      }
+
+      const alpha = this._accumulator / this.fixedDt;
+      this.onDraw?.(alpha);
+    };
+    requestAnimationFrame((t) => {
+      this._lastTime = t;
+      requestAnimationFrame(tick);
+    });
+  }
+
+  stop() {
+    cancelAnimationFrame(this._rafId);
+  }
+
+  pause() {
+    this.paused = true;
+  }
+
+  resume() {
+    this.paused = false;
+  }
+
+  setTimeScale(scale) {
+    this.timeScale = Math.max(0, scale);
+  }
+}
+
+// InputManager.js — Gases Ideales: El Laboratorio de Presión
+// Patrón: html-systems-input (mínimo, sin teclado — este juego no lo necesita).
+// SIN import/export ES6 — bloque plano para inlinear en el <script> final.
+//
+// Controles del juego (architect-brief.md):
+//   - slider único (input[type=range]) cuyo SIGNIFICADO cambia de capítulo a
+//     capítulo: V en Boyle (L), T en °C en Charles y Gay-Lussac. SOLO habilitado
+//     durante SETUP — deshabilitado explícitamente al entrar a RUNNING (lección de
+//     Tiro Libre, lessons-learned.md: no dejar cambiar parámetros físicos a mitad
+//     de la simulación). El rango (min/max/step) y el valor inicial se recalculan
+//     SOLO al cambiar de capítulo, leyendo sliderMin/Max/Step/Inicial de
+//     CAPITULOS[capituloId-1] (contrato-comun.md, definido por el Physicist — este
+//     archivo NUNCA redefine esos números, solo los aplica al elemento DOM).
+//   - botón único de acción, cuyo label/efecto cambia según el estado de GameFSM:
+//       INTRO        -> "Empezar"                          -> emite ACTION_TRIGGERED
+//       SETUP        -> texto dinámico (decide Interface,
+//                        vía GameFSM.onActionButtonLabel)   -> emite ACTION_TRIGGERED
+//       RESULT       -> "Siguiente ronda" / "Ver síntesis
+//                        final"                             -> emite NEXT_ROUND_REQUESTED
+//       CHAPTER_END  -> "Siguiente experimento" / "Ver
+//                        síntesis final"                    -> emite NEXT_CHAPTER_REQUESTED
+//       SUMMARY      -> "Jugar de nuevo"                    -> llama gameFSM.restart()
+//
+// Nota de integración (igual a la de Hidrodinámica): "Jugar de nuevo" NO tiene
+// evento propio en contrato-comun.md (son 7 eventos documentados, ninguno es un
+// RESTART). Como el brief prohíbe agregar eventos sin avisar, el InputManager llama
+// directamente a gameFSM.restart() en SUMMARY en vez de inventar un evento nuevo.
+// RUNNING no tiene botón propio: el botón de acción está deshabilitado durante toda
+// la animación (ver GameFSM.RUNNING.onEnter).
+
+class InputManager {
+  constructor({ eventBus, sliderEl, actionButtonEl, gameFSM } = {}) {
+    this.eventBus = eventBus || EventBus;
+    this.sliderEl = sliderEl || null; // input[type=range] de la variable libre
+    this.actionButtonEl = actionButtonEl || null; // botón único de acción/avance
+    this.gameFSM = gameFSM || null; // referencia para leer this.gameFSM.state y restart()
+
+    this._sliderEnabled = false;
+    this._actionButtonEnabled = true;
+
+    this._bindSlider();
+    this._bindActionButton();
+  }
+
+  _bindSlider() {
+    if (!this.sliderEl) return;
+    this.sliderEl.addEventListener('input', () => {
+      if (!this._sliderEnabled) return; // ignorar input si está fuera de SETUP
+      const valor = parseFloat(this.sliderEl.value);
+      this.eventBus.emit(EVENTS.SLIDER_CHANGED, { valor });
+    });
+  }
+
+  _bindActionButton() {
+    if (!this.actionButtonEl) return;
+    this.actionButtonEl.addEventListener('click', () => {
+      if (!this._actionButtonEnabled) return;
+
+      const state = this.gameFSM ? this.gameFSM.state : null;
+      if (state === 'SUMMARY') {
+        this.gameFSM?.restart();
+        return;
+      }
+      if (state === 'RESULT') {
+        this.eventBus.emit(EVENTS.NEXT_ROUND_REQUESTED);
+        return;
+      }
+      if (state === 'CHAPTER_END') {
+        this.eventBus.emit(EVENTS.NEXT_CHAPTER_REQUESTED);
+        return;
+      }
+      // Por defecto (INTRO, SETUP, o sin FSM asociada todavía): disparar la acción
+      // primaria ("Empezar" en INTRO, "Mover pistón"/"Encender mechero"/"Calentar
+      // tanque" en SETUP). GameFSM decide la transición real según su estado actual.
+      this.eventBus.emit(EVENTS.ACTION_TRIGGERED);
+    });
+  }
+
+  // --- API usada por GameFSM para reflejar el estado en los controles ---
+
+  enableSlider(enabled) {
+    this._sliderEnabled = !!enabled;
+    if (this.sliderEl) this.sliderEl.disabled = !enabled;
+  }
+
+  setSliderRange({ min, max, step, value } = {}) {
+    if (!this.sliderEl) return;
+    if (min !== undefined) this.sliderEl.min = String(min);
+    if (max !== undefined) this.sliderEl.max = String(max);
+    if (step !== undefined) this.sliderEl.step = String(step);
+    if (value !== undefined) {
+      this.sliderEl.value = String(value);
+    } else {
+      // Reclampear si el valor actual quedó fuera del nuevo rango.
+      const current = parseFloat(this.sliderEl.value);
+      if (max !== undefined && current > max) this.sliderEl.value = String(max);
+      if (min !== undefined && current < min) this.sliderEl.value = String(min);
+    }
+  }
+
+  enableActionButton(enabled) {
+    this._actionButtonEnabled = !!enabled;
+    if (this.actionButtonEl) this.actionButtonEl.disabled = !enabled;
+  }
+
+  setActionButtonLabel(text) {
+    if (this.actionButtonEl) this.actionButtonEl.textContent = text;
+  }
+
+  getValor() {
+    return this.sliderEl ? parseFloat(this.sliderEl.value) : 0;
+  }
+}
+
+// HUD.js — Gases Ideales: El Laboratorio de Presión
+// Rol: Interface. Bloque JS plano, SIN import/export ES6 (se inlinea en el <script>
+// final del HTML autocontenido, igual que el resto de módulos del portal).
+//
+// Depende de símbolos globales ya definidos por otros agentes (deben cargarse ANTES
+// que este archivo en el <script> final):
+//   - EventBus, EVENTS                                              (core/EventBus.js)
+//   - CAPITULOS, resolveRoundOutcome, toKelvin, P0_REF, V0_REF,
+//     T0_REF, P_MAX_SEGURIDAD                                       (physics/GasEngine.js)
+//   - GameFSM (instancia), InputManager (instancia)                 (core/GameFSM.js, InputManager.js)
+//   - drawPressureGauge(ctx,x,y,label,presionKPa,presionMax,limite),
+//     drawVolumeRuler(ctx,x,y,volumenL,volumenMax)                  (visuals/Drawing.js —
+//     si todavía no existen en window, este HUD usa un fallback mínimo, ver
+//     HUD_renderGauge/HUD_renderRuler).
+//
+// Convención visual reusada del portal: clases .panel, .rrow, .val.yellow/.blue/
+// .red/.green/.amber, .nota (navy #0a1628, sky-blue #87ceeb, gold #ffd166).
+//
+// Particularidad de este juego respecto a Hidrodinámica/Resonancia: hay 3 "capítulos"
+// (Boyle/Charles/Gay-Lussac) con distinto significado de la variable libre del slider
+// y distinto tipo de medidor (manómetro vs regla de volumen) — todo el contenido del
+// panel se reconstruye dinámicamente en refreshDatosRonda() según
+// CAPITULOS[gameFSM.capituloActual-1].clave, en vez de tener filas fijas como en los
+// juegos de un solo fenómeno.
+
+// ---------------------------------------------------------------------------
+// 1) CSS
+// ---------------------------------------------------------------------------
+const HUD_CSS = `
+  .side-panel {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 18px; padding: 18px 16px; width: 100%; max-width: 380px;
+    backdrop-filter: blur(8px); color: #fff; font-family: 'Segoe UI', sans-serif;
+  }
+  .side-panel h1 { font-size: 1.15rem; color: #87ceeb; letter-spacing: .5px; margin-bottom: 4px; }
+  .side-panel .subtitle {
+    font-size: .78rem; color: #aac; margin-bottom: 10px;
+    background: rgba(0,0,0,0.35); padding: 4px 12px; border-radius: 20px; display: inline-block;
+  }
+  .side-panel .subtitle b { color: #ffd166; }
+
+  #round-badge {
+    display: inline-block; margin-bottom: 12px; padding: 3px 12px;
+    background: rgba(100,181,246,0.18); border: 1px solid rgba(100,181,246,0.4);
+    color: #64b5f6; font-weight: bold; font-size: .78rem; border-radius: 20px;
+  }
+
+  .panel { margin-bottom: 14px; }
+  .panel h2 {
+    font-size: .85rem; color: #87ceeb; margin-bottom: 9px;
+    border-bottom: 1px solid rgba(255,255,255,0.12); padding-bottom: 6px;
+  }
+  .panel-body { background: rgba(0,0,0,0.4); border-radius: 12px; padding: 10px 11px; }
+
+  .rrow {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: .82rem;
+  }
+  .rrow:last-child { border-bottom: none; }
+  .rrow .lbl { color: #9ac; }
+  .rrow .val { font-weight: bold; }
+  .rrow .val.yellow { color: #ffd166; }
+  .rrow .val.blue   { color: #64b5f6; }
+  .rrow .val.red    { color: #ff6b6b; }
+  .rrow .val.green  { color: #81c784; }
+  .rrow .val.amber  { color: #ffd166; }
+
+  .slider-wrap { margin: 4px 0 2px; }
+  .slider-label { display: flex; justify-content: space-between; font-size: .8rem; color: #ccc; margin-bottom: 5px; }
+  .slider-label .readout { color: #64b5f6; font-weight: bold; }
+  input[type=range]#slider-libre { width: 100%; accent-color: #64b5f6; cursor: pointer; }
+  input[type=range]#slider-libre:disabled { opacity: .4; cursor: not-allowed; }
+
+  .kelvin-readout {
+    margin-top: 6px; font-size: .76rem; color: #ffd166; text-align: center;
+    background: rgba(255,209,102,0.08); border: 1px dashed rgba(255,209,102,0.35);
+    border-radius: 8px; padding: 4px 6px;
+  }
+
+  .preview-box {
+    margin-top: 10px; background: rgba(100,181,246,0.08);
+    border: 1px dashed rgba(100,181,246,0.35); border-radius: 10px; padding: 8px 10px;
+  }
+  .preview-box .preview-title { font-size: .68rem; color: #7fb8e6; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+
+  .panel-gauges .gauges-row { display: flex; gap: 10px; justify-content: center; }
+  .gauge-slot, .ruler-slot { text-align: center; }
+  .gauge-slot canvas, .ruler-slot canvas { display: block; margin: 0 auto; }
+  .gauge-caption { font-size: .72rem; color: #9ac; margin-top: 4px; }
+
+  #btn-primary {
+    width: 100%; margin-top: 4px; padding: 11px 0; border: none; border-radius: 12px;
+    background: linear-gradient(180deg, #64b5f6, #3a8fd6); color: #fff;
+    font-size: .95rem; font-weight: bold; cursor: pointer;
+    box-shadow: 0 3px 10px rgba(100,181,246,0.35); transition: filter .15s, opacity .15s;
+  }
+  #btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+  #btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+
+  .panel-resultado { display: none; }
+  .panel-resultado.visible { display: block; }
+  .resultado-categoria { margin-top: 8px; padding: 9px 11px; border-radius: 10px; font-size: .82rem; font-weight: bold; text-align: center; }
+  .resultado-mensaje { margin-top: 4px; font-size: .76rem; font-weight: normal; text-align: left; line-height: 1.4; }
+  .resultado-formula {
+    margin-top: 9px; font-size: .76rem; color: #aac; background: rgba(0,0,0,0.35);
+    border-left: 3px solid #ffd166; padding: 6px 9px; border-radius: 0 8px 8px 0;
+    font-family: 'Consolas', monospace;
+  }
+
+  #intro-screen, #chapter-end-screen, #summary-screen, #round-content { display: none; }
+  #intro-screen.visible, #chapter-end-screen.visible, #summary-screen.visible, #round-content.visible { display: block; }
+
+  #intro-screen ol { margin: 8px 0 4px 18px; padding: 0; font-size: .85rem; line-height: 1.7; }
+  #intro-screen p { font-size: .85rem; line-height: 1.5; margin: 0 0 8px; }
+
+  .summary-table { width: 100%; border-collapse: collapse; font-size: .78rem; margin-top: 6px; }
+  .summary-table th, .summary-table td { padding: 5px 6px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .summary-table th { color: #87ceeb; font-size: .72rem; text-transform: uppercase; }
+  .summary-conclusion {
+    margin-top: 12px; background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.35);
+    border-radius: 10px; padding: 10px 11px; font-size: .8rem; color: #ffd166; line-height: 1.5;
+  }
+  .summary-conclusion b { color: #fff; }
+  .conclusion-item { margin-bottom: 8px; font-size: .8rem; line-height: 1.5; }
+  .conclusion-item b { color: #87ceeb; }
+
+  .nota { margin-top: 12px; font-size: .72rem; color: #8ab; line-height: 1.5; }
+  .nota b { color: #ffd166; }
+`;
+
+// ---------------------------------------------------------------------------
+// 2) Mensajes EXACTOS de las 4 categorías (game-spec.md) — incluye el override
+//    de explosión de Gay-Lussac (exploto:true), que pisa el mensaje genérico de rotura.
+// ---------------------------------------------------------------------------
+const CATEGORIA_INFO = {
+  optima: { color: '#81c784', claseVal: 'green', label: 'ÓPTIMA',
+    mensaje: 'Medición perfecta: el gas se comportó exactamente como predice la ley.' },
+  aceptable: { color: '#64b5f6', claseVal: 'blue', label: 'ACEPTABLE',
+    mensaje: 'Buena medición, dentro del margen de error de laboratorio.' },
+  forzada: { color: '#ffd166', claseVal: 'amber', label: 'FORZADA',
+    mensaje: { false: 'Te quedaste corto.', true: 'Te pasaste de la marca.' } },
+  rotura: { color: '#ff6b6b', claseVal: 'red', label: 'ROTURA',
+    mensaje: 'El resultado no se parece al esperado, revisá la fórmula.',
+    mensajeExploto: '¡El tanque no resistió la presión y explotó!' },
+};
+
+// Techo de escala del manómetro (kPa). 450 deja margen holgado sobre el objetivo
+// más alto de Boyle (400 kPa) y sobre el límite de seguridad de Gay-Lussac (200 kPa);
+// si el jugador fuerza el slider a un extremo que supere este techo, la aguja
+// simplemente queda clavada en el máximo (comportamiento normal de un manómetro real).
+const GAUGE_PRESION_MAX = 450;
+
+function HUD_getCategoriaMensaje(categoria, sobra, exploto) {
+  const info = CATEGORIA_INFO[categoria];
+  if (!info) return '';
+  if (categoria === 'rotura' && exploto) return info.mensajeExploto;
+  return typeof info.mensaje === 'string' ? info.mensaje : info.mensaje[String(!!sobra)];
+}
+
+// Conclusión de cierre de capítulo (interface-brief.md, punto 8) — un texto fijo
+// por ley, revela la proporcionalidad que el jugador acaba de descubrir jugando.
+const CONCLUSION_CAPITULO = {
+  boyle: 'A menor volumen, mayor presión: P y V son inversamente proporcionales <b>(P·V = constante)</b>.',
+  charles: 'A mayor temperatura, mayor volumen: V y T son directamente proporcionales <b>(V/T = constante)</b>.',
+  gaylussac: 'A mayor temperatura, mayor presión: P y T son directamente proporcionales <b>(P/T = constante)</b>. Por eso un tanque sellado nunca debe calentarse sin control.',
+};
+
+// ---------------------------------------------------------------------------
+// 3) Formateo numérico (regla del brief: °C/K sin decimales, L y kPa con ≤2 decimales)
+// ---------------------------------------------------------------------------
+function HUD_fmtKPa(v) { return Math.round(v).toString(); }
+function HUD_fmtL(v) { return v.toFixed(2); }
+function HUD_fmtTemp(v) { return Math.round(v).toString(); }
+
+// ---------------------------------------------------------------------------
+// 4) Configuración de presentación por capítulo (label del slider, unidad del
+//    preview, tipo de medidor). No son datos físicos (eso vive en CAPITULOS del
+//    Physicist) — son solo decisiones de UI de este capítulo.
+// ---------------------------------------------------------------------------
+const PRESENTACION_CAPITULO = {
+  boyle: {
+    sliderLabel: 'V — Volumen', sliderUnit: ' L', showKelvin: false,
+    previewLabel: 'P prevista', previewUnit: ' kPa',
+    medidor: 'gauge', botonLabel: '▶ Mover pistón',
+    resLabelLogrado: 'P lograda', resUnit: ' kPa',
+    formula: (v, p) => `P = (P₀·V₀)/V = (100×2.0)/${HUD_fmtL(v)} = <b>${HUD_fmtKPa(p)} kPa</b>`,
+  },
+  charles: {
+    sliderLabel: 'T — Temperatura', sliderUnit: ' °C', showKelvin: true,
+    previewLabel: 'V prevista', previewUnit: ' L',
+    medidor: 'ruler', botonLabel: '▶ Ajustar temperatura',
+    resLabelLogrado: 'V lograda', resUnit: ' L',
+    formula: (tC, v) => `V = V₀·(T_K/T₀) = 2.0×(${HUD_fmtTemp(toKelvin(tC))}/300) = <b>${HUD_fmtL(v)} L</b>`,
+  },
+  gaylussac: {
+    sliderLabel: 'T — Temperatura', sliderUnit: ' °C', showKelvin: true,
+    previewLabel: 'P prevista', previewUnit: ' kPa',
+    medidor: 'gauge-limite', botonLabel: '▶ Calentar tanque',
+    resLabelLogrado: 'P lograda', resUnit: ' kPa',
+    formula: (tC, p) => `P = T_K/3 = ${HUD_fmtTemp(toKelvin(tC))}/3 = <b>${HUD_fmtKPa(p)} kPa</b>`,
+  },
+};
+
+// ---------------------------------------------------------------------------
+// 5) Construcción del DOM
+// ---------------------------------------------------------------------------
+function HUD_injectStyles() {
+  if (document.getElementById('hud-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'hud-styles';
+  style.textContent = HUD_CSS;
+  document.head.appendChild(style);
+}
+
+function HUD_buildPanel(parentEl) {
+  HUD_injectStyles();
+
+  const root = document.createElement('div');
+  root.className = 'side-panel';
+  root.id = 'side-panel';
+  root.innerHTML = `
+    <h1>Gases Ideales — El Laboratorio de Presión</h1>
+    <div class="subtitle" id="hud-subtitle">Capítulo 1/3 — <b>Ley de Boyle-Mariotte</b></div>
+    <div id="round-badge">Ronda 1 / 3</div>
+
+    <div class="panel" id="intro-screen">
+      <h2>Bienvenido al laboratorio</h2>
+      <div class="panel-body">
+        <p>Partís siempre del mismo estado de referencia: <b style="color:#ffd166">100 kPa</b>,
+        <b style="color:#ffd166">2.0 L</b>, <b style="color:#ffd166">300 K (27°C)</b>.</p>
+        <p>Vas a correr 3 experimentos cortos, cada uno aislando una ley distinta de los gases ideales:</p>
+        <ol>
+          <li><b>Ley de Boyle-Mariotte</b> — temperatura constante</li>
+          <li><b>Ley de Charles</b> — presión constante</li>
+          <li><b>Ley de Gay-Lussac</b> — volumen constante (¡cuidado con el límite de seguridad!)</li>
+        </ol>
+      </div>
+    </div>
+
+    <div id="round-content">
+      <div class="panel panel-datos">
+        <h2>Datos del experimento</h2>
+        <div class="panel-body" id="datos-body"></div>
+      </div>
+
+      <div class="panel panel-control">
+        <h2 id="control-title">Variable libre</h2>
+        <div class="panel-body">
+          <div class="slider-wrap">
+            <div class="slider-label">
+              <span id="slider-label-text">V — Volumen</span>
+              <span class="readout"><span id="slider-readout-val">2.00</span><span id="slider-readout-unit"> L</span></span>
+            </div>
+            <input type="range" id="slider-libre" min="0.3" max="6.0" step="0.05" value="2.0">
+            <div class="kelvin-readout" id="kelvin-readout" style="display:none;">
+              T = <span id="kelvin-c">27</span> °C = <span id="kelvin-k">300</span> K
+            </div>
+          </div>
+          <div class="preview-box">
+            <div class="preview-title">Previsto en vivo</div>
+            <div class="rrow"><span class="lbl" id="preview-label">P prevista</span><span class="val blue" id="preview-val">-- kPa</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel panel-gauges">
+        <h2>Medición</h2>
+        <div class="panel-body">
+          <div class="gauges-row">
+            <div class="gauge-slot" id="gauge-slot">
+              <canvas id="gauge-canvas" width="90" height="90"></canvas>
+              <div class="gauge-caption">Presión</div>
+            </div>
+            <div class="ruler-slot" id="ruler-slot" style="display:none;">
+              <canvas id="ruler-canvas" width="80" height="170"></canvas>
+              <div class="gauge-caption">Volumen</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button id="btn-primary" type="button">Empezar</button>
+
+      <div class="panel panel-resultado" id="panel-resultado">
+        <h2>Resultado de la ronda</h2>
+        <div class="panel-body">
+          <div class="rrow"><span class="lbl" id="res-label-logrado">Valor logrado</span><span class="val" id="res-logrado">--</span></div>
+          <div class="rrow"><span class="lbl">Objetivo</span><span class="val yellow" id="res-objetivo">--</span></div>
+          <div class="rrow"><span class="lbl">Error</span><span class="val" id="res-error">--</span></div>
+          <div class="resultado-categoria" id="res-categoria">
+            <div id="res-categoria-label">--</div>
+            <div class="resultado-mensaje" id="res-mensaje"></div>
+          </div>
+          <div class="resultado-formula" id="res-formula"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel" id="chapter-end-screen">
+      <h2 id="chapter-end-title">Fin del experimento</h2>
+      <div class="panel-body">
+        <table class="summary-table">
+          <thead><tr><th>Ronda</th><th id="th-libre">Variable</th><th id="th-logrado">Logrado</th><th>Categoría</th></tr></thead>
+          <tbody id="chapter-end-tbody"></tbody>
+        </table>
+        <div class="summary-conclusion" id="chapter-end-conclusion"></div>
+      </div>
+    </div>
+
+    <div class="panel" id="summary-screen">
+      <h2>Síntesis final — La Ley General de los Gases Ideales</h2>
+      <div class="panel-body">
+        <div id="summary-conclusiones"></div>
+        <div class="summary-conclusion">
+          <b>P₀·V₀/T₀</b> = (100 kPa × 2.0 L) / 300 K = <b id="summary-constante">0.6667</b> kPa·L/K
+          <div style="margin-top:6px;">Esta misma proporción se mantuvo en los 3 experimentos: las
+          leyes de Boyle, Charles y Gay-Lussac son casos particulares de una sola ley general de
+          los gases ideales.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nota">
+      <b>Simplificación:</b> gas ideal, cantidad fija de gas (n y R constantes, sin fugas), sin
+      fricción del pistón ni pérdidas de calor al ambiente, transformaciones cuasi-estáticas,
+      T(K) = T(°C) + 273. La velocidad de las partículas en la animación no está a escala real.
+    </div>
+  `;
+  parentEl.appendChild(root);
+  return root;
+}
+
+// ---------------------------------------------------------------------------
+// 6) Wiring
+// ---------------------------------------------------------------------------
+function HUD_wire(rootEl, { eventBus, gameFSM, inputManager } = {}) {
+  const bus = eventBus || EventBus;
+
+  const els = {
+    subtitle: rootEl.querySelector('#hud-subtitle'),
+    roundBadge: rootEl.querySelector('#round-badge'),
+    introScreen: rootEl.querySelector('#intro-screen'),
+    roundContent: rootEl.querySelector('#round-content'),
+    datosBody: rootEl.querySelector('#datos-body'),
+    controlTitle: rootEl.querySelector('#control-title'),
+    sliderLabelText: rootEl.querySelector('#slider-label-text'),
+    sliderReadoutVal: rootEl.querySelector('#slider-readout-val'),
+    sliderReadoutUnit: rootEl.querySelector('#slider-readout-unit'),
+    slider: rootEl.querySelector('#slider-libre'),
+    kelvinReadout: rootEl.querySelector('#kelvin-readout'),
+    kelvinC: rootEl.querySelector('#kelvin-c'),
+    kelvinK: rootEl.querySelector('#kelvin-k'),
+    previewLabel: rootEl.querySelector('#preview-label'),
+    previewVal: rootEl.querySelector('#preview-val'),
+    gaugeSlot: rootEl.querySelector('#gauge-slot'),
+    rulerSlot: rootEl.querySelector('#ruler-slot'),
+    gaugeCanvas: rootEl.querySelector('#gauge-canvas'),
+    rulerCanvas: rootEl.querySelector('#ruler-canvas'),
+    btnPrimary: rootEl.querySelector('#btn-primary'),
+    panelResultado: rootEl.querySelector('#panel-resultado'),
+    resLabelLogrado: rootEl.querySelector('#res-label-logrado'),
+    resLogrado: rootEl.querySelector('#res-logrado'),
+    resObjetivo: rootEl.querySelector('#res-objetivo'),
+    resError: rootEl.querySelector('#res-error'),
+    resCategoria: rootEl.querySelector('#res-categoria'),
+    resCategoriaLabel: rootEl.querySelector('#res-categoria-label'),
+    resMensaje: rootEl.querySelector('#res-mensaje'),
+    resFormula: rootEl.querySelector('#res-formula'),
+    chapterEndScreen: rootEl.querySelector('#chapter-end-screen'),
+    chapterEndTitle: rootEl.querySelector('#chapter-end-title'),
+    thLibre: rootEl.querySelector('#th-libre'),
+    thLogrado: rootEl.querySelector('#th-logrado'),
+    chapterEndTbody: rootEl.querySelector('#chapter-end-tbody'),
+    chapterEndConclusion: rootEl.querySelector('#chapter-end-conclusion'),
+    summaryScreen: rootEl.querySelector('#summary-screen'),
+    summaryConclusiones: rootEl.querySelector('#summary-conclusiones'),
+  };
+
+  let capituloData = (gameFSM && gameFSM.capituloData) || CAPITULOS[0];
+  let rondaData = (gameFSM && gameFSM.rondaData) || capituloData.rondas[0];
+  let presentacion = PRESENTACION_CAPITULO[capituloData.clave];
+
+  function showScreen(name) {
+    els.introScreen.classList.toggle('visible', name === 'intro');
+    els.roundContent.classList.toggle('visible', name === 'round');
+    els.chapterEndScreen.classList.toggle('visible', name === 'chapterEnd');
+    els.summaryScreen.classList.toggle('visible', name === 'summary');
+  }
+
+  // -- Pantalla de bienvenida (GameFSM.onIntroEntered, agregado en fase Publisher) --
+  function showIntro() {
+    showScreen('intro');
+  }
+
+  // -- Reconstruye TODO el contenido de la ronda según el capítulo activo --
+  function refreshDatosRonda() {
+    capituloData = (gameFSM && gameFSM.capituloData) || capituloData;
+    rondaData = (gameFSM && gameFSM.rondaData) || rondaData;
+    if (!capituloData || !rondaData) return;
+    presentacion = PRESENTACION_CAPITULO[capituloData.clave];
+
+    showScreen('round');
+    hideResultado();
+
+    els.subtitle.innerHTML = `Capítulo ${capituloData.id}/3 — <b>${capituloData.nombre}</b>`;
+    els.roundBadge.textContent = `Ronda ${rondaData.ronda} / 3`;
+
+    // --- panel-datos: filas distintas según el capítulo (interface-brief.md, punto 3) ---
+    const unidadObjetivo = capituloData.unidadCalculada;
+    if (capituloData.clave === 'boyle') {
+      els.datosBody.innerHTML = `
+        <div class="rrow"><span class="lbl">T (constante)</span><span class="val yellow">300 K (27°C)</span></div>
+        <div class="rrow"><span class="lbl">Objetivo: P</span><span class="val yellow" id="dato-objetivo">${HUD_fmtKPa(rondaData.objetivo)} ${unidadObjetivo}</span></div>`;
+    } else if (capituloData.clave === 'charles') {
+      els.datosBody.innerHTML = `
+        <div class="rrow"><span class="lbl">P (constante)</span><span class="val yellow">100 kPa</span></div>
+        <div class="rrow"><span class="lbl">Objetivo: V</span><span class="val yellow" id="dato-objetivo">${HUD_fmtL(rondaData.objetivo)} ${unidadObjetivo}</span></div>`;
+    } else {
+      els.datosBody.innerHTML = `
+        <div class="rrow"><span class="lbl">V (fijo, tanque rígido)</span><span class="val yellow">${HUD_fmtL(V0_REF)} L</span></div>
+        <div class="rrow"><span class="lbl">Objetivo: P</span><span class="val yellow" id="dato-objetivo">${HUD_fmtKPa(rondaData.objetivo)} ${unidadObjetivo}</span></div>
+        <div class="rrow"><span class="lbl">Límite de seguridad</span><span class="val red">${P_MAX_SEGURIDAD} kPa</span></div>`;
+    }
+
+    // --- panel-control: label/unidad del slider, conversión a Kelvin si aplica ---
+    els.controlTitle.textContent = capituloData.variableLibre === 'V' ? 'Volumen (variable libre)' : 'Temperatura (variable libre)';
+    els.sliderLabelText.textContent = presentacion.sliderLabel;
+    els.sliderReadoutUnit.textContent = presentacion.sliderUnit;
+    els.kelvinReadout.style.display = presentacion.showKelvin ? 'block' : 'none';
+    els.previewLabel.textContent = presentacion.previewLabel;
+
+    // --- panel-gauges: manómetro (Boyle/Gay-Lussac) o regla de volumen (Charles) ---
+    const usaRuler = presentacion.medidor === 'ruler';
+    els.gaugeSlot.style.display = usaRuler ? 'none' : 'block';
+    els.rulerSlot.style.display = usaRuler ? 'block' : 'none';
+
+    // --- resultado: labels específicos del capítulo ---
+    els.resLabelLogrado.textContent = presentacion.resLabelLogrado;
+    els.resObjetivo.textContent = `${capituloData.clave === 'charles' ? HUD_fmtL(rondaData.objetivo) : HUD_fmtKPa(rondaData.objetivo)}${presentacion.resUnit}`;
+
+    updatePreview();
+  }
+
+  // -- Preview en vivo: usa SIEMPRE las funciones del Physicist (GasEngine) --
+  function updatePreview() {
+    if (!capituloData) return;
+    const valorLibre = parseFloat(els.slider.value);
+    const valorCalculado = capituloData.compute(valorLibre);
+
+    const libreFmt = capituloData.clave === 'boyle' ? HUD_fmtL(valorLibre) : HUD_fmtTemp(valorLibre);
+    els.sliderReadoutVal.textContent = libreFmt;
+
+    if (presentacion.showKelvin) {
+      const tK = toKelvin(valorLibre);
+      els.kelvinC.textContent = HUD_fmtTemp(valorLibre);
+      els.kelvinK.textContent = HUD_fmtTemp(tK);
+    }
+
+    const calcFmt = capituloData.clave === 'charles' ? HUD_fmtL(valorCalculado) : HUD_fmtKPa(valorCalculado);
+    els.previewVal.textContent = `${calcFmt}${presentacion.previewUnit}`;
+
+    // Medidor en vivo durante SETUP (fase de preview, antes de accionar).
+    if (presentacion.medidor === 'ruler') {
+      HUD_renderRuler(els.rulerCanvas, valorCalculado, 4.0);
+    } else {
+      const limite = capituloData.limiteSeguridad; // undefined en Boyle, 200 en Gay-Lussac
+      HUD_renderGauge(els.gaugeCanvas, 'P', valorCalculado, GAUGE_PRESION_MAX, limite);
+    }
+  }
+
+  function hideResultado() {
+    els.panelResultado.classList.remove('visible');
+  }
+
+  function showResultado(payload) {
+    const info = CATEGORIA_INFO[payload.categoria];
+    const esCharles = capituloData.clave === 'charles';
+    const logradoFmt = esCharles ? HUD_fmtL(payload.valorLogrado) : HUD_fmtKPa(payload.valorLogrado);
+    const errorPct = (payload.error * 100).toFixed(1);
+
+    els.resLogrado.textContent = `${logradoFmt}${presentacion.resUnit}`;
+    els.resLogrado.className = `val ${info.claseVal}`;
+    els.resError.textContent = `${errorPct}%`;
+    els.resError.className = `val ${info.claseVal}`;
+
+    els.resCategoria.style.background = `${info.color}26`;
+    els.resCategoria.style.border = `1px solid ${info.color}66`;
+    els.resCategoria.style.color = info.color;
+    els.resCategoriaLabel.textContent = info.label;
+    els.resMensaje.textContent = HUD_getCategoriaMensaje(payload.categoria, payload.sobra, payload.exploto);
+    els.resFormula.innerHTML = presentacion.formula(payload.valorLibre, payload.valorLogrado);
+    if (payload.exploto) {
+      // Aclaración numérica explícita: la explosión es por superar el límite de
+      // seguridad, no (solo) por el error contra el objetivo de la ronda — el
+      // jugador debe ver el número que cruzó la línea, no solo leerlo en abstracto.
+      els.resFormula.innerHTML += `<br><b style="color:#ff1744">${HUD_fmtKPa(payload.valorLogrado)} kPa supera el límite de seguridad de ${P_MAX_SEGURIDAD} kPa.</b>`;
+    }
+
+    // Medidor final con el valor logrado (no el preview) — refleja el resultado real.
+    if (presentacion.medidor === 'ruler') {
+      HUD_renderRuler(els.rulerCanvas, payload.valorLogrado, 4.0);
+    } else {
+      HUD_renderGauge(els.gaugeCanvas, 'P', payload.valorLogrado, GAUGE_PRESION_MAX, capituloData.limiteSeguridad);
+    }
+
+    els.panelResultado.classList.add('visible');
+  }
+
+  function showChapterEnd(capituloId, resultadosCapitulo) {
+    const cap = CAPITULOS[capituloId - 1];
+    const pres = PRESENTACION_CAPITULO[cap.clave];
+    els.chapterEndTitle.textContent = `Fin del experimento — ${cap.nombre}`;
+    els.thLibre.textContent = cap.variableLibre === 'V' ? 'V usado' : 'T usado';
+    els.thLogrado.textContent = pres.resLabelLogrado;
+
+    els.chapterEndTbody.innerHTML = resultadosCapitulo.map((r) => {
+      const info = CATEGORIA_INFO[r.categoria];
+      const libreFmt = cap.clave === 'boyle' ? HUD_fmtL(r.valorLibre) : HUD_fmtTemp(r.valorLibre);
+      const logradoFmt = cap.clave === 'charles' ? HUD_fmtL(r.valorLogrado) : HUD_fmtKPa(r.valorLogrado);
+      return `<tr>
+        <td>${r.ronda}</td>
+        <td>${libreFmt}${cap.clave === 'boyle' ? ' L' : ' °C'}</td>
+        <td>${logradoFmt}${pres.resUnit}</td>
+        <td style="color:${info.color};font-weight:bold;">${info.label}</td>
+      </tr>`;
+    }).join('');
+
+    els.chapterEndConclusion.innerHTML = CONCLUSION_CAPITULO[cap.clave];
+    showScreen('chapterEnd');
+  }
+
+  function showSummary(resultados) {
+    const constanteCombinada = ((P0_REF * V0_REF) / T0_REF).toFixed(4);
+    rootEl.querySelector('#summary-constante').textContent = constanteCombinada;
+
+    els.summaryConclusiones.innerHTML = CAPITULOS.map((cap) => `
+      <div class="conclusion-item"><b>${cap.nombre}:</b> ${CONCLUSION_CAPITULO[cap.clave]}</div>
+    `).join('');
+
+    showScreen('summary');
+  }
+
+  // -- Suscripciones EventBus (nombres EXACTOS del contrato común) --
+  bus.on(EVENTS.SLIDER_CHANGED, () => updatePreview());
+
+  bus.on(EVENTS.ROUND_RESOLVED, (payload) => showResultado(payload));
+
+  bus.on(EVENTS.CHAPTER_END_REACHED, (payload) => {
+    const resultadosCapitulo = (gameFSM ? gameFSM.resultados : []).filter((r) => r.capituloId === payload.capituloId);
+    showChapterEnd(payload.capituloId, resultadosCapitulo);
+  });
+
+  bus.on(EVENTS.GAME_SUMMARY_READY, (payload) => showSummary(payload.resultados));
+
+  // El input "vivo" del slider lo emite InputManager; acá solo escuchamos.
+  if (!inputManager) {
+    els.slider.addEventListener('input', () => {
+      bus.emit(EVENTS.SLIDER_CHANGED, { valor: parseFloat(els.slider.value) });
+    });
+  }
+
+  return { refreshDatosRonda, updatePreview, showResultado, hideResultado, showIntro, showChapterEnd, showSummary };
+}
+
+// Hooks que el Publisher debe registrar en gameFSM (no son eventos nuevos del
+// contrato común, son llamadas directas — mismo patrón que Hidrodinámica):
+//   gameFSM.onIntroEntered = () => hudApi.showIntro();
+//   gameFSM.onRoundChanged = () => hudApi.refreshDatosRonda();
+//   gameFSM.onActionButtonLabel = () => PRESENTACION_CAPITULO[gameFSM.capituloData.clave].botonLabel;
+
+// ---------------------------------------------------------------------------
+// 7) Manómetro / regla — call-site documentado para el Artist. Si drawPressureGauge
+//    / drawVolumeRuler todavía no existen en window, se usa un fallback mínimo para
+//    no romper el juego ni dejar los canvases en blanco.
+// ---------------------------------------------------------------------------
+function HUD_renderGauge(canvasEl, label, presionKPa, presionMax, limiteSeguridad) {
+  if (!canvasEl) return;
+  const ctx = canvasEl.getContext('2d');
+  const cx = canvasEl.width / 2;
+  const cy = canvasEl.height / 2;
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+  if (typeof drawPressureGauge === 'function') {
+    drawPressureGauge(ctx, cx, cy, label, presionKPa, presionMax, limiteSeguridad);
+    return;
+  }
+
+  // --- Fallback mínimo (solo hasta que el Artist entregue drawPressureGauge) ---
+  ctx.fillStyle = '#f5f0e6';
+  ctx.beginPath(); ctx.arc(cx, cy, Math.min(cx, cy) - 4, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#3a4654'; ctx.lineWidth = 2; ctx.stroke();
+  const pct = Math.max(0, Math.min(1, presionKPa / presionMax));
+  const angle = Math.PI * 0.75 + pct * Math.PI * 1.5;
+  ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(angle) * (Math.min(cx, cy) - 12), cy + Math.sin(angle) * (Math.min(cx, cy) - 12));
+  ctx.stroke();
+  ctx.fillStyle = '#0a1628'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText(`${HUD_fmtKPa(presionKPa)} kPa`, cx, cy + Math.min(cx, cy) - 8);
+}
+
+function HUD_renderRuler(canvasEl, volumenL, volumenMax) {
+  if (!canvasEl) return;
+  const ctx = canvasEl.getContext('2d');
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+  if (typeof drawVolumeRuler === 'function') {
+    drawVolumeRuler(ctx, 10, 10, volumenL, volumenMax);
+    return;
+  }
+
+  // --- Fallback mínimo ---
+  const frac = Math.max(0, Math.min(1, volumenL / volumenMax));
+  ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(10, 10, 30, 140);
+  ctx.fillStyle = '#64b5f6'; ctx.fillRect(13, 10 + 140 * (1 - frac), 24, 140 * frac - 3);
+  ctx.fillStyle = '#9ac'; ctx.font = '9px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(`${HUD_fmtL(volumenL)} L`, 44, 10 + 140 * (1 - frac));
+}
+
+// ---------------------------------------------------------------------------
+// Orden de carga sugerido al Publisher en el <script> final:
+//   EventBus.js -> GasEngine.js -> GasParticles.js -> Drawing.js (Artist) ->
+//   GameFSM.js -> GameLoop.js -> InputManager.js -> HUD.js -> bootstrap (main.js)
+// ---------------------------------------------------------------------------
+
+// main.js — Gases Ideales: El Laboratorio de Presión
+// Rol: Publisher. Bootstrap + audio mínimo (Web Audio API) + render loop.
+// SIN import/export ES6 — bloque plano, último en cargarse del <script> final.
+
+// ---------------------------------------------------------------------------
+// Audio mínimo (Web Audio API). El AudioContext se crea recién al primer click
+// del usuario (gesto real), nunca antes — evita el bloqueo de autoplay.
+// ---------------------------------------------------------------------------
+function createAudioEngine() {
+  let ctx = null;
+  let heatSource = null;
+
+  function ensureCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    return ctx;
+  }
+
+  function startHeating() {
+    const ac = ensureCtx();
+    stopHeating();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 90;
+    gain.gain.value = 0.025;
+    osc.connect(gain).connect(ac.destination);
+    osc.start();
+    heatSource = { osc, gain };
+  }
+
+  function stopHeating() {
+    if (heatSource) {
+      try { heatSource.osc.stop(); } catch (e) { /* ya detenido */ }
+      heatSource.osc.disconnect();
+      heatSource.gain.disconnect();
+      heatSource = null;
+    }
+  }
+
+  function playResultSound(categoria, exploto) {
+    const ac = ensureCtx();
+    const now = ac.currentTime;
+
+    if (exploto) {
+      // "Boom" de explosión: ruido filtrado + golpe grave corto.
+      const bufferSize = ac.sampleRate * 0.5;
+      const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+      const noise = ac.createBufferSource();
+      noise.buffer = buffer;
+      const filter = ac.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 500;
+      const gain = ac.createGain();
+      gain.gain.setValueAtTime(0.5, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      noise.connect(filter).connect(gain).connect(ac.destination);
+      noise.start(now);
+
+      const thump = ac.createOscillator();
+      const thumpGain = ac.createGain();
+      thump.type = 'sine';
+      thump.frequency.setValueAtTime(120, now);
+      thump.frequency.exponentialRampToValueAtTime(35, now + 0.35);
+      thumpGain.gain.setValueAtTime(0.4, now);
+      thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+      thump.connect(thumpGain).connect(ac.destination);
+      thump.start(now);
+      thump.stop(now + 0.45);
+      return;
+    }
+
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain).connect(ac.destination);
+    const esBueno = categoria === 'optima' || categoria === 'aceptable';
+
+    if (esBueno) {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.25);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.14, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    } else {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(170, now);
+      osc.frequency.exponentialRampToValueAtTime(60, now + 0.45);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.13, now + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    }
+    osc.start(now);
+    osc.stop(now + 0.55);
+  }
+
+  return { startHeating, stopHeating, playResultSound };
+}
+
+// ---------------------------------------------------------------------------
+// Easing simple para la animación del pistón/temperatura durante RUNNING.
+// ---------------------------------------------------------------------------
+function easeInOutQuad(t) {
+  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap
+// ---------------------------------------------------------------------------
+function main() {
+  const canvas = document.getElementById('game-canvas');
+  canvas.width = CANVAS_WIDTH;
+  canvas.height = CANVAS_HEIGHT;
+  const ctx = canvas.getContext('2d');
+
+  const sidePanelMount = document.getElementById('side-panel-mount');
+  const hudRoot = HUD_buildPanel(sidePanelMount);
+  const sliderEl = hudRoot.querySelector('#slider-libre');
+  const actionButtonEl = hudRoot.querySelector('#btn-primary');
+
+  const inputManager = new InputManager({ sliderEl, actionButtonEl });
+  const gameFSM = new GameFSM({ inputManager });
+  inputManager.gameFSM = gameFSM;
+
+  const audio = createAudioEngine();
+  const hudApi = HUD_wire(hudRoot, { gameFSM, inputManager });
+
+  resetParticles();
+
+  // --- Estado visual del aparato (pistón/temperatura), animado durante RUNNING ---
+  // Cada ronda arranca SIEMPRE desde el valor inicial de referencia del capítulo
+  // (capituloData.sliderInicial) y anima hacia el valor que el jugador fijó con el
+  // slider (gameFSM.valorLibreActual) — refuerza la idea de "siempre partís del
+  // mismo estado de referencia" que ya presenta la pantalla de INTRO.
+  let anim = { from: CAPITULOS[0].sliderInicial, to: CAPITULOS[0].sliderInicial, startSec: 0, activo: false };
+  let explosion = { activa: false, startSec: 0 };
+  let elapsedSec = 0;
+
+  gameFSM.onIntroEntered = () => {
+    hudApi.showIntro();
+    resetParticles();
+  };
+
+  gameFSM.onRoundChanged = () => {
+    hudApi.refreshDatosRonda();
+    anim = { from: gameFSM.capituloData.sliderInicial, to: gameFSM.capituloData.sliderInicial, startSec: elapsedSec, activo: false };
+    explosion.activa = false;
+    audio.stopHeating();
+  };
+
+  gameFSM.onActionButtonLabel = () => {
+    const clave = gameFSM.capituloData ? gameFSM.capituloData.clave : 'boyle';
+    return PRESENTACION_CAPITULO[clave].botonLabel;
+  };
+
+  // Al disparar la acción (botón primario en SETUP), arrancar la animación de
+  // transición del estado visual — se detecta el cambio de estado SETUP->RUNNING
+  // después de que GameFSM (registrado antes que main.js en el <script> final)
+  // ya proceso el evento y mutó this.fsm.state (mismo truco que Hidrodinámica).
+  EventBus.on(EVENTS.ACTION_TRIGGERED, () => {
+    if (gameFSM.state !== 'RUNNING') return;
+    const cap = gameFSM.capituloData;
+    anim = {
+      from: cap.sliderInicial,
+      to: gameFSM.valorLibreActual,
+      startSec: elapsedSec,
+      activo: true,
+    };
+    if (cap.clave !== 'boyle' && anim.to > anim.from) {
+      audio.startHeating();
+    }
+  });
+
+  EventBus.on(EVENTS.ROUND_RESOLVED, (payload) => {
+    audio.stopHeating();
+    audio.playResultSound(payload.categoria, payload.exploto);
+    anim.activo = false; // queda fijo en el valor final (anim.to)
+    if (payload.exploto) {
+      explosion = { activa: true, startSec: elapsedSec };
+    }
+  });
+
+  // --- Loop principal ---
+  const loop = new GameLoop({ fixedHz: TARGET_FPS });
+
+  // Calcula el estado visual del frame actual (valor libre animado, T_C, volumen
+  // relativo) a partir de `anim` — usado tanto por onFixedUpdate (partículas) como
+  // por onDraw (dibujo), para no duplicar la cuenta entre ambos callbacks.
+  function computeFrameState() {
+    const cap = gameFSM.capituloData || CAPITULOS[0];
+    let valorLibreVisual = anim.to;
+    if (anim.activo) {
+      const t = Math.min(1, (elapsedSec - anim.startSec) / (ANIMATION_DURATION_MS / 1000));
+      valorLibreVisual = anim.from + (anim.to - anim.from) * easeInOutQuad(t);
+    }
+    const esBoyle = cap.clave === 'boyle';
+    const T_C = esBoyle ? 27 : valorLibreVisual;
+    const V_actual = esBoyle ? valorLibreVisual : (cap.clave === 'charles' ? computeV_charles(valorLibreVisual) : V0_REF);
+    const volumenRelativo = cap.clave === 'gaylussac' ? 1.0 : Math.max(0.08, Math.min(1.0, V_actual / V0_REF));
+    return { cap, esBoyle, valorLibreVisual, T_C, volumenRelativo };
+  }
+
+  loop.onFixedUpdate = (dt) => {
+    elapsedSec += dt;
+    gameFSM.update(dt);
+    const frame = computeFrameState();
+    updateParticles(dt, { T_C: frame.T_C, volumenRelativo: frame.volumenRelativo });
+  };
+
+  loop.onDraw = () => render(computeFrameState());
+
+  // --- Composición de escena: fondo + grilla, igual convención del portal ---
+  function drawSceneBackground() {
+    ctx.fillStyle = '#0a1628';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.strokeStyle = 'rgba(135,206,235,0.07)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= CANVAS_WIDTH; x += 50) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_HEIGHT); ctx.stroke();
+    }
+    for (let y = 0; y <= CANVAS_HEIGHT; y += 50) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_WIDTH, y); ctx.stroke();
+    }
+  }
+
+  function render(frame) {
+    drawSceneBackground();
+
+    const { cap, esBoyle, valorLibreVisual, T_C, volumenRelativo } = frame;
+
+    if (cap.clave === 'gaylussac') {
+      drawSealedTank(ctx);
+    } else {
+      drawCylinder(ctx, volumenRelativo, cap.clave);
+    }
+
+    drawGasParticles(ctx, particulas, gasColorForTemperature(T_C));
+
+    // Llama del mechero: solo mientras se está calentando activamente en RUNNING.
+    if (cap.clave !== 'boyle' && gameFSM.state === 'RUNNING' && anim.to > anim.from) {
+      const tAnim = Math.min(1, (elapsedSec - anim.startSec) / (ANIMATION_DURATION_MS / 1000));
+      const flameX = cap.clave === 'charles' ? GAS_RECT.x + GAS_RECT.w * 0.35 : GAS_RECT.x + GAS_RECT.w * 0.5;
+      const flameY = GAS_RECT.y + GAS_RECT.h + CYL_WALL + 34;
+      drawFlame(ctx, flameX, flameY, Math.min(1, tAnim + 0.2));
+    }
+
+    // Explosión del tanque (solo Gay-Lussac, exploto:true) — ~0.8s superpuesta.
+    if (explosion.activa) {
+      const tExp = (elapsedSec - explosion.startSec) / 0.8;
+      if (tExp <= 1) {
+        drawTankExplosion(ctx, GAS_RECT.x + GAS_RECT.w * 0.5, GAS_RECT.y + GAS_RECT.h * 0.5, tExp);
+      } else {
+        explosion.activa = false;
+      }
+    }
+
+    // Etiqueta rápida sobre el diagrama (refuerzo visual, el panel ya muestra más detalle).
+    ctx.fillStyle = '#87ceeb';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    const unidadLibre = esBoyle ? 'L' : '°C';
+    ctx.fillText(`${cap.variableLibre} = ${valorLibreVisual.toFixed(esBoyle ? 2 : 0)} ${unidadLibre}`, GAS_RECT.x + GAS_RECT.w / 2, GAS_RECT.y - 24);
+  }
+
+  loop.start();
+  gameFSM.start();
+}
+
+window.addEventListener('load', main);
+
+
+  </script>
+</body>
+</html>
+

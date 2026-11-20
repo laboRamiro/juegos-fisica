@@ -1,0 +1,827 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Escalera — Predicción</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* Paleta "Lab Moderno" (art-direction skill, Estilo A) */
+    --bg-primary:   #0f172a;
+    --bg-surface:   #1e293b;
+    --bg-card:      #334155;
+    --accent-main:  #38bdf8;
+    --accent-alt:   #818cf8;
+    --accent-warn:  #fb923c;
+    --accent-success:#4ade80;
+    --accent-danger:#f87171;
+    --text-primary: #f1f5f9;
+    --text-secondary:#94a3b8;
+    --text-muted:   #475569;
+    --font-display: 'Space Grotesk', sans-serif;
+    --font-mono:    'JetBrains Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg-primary);color:var(--text-primary);
+    font-family:var(--font-display);height:100%;}
+  #app{display:flex;min-height:100vh;align-items:stretch;}
+  #stage-wrap{position:relative;flex:1 1 640px;max-width:1040px;display:flex;
+    align-items:flex-start;justify-content:center;background:#000;padding:12px;}
+  #stage-inner{position:relative;width:100%;max-width:1000px;}
+  canvas#game{width:100%;height:auto;display:block;border-radius:10px;
+    background:var(--bg-primary);}
+  #banner{position:absolute;top:22px;left:50%;transform:translateX(-50%);
+    padding:10px 22px;border-radius:10px;font-weight:700;font-size:15px;letter-spacing:0.02em;
+    display:none;box-shadow:0 6px 20px rgba(0,0,0,0.45);white-space:nowrap;z-index:5;
+    font-family:var(--font-display);}
+  #hud{width:400px;flex:0 0 400px;max-height:100vh;overflow-y:auto;
+    background:var(--bg-surface);padding:16px 18px 26px;border-left:1px solid rgba(255,255,255,0.06);}
+  .title{font-size:19px;font-weight:700;margin:2px 0 4px;letter-spacing:0.01em;}
+  .subtitle{font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;line-height:1.5;}
+  .status-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 14px;border-radius:999px;
+    font-size:12.5px;font-weight:700;letter-spacing:0.03em;background:var(--bg-card);
+    color:var(--accent-main);margin-bottom:14px;}
+  .status-dot{width:8px;height:8px;border-radius:50%;background:var(--accent-main);}
+  .card{background:var(--bg-card);border:1px solid rgba(255,255,255,0.06);border-radius:12px;
+    padding:14px 16px;margin-bottom:12px;}
+  .section-title{font-size:11.5px;color:var(--accent-main);font-weight:700;letter-spacing:0.06em;
+    margin:0 0 8px;text-transform:uppercase;}
+  .metrics-grid{display:grid;grid-template-columns:1fr auto;row-gap:6px;column-gap:10px;font-size:13.5px;}
+  .metrics-grid .k{color:var(--text-secondary);}
+  .metrics-grid .v{text-align:right;font-family:var(--font-mono);font-weight:600;}
+  .slider-label{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:13.5px;margin-bottom:8px;}
+  .slider-label b{color:var(--text-primary);}
+  .slider-value{font-family:var(--font-mono);font-weight:700;font-size:17px;color:var(--accent-main);}
+  input[type=range]{width:100%;accent-color:var(--accent-main);height:30px;touch-action:manipulation;}
+  .btn{width:100%;padding:13px;border-radius:10px;border:none;font-size:14.5px;font-weight:700;
+    cursor:pointer;margin-bottom:10px;letter-spacing:0.02em;font-family:var(--font-display);
+    min-height:46px;touch-action:manipulation;}
+  .btn-primary{background:var(--accent-main);color:#04202e;}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-primary:disabled{opacity:0.4;cursor:default;filter:none;}
+  .btn-ghost{background:transparent;border:1px solid rgba(148,163,184,0.4);color:var(--text-primary);}
+  .btn-ghost:hover{background:rgba(148,163,184,0.08);}
+  .help{font-size:11.5px;color:var(--text-muted);line-height:1.6;margin-top:6px;}
+  .result-tier{font-size:15px;font-weight:700;margin-bottom:4px;}
+  .tier-exact{color:var(--accent-success);}
+  .tier-close{color:var(--accent-warn);}
+  .tier-far{color:var(--accent-danger);}
+  .compare-row{display:flex;gap:10px;margin-bottom:10px;}
+  .compare-box{flex:1;background:rgba(0,0,0,0.2);border-radius:10px;padding:10px;text-align:center;}
+  .compare-box .lbl{font-size:10.5px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.05em;}
+  .compare-box .val{font-family:var(--font-mono);font-size:24px;font-weight:700;margin-top:2px;}
+  .stats-line{font-size:12px;color:var(--text-secondary);margin-top:2px;}
+  .formula{font-family:var(--font-mono);font-size:12.5px;color:var(--text-secondary);
+    background:rgba(0,0,0,0.25);padding:8px 10px;border-radius:8px;margin:8px 0;line-height:1.7;}
+  .hidden{display:none !important;}
+  .kbd-hints{font-size:11px;color:var(--text-muted);line-height:1.6;margin-top:4px;}
+  .kbd-hints b{color:var(--text-secondary);}
+
+  @media (max-width:760px){
+    #app{flex-direction:column;}
+    #stage-wrap{flex:1 1 auto;max-width:none;padding:8px;}
+    #hud{width:100%;flex:1 1 auto;max-height:none;border-left:none;
+      border-top:1px solid rgba(255,255,255,0.06);}
+    .title{font-size:17px;}
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage-wrap">
+    <div id="stage-inner">
+      <canvas id="game" width="1000" height="760" aria-label="Escenario de la escalera y la persona"></canvas>
+      <div id="banner" role="status" aria-live="polite"></div>
+    </div>
+  </div>
+  <div id="hud">
+    <div class="title">ESCALERA — PREDICCIÓN</div>
+    <div class="subtitle">
+      Observá la escalera, el ángulo y el piso. Predecí hasta qué escalón creés que va a
+      llegar la persona antes de que la simulación empiece.
+    </div>
+
+    <div class="status-pill"><span class="status-dot" id="statusDot"></span><span id="statusText">PREDECÍ TU RESPUESTA</span></div>
+
+    <div class="card">
+      <div class="section-title">La escena</div>
+      <div class="metrics-grid">
+        <span class="k">Largo de la escalera</span><span class="v" id="mLength">—</span>
+        <span class="k">Ángulo con el piso</span><span class="v" id="mAngle">—</span>
+        <span class="k">Escalones totales</span><span class="v" id="mSteps">—</span>
+        <span class="k">Piso</span><span class="v" id="mFloor">—</span>
+      </div>
+    </div>
+
+    <div id="predictPanel" class="card">
+      <div class="section-title">Tu predicción</div>
+      <div class="slider-label">
+        <span>m — Escalón elegido</span>
+        <span class="slider-value"><span id="stepValue">1</span> / <span id="stepMax">1</span></span>
+      </div>
+      <input type="range" id="stepSlider" min="1" max="1" step="1" value="1"
+        aria-label="Escalón predicho">
+      <button class="btn btn-primary" id="confirmBtn">▶ Confirmar y observar</button>
+    </div>
+
+    <div id="runningPanel" class="card hidden">
+      <div class="section-title">Subiendo…</div>
+      <div class="metrics-grid">
+        <span class="k">Escalón actual</span><span class="v" id="mCurrentStep">0</span>
+        <span class="k">Tu predicción</span><span class="v" id="mPredictedEcho">—</span>
+      </div>
+    </div>
+
+    <div id="resultPanel" class="card hidden" role="status" aria-live="polite">
+      <div class="section-title">Resultado</div>
+      <div class="result-tier" id="resultTier">—</div>
+      <div class="compare-row">
+        <div class="compare-box">
+          <div class="lbl">Predijiste</div>
+          <div class="val" id="valPredicted">—</div>
+        </div>
+        <div class="compare-box">
+          <div class="lbl">Llegó a</div>
+          <div class="val" id="valActual">—</div>
+        </div>
+      </div>
+      <div class="section-title">Por qué pasó esto</div>
+      <div class="metrics-grid">
+        <span class="k">Coeficiente de rozamiento μ</span><span class="v" id="rMu">—</span>
+        <span class="k">Normal del piso N</span><span class="v" id="rNFloor">—</span>
+        <span class="k">Normal de la pared N</span><span class="v" id="rNWall">—</span>
+        <span class="k">Fricción requerida f</span><span class="v" id="rFReq">—</span>
+        <span class="k">Fricción máxima disponible</span><span class="v" id="rFMax">—</span>
+      </div>
+      <div class="formula" id="rFormula">s_max = L·(μ(M+m)tanθ − M/2) / m</div>
+      <div class="help" id="rNextNote">—</div>
+      <div class="stats-line" id="statsLine">Rondas: 0 · Exactas: 0 · Cerca (±1): 0</div>
+      <button class="btn btn-primary" id="newRoundBtn">↺ Nueva ronda</button>
+    </div>
+
+    <div class="kbd-hints">
+      Teclado: <b>←/→</b> cambiar escalón · <b>Enter/Espacio</b> confirmar o nueva ronda.
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+   FÍSICA — equilibrio estático de una escalera homogénea apoyada contra una
+   pared lisa (sin fricción en la pared), con rozamiento μ solo en el piso.
+   Fórmulas reutilizadas y validadas de un proyecto previo del mismo laboratorio
+   (escalera-equilibrio-estatico.html). Unidades SI documentadas en cada línea.
+   ========================================================================= */
+const G = 9.81;                 // m/s^2 — aceleración de la gravedad
+const RUNG_SPACING_M = 0.3;      // m — separación entre escalones
+const PERSON_MASS_KG = 70.0;     // kg — masa fija de la persona
+const PPM = 100.0;               // px por metro — escala visual del escenario
+
+function metersToPx(m){ return m * PPM; }
+function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+function rand(min, max){ return min + Math.random() * (max - min); }
+
+// ΣTorque_base = 0 y ΣFx = 0 (pared lisa) dan la fricción requerida en el piso.
+function computeEquilibrium(length_m, ladder_mass_kg, mu, theta_rad, person_mass_kg, s_m, g){
+  const cos_t = Math.cos(theta_rad);
+  const sin_t = Math.sin(theta_rad);
+  const weight_ladder = ladder_mass_kg * g;   // N
+  const weight_person = person_mass_kg * g;   // N
+
+  const n_floor = (ladder_mass_kg + person_mass_kg) * g;  // N — ΣFy = 0
+  const n_wall = (weight_ladder * (length_m / 2.0) * cos_t
+                + weight_person * s_m * cos_t) / (length_m * sin_t);  // N
+  const friction_required = n_wall;           // N — ΣFx = 0
+  const friction_max = mu * n_floor;          // N — f = μN
+
+  return {
+    n_floor, n_wall, friction_required, friction_max,
+    is_stable: friction_required <= friction_max,
+  };
+}
+
+// Distancia máxima a lo largo de la escalera antes de que resbale (f_req = f_max).
+function computeSMax(length_m, ladder_mass_kg, mu, theta_rad, person_mass_kg, g){
+  const tan_t = Math.tan(theta_rad);
+  const s = length_m * (mu * (ladder_mass_kg + person_mass_kg) * tan_t - ladder_mass_kg / 2.0)
+            / person_mass_kg;
+  return clamp(s, 0.0, length_m);
+}
+
+/* =========================================================================
+   RONDA — parámetros aleatorios dentro de rangos físicamente plausibles.
+   Se re-samplea si el resultado es trivial (0 o todos los escalones), para
+   que la mayoría de rondas tengan un límite intermedio interesante.
+   ========================================================================= */
+function randomizeRound(){
+  let round, attempt = 0;
+  do {
+    const length_m = rand(3.0, 6.0);          // m
+    const mass_kg = rand(5.0, 20.0);           // kg — masa de la escalera
+    const mu = rand(0.15, 0.6);                // coeficiente de rozamiento piso
+    const theta_deg = rand(50, 75);            // grados con el piso
+    const theta_rad = theta_deg * Math.PI / 180.0;
+    const totalSteps = Math.max(4, Math.floor(length_m / RUNG_SPACING_M) - 1);
+    const sMaxM = computeSMax(length_m, mass_kg, mu, theta_rad, PERSON_MASS_KG, G);
+    const safeStep = clamp(Math.floor(sMaxM / RUNG_SPACING_M), 0, totalSteps);
+    round = { length_m, mass_kg, mu, theta_deg, theta_rad, totalSteps, sMaxM, safeStep };
+    attempt++;
+  } while ((round.safeStep === 0 || round.safeStep === round.totalSteps) && attempt < 20);
+  return round;
+}
+
+function floorTexture(mu){
+  if (mu < 0.25) return { key: 'ceramica', label: 'Cerámica pulida (muy resbaladiza)' };
+  if (mu < 0.40) return { key: 'madera', label: 'Piso de madera (liso)' };
+  if (mu < 0.50) return { key: 'alfombra_fina', label: 'Alfombra fina (algo de agarre)' };
+  return { key: 'alfombra_gruesa', label: 'Alfombra gruesa (mucho agarre)' };
+}
+
+/* =========================================================================
+   LAYOUT DEL CUARTO (visual — no afecta la física)
+   ========================================================================= */
+const CANVAS_W = 1000, CANVAS_H = 760;
+const CEIL_Y = 34;
+const FLOOR_Y = 660;
+const LEFT_WALL_INNER = 30;
+const RIGHT_WALL_INNER = 910;
+
+const COLOR = {
+  ceiling: '#1c2740', ceilingBand: '#16203a',
+  wallBack: '#16213a', wallSide: '#111a30',
+  floor: '#2b3550', floorBase: '#212a44',
+  ladderRail: '#c9a26b', ladderRailDark: '#8a6a3f', ladderMetal: '#94a3b8',
+};
+
+/* =========================================================================
+   ESTADO DE JUEGO
+   ========================================================================= */
+const state = {
+  phase: 'predict',           // 'predict' | 'running' | 'result'
+  round: null,
+  predictedStep: 1,
+  climbDistanceM: 0,
+  tremorActive: false,
+  tremorT: 0,
+  time: 0,
+  stats: { rounds: 0, exact: 0, close: 0 },
+  reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+};
+
+const TREMOR_DURATION = 0.65;   // s
+const STEP_DURATION = 0.5;      // s por escalón durante la subida
+const CLIMB_SPEED = RUNG_SPACING_M / STEP_DURATION; // m/s
+
+function ladderBaseX(round){
+  const reach_px = round.length_m * Math.cos(round.theta_rad) * PPM;
+  return RIGHT_WALL_INNER - reach_px;
+}
+
+function newRound(){
+  state.round = randomizeRound();
+  state.phase = 'predict';
+  state.climbDistanceM = 0;
+  state.tremorActive = false;
+  state.predictedStep = Math.max(1, Math.round(state.round.totalSteps / 2));
+  hideBanner();
+  syncPredictControls();
+  updateSceneMetrics();
+  showPanel('predict');
+  setStatus('PREDECÍ TU RESPUESTA', 'var(--accent-main)');
+}
+
+function syncPredictControls(){
+  stepSlider.min = 1;
+  stepSlider.max = state.round.totalSteps;
+  stepSlider.value = state.predictedStep;
+  stepValue.textContent = state.predictedStep;
+  stepMax.textContent = state.round.totalSteps;
+  stepSlider.setAttribute('aria-valuemax', state.round.totalSteps);
+  stepSlider.setAttribute('aria-valuenow', state.predictedStep);
+}
+
+function updateSceneMetrics(){
+  const r = state.round;
+  mLength.textContent = r.length_m.toFixed(1) + ' m';
+  mAngle.textContent = r.theta_deg.toFixed(0) + '°';
+  mSteps.textContent = r.totalSteps;
+  mFloor.textContent = floorTexture(r.mu).label;
+}
+
+function selectPredictedStep(v){
+  const r = state.round;
+  state.predictedStep = clamp(Math.round(v), 1, r.totalSteps);
+  stepSlider.value = state.predictedStep;
+  stepValue.textContent = state.predictedStep;
+  stepSlider.setAttribute('aria-valuenow', state.predictedStep);
+}
+
+function confirmPrediction(){
+  if (state.phase !== 'predict') return;
+  state.phase = 'running';
+  mPredictedEcho.textContent = state.predictedStep;
+  showPanel('running');
+  setStatus('SUBIENDO…', 'var(--accent-alt)');
+  if (state.reducedMotion){
+    state.climbDistanceM = state.round.safeStep * RUNG_SPACING_M;
+    finalizeResult();
+  }
+}
+
+function finalizeResult(){
+  const r = state.round;
+  state.phase = 'result';
+  state.stats.rounds++;
+  const diff = Math.abs(state.predictedStep - r.safeStep);
+  let tier, tierClass, message;
+  if (diff === 0){
+    tier = '¡EXACTO!'; tierClass = 'tier-exact';
+    message = 'Calculaste bien el punto de deslizamiento.';
+    state.stats.exact++;
+  } else if (diff === 1){
+    tier = '¡MUY CERCA!'; tierClass = 'tier-close';
+    message = 'A un escalón de diferencia — buena intuición.';
+    state.stats.close++;
+  } else {
+    tier = 'NO COINCIDIÓ'; tierClass = 'tier-far';
+    message = r.safeStep > state.predictedStep
+      ? 'La escalera daba para más de lo que pensaste.'
+      : 'La fricción se agotó antes de lo que pensaste.';
+  }
+
+  // Desglose en el escalón real donde se detuvo (no en el punto teórico exacto
+  // de deslizamiento) — así f_requerida < f_máxima muestra el margen real que
+  // quedaba, en vez de una igualdad artificial que no corresponde a ningún
+  // escalón físico.
+  const stopDist = r.safeStep * RUNG_SPACING_M;
+  const data = computeEquilibrium(r.length_m, r.mass_kg, r.mu, r.theta_rad, PERSON_MASS_KG, stopDist, G);
+
+  resultTier.textContent = tier;
+  resultTier.className = 'result-tier ' + tierClass;
+  valPredicted.textContent = state.predictedStep;
+  valActual.textContent = r.safeStep;
+  rMu.textContent = r.mu.toFixed(2);
+  rNFloor.textContent = data.n_floor.toFixed(0) + ' N';
+  rNWall.textContent = data.n_wall.toFixed(0) + ' N';
+  rFReq.textContent = data.friction_required.toFixed(0) + ' N';
+  rFMax.textContent = data.friction_max.toFixed(0) + ' N';
+  statsLine.textContent = `Rondas: ${state.stats.rounds} · Exactas: ${state.stats.exact} · Cerca (±1): ${state.stats.close}`;
+
+  if (r.safeStep < r.totalSteps){
+    const nextDist = (r.safeStep + 1) * RUNG_SPACING_M;
+    const nextData = computeEquilibrium(r.length_m, r.mass_kg, r.mu, r.theta_rad, PERSON_MASS_KG, nextDist, G);
+    rNextNote.textContent = `En el escalón ${r.safeStep + 1} la fricción requerida (${nextData.friction_required.toFixed(0)} N) ya superaría la máxima disponible (${nextData.friction_max.toFixed(0)} N) — por eso se detuvo antes.`;
+  } else {
+    rNextNote.textContent = 'Llegó hasta el último escalón sin perder el equilibrio en ningún momento.';
+  }
+
+  showPanel('result');
+  setStatus('RESULTADO', tierClass === 'tier-exact' ? 'var(--accent-success)' : (tierClass === 'tier-close' ? 'var(--accent-warn)' : 'var(--accent-danger)'));
+  showBanner(message, tierClass === 'tier-exact' ? 'ok' : (tierClass === 'tier-close' ? 'warn' : 'danger'));
+}
+
+function showPanel(which){
+  predictPanel.classList.toggle('hidden', which !== 'predict');
+  runningPanel.classList.toggle('hidden', which !== 'running');
+  resultPanel.classList.toggle('hidden', which !== 'result');
+}
+
+function setStatus(text, color){
+  statusText.textContent = text;
+  statusDot.style.background = color;
+  statusText.style.color = color;
+}
+
+function showBanner(text, kind){
+  banner.textContent = text;
+  banner.style.display = 'block';
+  const colors = {
+    ok:    { bg: 'rgba(74,222,128,0.16)', border: 'var(--accent-success)', fg: 'var(--accent-success)' },
+    warn:  { bg: 'rgba(251,146,60,0.16)', border: 'var(--accent-warn)', fg: 'var(--accent-warn)' },
+    danger:{ bg: 'rgba(248,113,113,0.16)', border: 'var(--accent-danger)', fg: 'var(--accent-danger)' },
+  }[kind];
+  banner.style.background = colors.bg;
+  banner.style.border = '1px solid ' + colors.border;
+  banner.style.color = colors.fg;
+}
+function hideBanner(){ banner.style.display = 'none'; }
+
+/* =========================================================================
+   BUCLE PRINCIPAL
+   ========================================================================= */
+function update(dt){
+  state.time += dt;
+
+  if (state.phase === 'running' && !state.reducedMotion){
+    const r = state.round;
+    const target = r.safeStep * RUNG_SPACING_M;
+    if (!state.tremorActive){
+      if (state.climbDistanceM < target){
+        state.climbDistanceM = Math.min(target, state.climbDistanceM + CLIMB_SPEED * dt);
+      } else {
+        state.tremorActive = true;
+        state.tremorT = 0;
+      }
+    } else {
+      state.tremorT += dt;
+      if (state.tremorT >= TREMOR_DURATION){
+        state.tremorActive = false;
+        finalizeResult();
+      }
+    }
+  }
+}
+
+let lastT = null;
+function loop(ts){
+  if (lastT === null) lastT = ts;
+  const dt = Math.min(0.05, (ts - lastT) / 1000);
+  lastT = ts;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+/* =========================================================================
+   RENDER
+   ========================================================================= */
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+function draw(){
+  const W = canvas.width, H = canvas.height;
+  ctx.save();
+
+  if (state.tremorActive){
+    const s = 1 - (state.tremorT / TREMOR_DURATION) * 0.4;
+    const mag = 4 * Math.max(0, s);
+    ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
+  }
+
+  ctx.clearRect(-10, -10, W + 20, H + 20);
+  drawRoom();
+  if (state.round) drawLadderAndCharacter();
+
+  ctx.restore();
+}
+
+function drawRoom(){
+  const W = CANVAS_W, H = CANVAS_H;
+
+  // pared de fondo
+  const wallGrad = ctx.createLinearGradient(0, 0, 0, FLOOR_Y);
+  wallGrad.addColorStop(0, COLOR.wallBack);
+  wallGrad.addColorStop(1, '#1b2540');
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(0, 0, W, FLOOR_Y);
+
+  // paneles decorativos sutiles en la pared de fondo (nivel 5 — no compite)
+  ctx.save();
+  ctx.globalAlpha = 0.12;
+  ctx.strokeStyle = '#93a5c9';
+  ctx.lineWidth = 1;
+  for (let x = 70; x < RIGHT_WALL_INNER - 20; x += 90){
+    ctx.beginPath(); ctx.moveTo(x, CEIL_Y + 14); ctx.lineTo(x, FLOOR_Y - 6); ctx.stroke();
+  }
+  ctx.restore();
+
+  // techo
+  ctx.fillStyle = COLOR.ceilingBand;
+  ctx.fillRect(0, 0, W, CEIL_Y);
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, CEIL_Y); ctx.lineTo(W, CEIL_Y); ctx.stroke();
+
+  // pared izquierda (con ventana, da profundidad)
+  ctx.fillStyle = COLOR.wallSide;
+  ctx.fillRect(0, CEIL_Y, LEFT_WALL_INNER, FLOOR_Y - CEIL_Y);
+  const winX = 4, winY = CEIL_Y + 40, winW = LEFT_WALL_INNER - 8, winH = 120;
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  const skyGrad = ctx.createLinearGradient(0, winY, 0, winY + winH);
+  skyGrad.addColorStop(0, '#3b6fa6');
+  skyGrad.addColorStop(1, '#274b78');
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(winX, winY, winW, winH);
+  ctx.strokeStyle = '#0f1a2e'; ctx.lineWidth = 3;
+  ctx.strokeRect(winX, winY, winW, winH);
+  ctx.beginPath(); ctx.moveTo(winX, winY + winH / 2); ctx.lineTo(winX + winW, winY + winH / 2); ctx.stroke();
+  ctx.restore();
+
+  // pared derecha (donde se apoya la escalera)
+  ctx.fillStyle = COLOR.wallSide;
+  ctx.fillRect(RIGHT_WALL_INNER, CEIL_Y, W - RIGHT_WALL_INNER, FLOOR_Y - CEIL_Y);
+  ctx.save();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(RIGHT_WALL_INNER, CEIL_Y, 14, FLOOR_Y - CEIL_Y);
+  ctx.restore();
+
+  // esquinas (zócalo del cuarto para que se sienta un volumen cerrado)
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(LEFT_WALL_INNER, CEIL_Y); ctx.lineTo(LEFT_WALL_INNER, FLOOR_Y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(RIGHT_WALL_INNER, CEIL_Y); ctx.lineTo(RIGHT_WALL_INNER, FLOOR_Y); ctx.stroke();
+
+  // piso
+  ctx.fillStyle = COLOR.floorBase;
+  ctx.fillRect(0, FLOOR_Y, W, H - FLOOR_Y);
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0, FLOOR_Y); ctx.lineTo(W, FLOOR_Y); ctx.stroke();
+  // grid de referencia (escala: 1 casillero = 1 metro = PPM px)
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += PPM){
+    ctx.beginPath(); ctx.moveTo(x, FLOOR_Y + 4); ctx.lineTo(x, H - 4); ctx.stroke();
+  }
+
+  if (state.round) drawFloorTexture();
+}
+
+function drawFloorTexture(){
+  const r = state.round;
+  const tex = floorTexture(r.mu);
+  const baseX = ladderBaseX(r);
+  const x0 = clamp(baseX - 90, LEFT_WALL_INNER + 4, RIGHT_WALL_INNER - 200);
+  const w = 210, y0 = FLOOR_Y + 6, h = 46;
+
+  ctx.save();
+  if (tex.key === 'ceramica'){
+    ctx.fillStyle = 'rgba(200,225,255,0.14)';
+    ctx.fillRect(x0, y0, w, h);
+    ctx.strokeStyle = 'rgba(200,225,255,0.28)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++){
+      ctx.beginPath(); ctx.moveTo(x0 + i * 55, y0); ctx.lineTo(x0 + i * 55 - 18, y0 + h); ctx.stroke();
+    }
+  } else if (tex.key === 'madera'){
+    ctx.fillStyle = 'rgba(180,140,90,0.18)';
+    ctx.fillRect(x0, y0, w, h);
+    ctx.strokeStyle = 'rgba(120,90,55,0.35)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 6; i++){
+      ctx.beginPath(); ctx.moveTo(x0, y0 + i * 8); ctx.lineTo(x0 + w, y0 + i * 8); ctx.stroke();
+    }
+  } else {
+    const dark = tex.key === 'alfombra_gruesa';
+    ctx.fillStyle = dark ? 'rgba(129,140,248,0.22)' : 'rgba(129,140,248,0.13)';
+    ctx.fillRect(x0, y0, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+    const cell = dark ? 8 : 12;
+    for (let py = 0; py < h; py += cell){
+      for (let px = 0; px < w; px += cell){
+        if ((Math.round(px / cell) + Math.round(py / cell)) % 2 === 0){
+          ctx.fillRect(x0 + px, y0 + py, cell, cell);
+        }
+      }
+    }
+  }
+  ctx.restore();
+}
+
+function ladderPose(){
+  const r = state.round;
+  return { baseX: ladderBaseX(r), baseY: FLOOR_Y, theta: r.theta_rad };
+}
+
+function ladderPoint(pose, distAlong_m){
+  const dpx = metersToPx(distAlong_m);
+  return {
+    x: pose.baseX + dpx * Math.cos(pose.theta),
+    y: pose.baseY - dpx * Math.sin(pose.theta),
+  };
+}
+
+function drawLadderAndCharacter(){
+  const r = state.round;
+  const pose = ladderPose();
+  const base = { x: pose.baseX, y: pose.baseY };
+  const top = ladderPoint(pose, r.length_m);
+  const dir = { x: Math.cos(pose.theta), y: -Math.sin(pose.theta) };
+  const perp = { x: -dir.y, y: dir.x };
+  const halfW = metersToPx(0.16) / 2.0;
+  const railOffset = halfW * 0.75;
+
+  // sombra de contacto en el piso
+  ctx.save();
+  ctx.globalAlpha = 0.28;
+  ctx.fillStyle = '#000';
+  ctx.beginPath(); ctx.ellipse(base.x, base.y + 4, halfW * 3, 6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  // dos largueros
+  [-railOffset, railOffset].forEach(off => {
+    const p0 = { x: base.x + perp.x * off, y: base.y + perp.y * off };
+    const p1 = { x: top.x + perp.x * off, y: top.y + perp.y * off };
+    ctx.strokeStyle = COLOR.ladderRail; ctx.lineWidth = Math.max(halfW * 0.6, 5);
+    ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+    ctx.strokeStyle = COLOR.ladderRailDark; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+    ctx.fillStyle = COLOR.ladderMetal;
+    ctx.beginPath(); ctx.arc(p1.x, p1.y, 4, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // escalones numerados
+  ctx.lineCap = 'round';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 1; i <= r.totalSteps; i++){
+    const rp = ladderPoint(pose, i * RUNG_SPACING_M);
+    const a = { x: rp.x - perp.x * railOffset, y: rp.y - perp.y * railOffset };
+    const b = { x: rp.x + perp.x * railOffset, y: rp.y + perp.y * railOffset };
+
+    let rungColor = COLOR.ladderRailDark;
+    if (state.phase !== 'result' && i === state.predictedStep){
+      rungColor = '#facc15';
+    }
+    if (state.phase === 'result'){
+      if (i === r.safeStep) rungColor = '#4ade80';
+      if (i === state.predictedStep && i !== r.safeStep) rungColor = '#facc15';
+    }
+
+    ctx.strokeStyle = rungColor; ctx.lineWidth = 4.5;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+
+    // etiqueta numérica del escalón
+    const labelPos = { x: rp.x + perp.x * (railOffset + 16), y: rp.y + perp.y * (railOffset + 16) };
+    ctx.font = '600 13px "JetBrains Mono", monospace';
+    ctx.fillStyle = (i === state.predictedStep || (state.phase === 'result' && i === r.safeStep))
+      ? '#f1f5f9' : 'rgba(148,163,184,0.55)';
+    ctx.fillText(i, labelPos.x, labelPos.y);
+  }
+
+  // marcador "?" en el escalón predicho durante predict/running
+  if (state.phase !== 'result'){
+    const pp = ladderPoint(pose, state.predictedStep * RUNG_SPACING_M);
+    const markerPos = { x: pp.x + perp.x * (railOffset + 34), y: pp.y + perp.y * (railOffset + 34) };
+    drawMarkerBubble(markerPos.x, markerPos.y, '?', '#facc15');
+  }
+  // marcador de resultado real
+  if (state.phase === 'result'){
+    const ap = ladderPoint(pose, r.safeStep * RUNG_SPACING_M);
+    const markerPos = { x: ap.x + perp.x * (railOffset + 34), y: ap.y + perp.y * (railOffset + 34) };
+    drawMarkerBubble(markerPos.x, markerPos.y, '✓', '#4ade80');
+  }
+
+  // persona
+  const climbM = state.phase === 'predict' ? 0 : state.climbDistanceM;
+  const cpos = ladderPoint(pose, climbM);
+  const charOffset = -20;
+  const cx = cpos.x + perp.x * charOffset;
+  const cy = cpos.y + perp.y * charOffset;
+  drawCharacter(cx, cy, climbM > 0.001);
+}
+
+function drawMarkerBubble(x, y, glyph, color){
+  ctx.save();
+  ctx.beginPath(); ctx.arc(x, y, 13, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(15,23,42,0.85)';
+  ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = color;
+  ctx.font = '700 14px "Space Grotesk", sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(glyph, x, y + 1);
+  ctx.restore();
+}
+
+function drawCharacter(x, y, isClimbing){
+  const r = 15;
+  const bob = state.phase === 'predict' ? Math.sin(state.time * 2.0) * 1.4 : 0;
+  const strain = state.tremorActive;
+
+  ctx.save();
+  ctx.translate(x, y + bob);
+  if (strain){
+    const wob = Math.sin(state.time * 40) * 2;
+    ctx.rotate(wob * Math.PI / 180);
+  }
+
+  const SKIN = '#e8c39a', SKIN_OUT = '#a3805c', SHIRT = '#38bdf8', SHIRT_OUT = '#1f7fa8',
+        PANTS = '#334155', SHOE = '#1e293b', HAIR = '#3a2a1d';
+  const headC = { x: 0, y: -r * 2.5 };
+
+  // piernas
+  ctx.strokeStyle = PANTS; ctx.lineWidth = 4.5; ctx.lineCap = 'round';
+  const legSwing = isClimbing ? Math.sin(state.time * 9) * 0.35 : 0;
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.2); ctx.lineTo(-r * 0.65 + legSwing * 10, r * 1.3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.2); ctx.lineTo(r * 0.65 - legSwing * 10, r * 1.3); ctx.stroke();
+  ctx.fillStyle = SHOE;
+  ctx.beginPath(); ctx.arc(-r * 0.65 + legSwing * 10, r * 1.35, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.65 - legSwing * 10, r * 1.35, 3, 0, Math.PI * 2); ctx.fill();
+
+  // brazos
+  ctx.strokeStyle = SKIN; ctx.lineWidth = 3;
+  const armLift = strain ? -r * 0.4 : -r * 0.5;
+  ctx.beginPath(); ctx.moveTo(0, -r * 1.5); ctx.lineTo(-r * 0.9, armLift); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, -r * 1.5); ctx.lineTo(r * 0.9, armLift); ctx.stroke();
+
+  // torso
+  ctx.fillStyle = strain ? '#fb923c' : SHIRT;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.55, -r * 1.7); ctx.lineTo(r * 0.55, -r * 1.7);
+  ctx.lineTo(r * 0.45, -r * 0.1); ctx.lineTo(-r * 0.45, -r * 0.1); ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = SHIRT_OUT; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // cabeza
+  ctx.fillStyle = SKIN;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y, r * 0.7, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = SKIN_OUT; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // pelo
+  ctx.strokeStyle = HAIR; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y - 2, r * 0.72, Math.PI * 1.05, Math.PI * 1.95); ctx.stroke();
+
+  ctx.restore();
+}
+
+/* =========================================================================
+   INPUT — abstracción con Pointer Events (mouse + touch unificados) y teclado
+   ========================================================================= */
+const stepSlider = document.getElementById('stepSlider');
+const stepValue = document.getElementById('stepValue');
+const stepMax = document.getElementById('stepMax');
+const confirmBtn = document.getElementById('confirmBtn');
+const newRoundBtn = document.getElementById('newRoundBtn');
+const predictPanel = document.getElementById('predictPanel');
+const runningPanel = document.getElementById('runningPanel');
+const resultPanel = document.getElementById('resultPanel');
+const statusText = document.getElementById('statusText');
+const statusDot = document.getElementById('statusDot');
+const banner = document.getElementById('banner');
+const mLength = document.getElementById('mLength');
+const mAngle = document.getElementById('mAngle');
+const mSteps = document.getElementById('mSteps');
+const mFloor = document.getElementById('mFloor');
+const mCurrentStep = document.getElementById('mCurrentStep');
+const mPredictedEcho = document.getElementById('mPredictedEcho');
+const resultTier = document.getElementById('resultTier');
+const valPredicted = document.getElementById('valPredicted');
+const valActual = document.getElementById('valActual');
+const rMu = document.getElementById('rMu');
+const rNFloor = document.getElementById('rNFloor');
+const rNWall = document.getElementById('rNWall');
+const rFReq = document.getElementById('rFReq');
+const rFMax = document.getElementById('rFMax');
+const rNextNote = document.getElementById('rNextNote');
+const statsLine = document.getElementById('statsLine');
+
+stepSlider.addEventListener('input', () => {
+  if (state.phase !== 'predict') return;
+  selectPredictedStep(parseInt(stepSlider.value, 10));
+});
+
+confirmBtn.addEventListener('pointerup', confirmPrediction);
+newRoundBtn.addEventListener('pointerup', newRound);
+
+canvas.addEventListener('pointerup', (ev) => {
+  if (state.phase !== 'predict' || !state.round) return;
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+  const px = (ev.clientX - rect.left) * scaleX;
+  const py = (ev.clientY - rect.top) * scaleY;
+  const pose = ladderPose();
+  const dir = { x: Math.cos(pose.theta), y: -Math.sin(pose.theta) };
+  const rel = { x: px - pose.baseX, y: py - pose.baseY };
+  const alongPx = rel.x * dir.x + rel.y * dir.y;
+  const alongM = clamp(alongPx / PPM, 0, state.round.length_m);
+  selectPredictedStep(Math.round(alongM / RUNG_SPACING_M));
+});
+
+document.addEventListener('keydown', (ev) => {
+  if (state.phase === 'predict'){
+    if (ev.key === 'ArrowRight' || ev.key === 'ArrowUp'){
+      selectPredictedStep(state.predictedStep + 1); ev.preventDefault();
+    } else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowDown'){
+      selectPredictedStep(state.predictedStep - 1); ev.preventDefault();
+    } else if (ev.key === 'Enter' || ev.key === ' '){
+      confirmPrediction(); ev.preventDefault();
+    }
+  } else if (state.phase === 'result'){
+    if (ev.key === 'Enter' || ev.key === ' ' || ev.key.toLowerCase() === 'r'){
+      newRound(); ev.preventDefault();
+    }
+  }
+});
+
+// readout en vivo del escalón actual durante la subida
+setInterval(() => {
+  if (state.phase === 'running'){
+    mCurrentStep.textContent = Math.min(
+      state.round.safeStep,
+      Math.round(state.climbDistanceM / RUNG_SPACING_M)
+    );
+  }
+}, 100);
+
+newRound();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

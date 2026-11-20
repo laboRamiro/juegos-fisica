@@ -1,0 +1,1999 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hidrodinámica - La Rueda del Molino</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #0a1628;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 10px 24px;
+    color: #fff;
+    user-select: none;
+  }
+  #game-container {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 1180px;
+  }
+  #canvas-wrap { display: flex; flex-direction: column; align-items: center; }
+  canvas#game-canvas {
+    border-radius: 14px;
+    box-shadow: 0 0 40px rgba(0,150,255,0.25);
+    display: block;
+    background: #0a1628;
+    max-width: 100%;
+    height: auto;
+  }
+  @media (max-width: 900px) {
+    #game-container { flex-direction: column; align-items: center; }
+    .side-panel { max-width: 100% !important; width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <div id="game-container">
+    <div id="canvas-wrap">
+      <canvas id="game-canvas" width="800" height="500"></canvas>
+    </div>
+    <div id="side-panel-mount"></div>
+  </div>
+  <script>
+  'use strict';
+
+  const PIXELS_PER_METER = 100;
+  const TARGET_FPS = 60;
+  const CANVAS_WIDTH = 800;
+  const CANVAS_HEIGHT = 500;
+  const ANIMATION_DURATION_MS = 2500;
+
+// EventBus.js — Hidrodinámica: La Rueda del Molino
+// Patrón: html-patterns-observer (singleton pub/sub).
+// SIN import/export ES6: este archivo se inlinea tal cual dentro de un único <script>
+// armado por el Publisher junto con el resto de los módulos del juego.
+//
+// Eventos exactos del contrato común (briefs/contrato-comun.md) — no agregar otros
+// sin documentarlo en el resumen final del agente que los necesite:
+//   SLIDER_CHANGED        → { v1 }
+//   VALVE_OPENED          → sin payload
+//   ROUND_RESOLVED        → { ronda, v1, v2, Q, P2, categoria, error, sobra }
+//   NEXT_ROUND_REQUESTED  → sin payload
+//   GAME_SUMMARY_READY    → { resultados: [...] }
+
+class EventBusClass {
+  constructor() {
+    this._listeners = new Map();
+  }
+
+  on(event, fn) {
+    if (!this._listeners.has(event)) this._listeners.set(event, new Set());
+    this._listeners.get(event).add(fn);
+    return () => this.off(event, fn); // función de desuscripción
+  }
+
+  off(event, fn) {
+    this._listeners.get(event)?.delete(fn);
+  }
+
+  emit(event, data) {
+    this._listeners.get(event)?.forEach((fn) => fn(data));
+  }
+
+  once(event, fn) {
+    const wrapper = (data) => {
+      fn(data);
+      this.off(event, wrapper);
+    };
+    this.on(event, wrapper);
+  }
+
+  clear(event) {
+    if (event) this._listeners.delete(event);
+    else this._listeners.clear();
+  }
+}
+
+// Singleton global — todos los demás módulos (Physicist, Artist, Interface, Publisher)
+// usan esta misma instancia para comunicarse sin referencias directas entre sí.
+const EventBus = new EventBusClass();
+
+// Constantes de nombre de evento — usar siempre estas constantes, nunca strings sueltos,
+// para evitar el bug recurrente de typos entre agentes (ver lessons-learned.md).
+const EVENTS = {
+  SLIDER_CHANGED: 'SLIDER_CHANGED',
+  VALVE_OPENED: 'VALVE_OPENED',
+  ROUND_RESOLVED: 'ROUND_RESOLVED',
+  NEXT_ROUND_REQUESTED: 'NEXT_ROUND_REQUESTED',
+  GAME_SUMMARY_READY: 'GAME_SUMMARY_READY',
+};
+
+// HydraulicsEngine.js
+// Motor físico de "Hidrodinámica: La Rueda del Molino".
+// Ecuación de continuidad (A1*v1 = A2*v2 = Q) + Principio de Bernoulli
+// (tubería horizontal, sin cambio de altura: P1 + ½ρv1² = P2 + ½ρv2²).
+//
+// Bloque JS plano. SIN import/export ES6 (se carga vía <script> directo en
+// el HTML autocontenido del juego, igual que el resto de módulos del portal).
+//
+// Nombres y firmas EXACTOS según hidrodinamica/briefs/contrato-comun.md —
+// no renombrar, no modificar fórmulas ni umbrales de categoría.
+
+const RHO_WATER = 1000;       // kg/m3 — densidad del agua
+const P1_PASCAL = 200000;     // Pa, presión manométrica fija de la bomba (dato dado, nunca cambia)
+
+const RONDAS = [
+  { ronda: 1, A1: 0.0024, A2: 0.0012, v1Correcto: 3.00, v2Objetivo: 6.0 },
+  { ronda: 2, A1: 0.0024, A2: 0.0008, v1Correcto: 2.00, v2Objetivo: 6.0 },
+  { ronda: 3, A1: 0.0024, A2: 0.0006, v1Correcto: 1.50, v2Objetivo: 6.0 },
+  { ronda: 4, A1: 0.0024, A2: 0.0004, v1Correcto: 1.00, v2Objetivo: 6.0 },
+  { ronda: 5, A1: 0.0024, A2: 0.0003, v1Correcto: 0.75, v2Objetivo: 6.0 },
+];
+// A1, A2 en m². Todo el cálculo físico SIEMPRE en SI (m, m/s, m³/s, Pa).
+// Para mostrar en UI: A en cm² (×10000), Q en L/s (×1000).
+
+// Ecuación de continuidad: A1*v1 = A2*v2  →  v2 = v1*(A1/A2)
+function computeV2(v1, A1, A2) { return v1 * (A1 / A2); } // m/s
+
+// Caudal volumétrico: Q = A1*v1 (igual a A2*v2, fluido incompresible)
+function computeQ(A1, v1) { return A1 * v1; } // m3/s
+
+// Bernoulli (tubería horizontal, ρgh se cancela):
+// P1 + ½ρv1² = P2 + ½ρv2²  →  P2 = P1 - ½ρ(v2² - v1²)
+function computeP2(v1, v2) { return P1_PASCAL - 0.5 * RHO_WATER * (v2 * v2 - v1 * v1); } // Pa
+
+// Límite superior seleccionable de v1 por ronda: nunca deja v2 > 12 m/s
+// (evita velocidades de salida no realistas / riesgo de cavitación didáctica).
+function clampV1Max(A1, A2) { return Math.min(3.60, 12 * (A2 / A1)); } // m/s
+
+// Clasifica el resultado de la ronda según |v2_logrado - v2Objetivo|.
+// Umbrales (m/s de error): óptima ≤0.3, aceptable ≤0.7, forzada ≤1.5, si no rotura.
+function resolveRoundOutcome(v2, v2Objetivo) {
+  const error = Math.abs(v2 - v2Objetivo);
+  let categoria;
+  if (error <= 0.3) categoria = 'optima';
+  else if (error <= 0.7) categoria = 'aceptable';
+  else if (error <= 1.5) categoria = 'forzada';
+  else categoria = 'rotura';
+  return { error, categoria, sobra: v2 > v2Objetivo }; // sobra=true → v2 por encima del objetivo
+}
+
+// ---------------------------------------------------------------------------
+// CASOS DE PRUEBA VERIFICADOS A MANO (hidrodinamica/briefs/physicist-brief.md)
+// ---------------------------------------------------------------------------
+//
+// 1) Ronda 1 (A1=0.0024, A2=0.0012), v1=3.00:
+//    v2 = computeV2(3.00, 0.0024, 0.0012) = 3.00 * (0.0024/0.0012) = 3.00 * 2 = 6.0 m/s
+//    → EXACTAMENTE 6.0 m/s, como exige el caso de prueba.
+//    resolveRoundOutcome(6.0, 6.0) → error=0 → categoria='optima'. OK.
+//
+// 2) Ronda 5 (A1=0.0024, A2=0.0003), v1=0.75:
+//    v2 = computeV2(0.75, 0.0024, 0.0003) = 0.75 * (0.0024/0.0003) = 0.75 * 8 = 6.0 m/s
+//    resolveRoundOutcome(6.0, 6.0) → error=0 → categoria='optima'. OK.
+//
+// 3) Ronda 5 con v1=1.00 (valor correcto de la ronda 4, "fuera de lugar" en ronda 5):
+//    v2 = computeV2(1.00, 0.0024, 0.0003) = 1.00 * 8 = 8.0 m/s
+//    resolveRoundOutcome(8.0, 6.0) → error = |8.0-6.0| = 2.0 > 1.5 → categoria='rotura', sobra=true. OK.
+//    Confirma el punto pedagógico: razón A1/A2=8 amplifica x8 cualquier error de v1.
+//
+// 4) computeP2 con v1=3.00, v2=6.00:
+//    P2 = 200000 - 0.5*1000*(6.00^2 - 3.00^2) = 200000 - 0.5*1000*(36-9)
+//       = 200000 - 500*27 = 200000 - 13500 = 186500 Pa
+//    → positivo, sin cavitación. OK.
+//
+// 5) (verificación adicional, no pedida explícitamente pero exigida por game-spec):
+//    clampV1Max en la ronda 5 (A1=0.0024, A2=0.0003):
+//    clampV1Max = min(3.60, 12*(0.0003/0.0024)) = min(3.60, 12*0.125) = min(3.60, 1.5) = 1.5 m/s
+//    Con v1=1.5 (el máximo seleccionable en ronda 5) → v2 = 1.5*8 = 12.0 m/s (el tope de diseño).
+//    P2 = 200000 - 0.5*1000*(12^2 - 1.5^2) = 200000 - 500*(144-2.25)
+//       = 200000 - 500*141.75 = 200000 - 70875 = 129125 Pa
+//    → positivo (> 0), consistente con la cota del game-spec (~128000 Pa en el peor caso
+//    teórico límite). Nunca hay presión negativa ni cavitación en ninguna ronda del slider
+//    clampeado.
+
+// MillWheel.js
+// Estado físico de la rueda del molino (cuerpo rígido en rotación pura,
+// sin traslación). No integra fuerzas/torques reales: la velocidad angular
+// objetivo es proporcional a v2 (resultado de la ecuación de continuidad) y
+// se alcanza mediante suavizado (lerp/easing), no salto instantáneo —
+// según hidrodinamica/briefs/physicist-brief.md y Skill/html-forces-integration.md.
+//
+// Bloque JS plano. SIN import/export ES6.
+
+// Factor de conversión v2 (m/s) → velocidad angular objetivo (rad/s).
+// Fijado por el brief: velocidadAngular_objetivo = v2 * MILLWHEEL_OMEGA_PER_V2.
+const MILLWHEEL_OMEGA_PER_V2 = 1.2; // rad/s por cada m/s de v2
+
+// Velocidad de aproximación del lerp (qué tan rápido converge hacia el objetivo
+// o hacia el reposo). Valor en "fracción por segundo" para un lerp exponencial
+// estable independiente del framerate: factor = 1 - exp(-rate*dt).
+const MILLWHEEL_LERP_RATE = 3.0; // 1/s
+
+class MillWheel {
+  constructor() {
+    this.anguloRad = 0;        // rad — ángulo acumulado de la rueda (solo gira hacia adelante)
+    this.velocidadAngular = 0; // rad/s — velocidad angular actual (suavizada)
+    this._omegaObjetivo = 0;   // rad/s — objetivo instantáneo según fase/v2
+  }
+
+  // Fija el objetivo de velocidad angular a partir de v2 (m/s). Se llama
+  // típicamente al resolver la ronda o en cada frame de RUNNING con el v2
+  // previsto/logrado.
+  setV2(v2) {
+    this._omegaObjetivo = v2 * MILLWHEEL_OMEGA_PER_V2; // rad/s
+  }
+
+  // Actualiza el estado físico de la rueda un paso de tiempo dt (s).
+  // fase: 'SETUP' | 'RUNNING' | 'RESULT' | 'SUMMARY'
+  //  - RUNNING: converge suavemente hacia v2*1.2 rad/s (omega objetivo fijado con setV2).
+  //  - SETUP/RESULT/SUMMARY: converge suavemente hacia reposo (velocidadAngular → 0).
+  update(dt, fase) {
+    const objetivo = (fase === 'RUNNING') ? this._omegaObjetivo : 0;
+
+    // Lerp exponencial (easing), estable para cualquier dt razonable:
+    // evita el salto instantáneo y converge sin overshoot ni dependencia
+    // exagerada del framerate.
+    const t = 1 - Math.exp(-MILLWHEEL_LERP_RATE * dt);
+    this.velocidadAngular += (objetivo - this.velocidadAngular) * t;
+
+    // Snap a cero cuando ya es despreciable, para que quede realmente en
+    // reposo (sin un resto infinitesimal girando para siempre).
+    if (fase !== 'RUNNING' && Math.abs(this.velocidadAngular) < 1e-4) {
+      this.velocidadAngular = 0;
+    }
+
+    // Integración simple del ángulo (Euler semi-implícito: con la velocidad
+    // ya actualizada de este frame), normalizado a [0, 2π) por prolijidad.
+    this.anguloRad += this.velocidadAngular * dt;
+    const twoPi = Math.PI * 2;
+    this.anguloRad = ((this.anguloRad % twoPi) + twoPi) % twoPi;
+  }
+
+  // Reinicia la rueda a reposo total (por ejemplo, al entrar a una nueva ronda en SETUP).
+  reset() {
+    this.anguloRad = 0;
+    this.velocidadAngular = 0;
+    this._omegaObjetivo = 0;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Verificación manual de comportamiento (no son los 4 casos del brief, que
+// pertenecen a HydraulicsEngine — esto es chequeo de consistencia del
+// suavizado, ya que MillWheel consume v2 de HydraulicsEngine):
+//
+// Caso de referencia: ronda 1, v1=3.00 → v2=6.0 (ver HydraulicsEngine.js).
+// setV2(6.0) → _omegaObjetivo = 6.0 * 1.2 = 7.2 rad/s.
+// Con MILLWHEEL_LERP_RATE=3.0 y dt=1/60s: t = 1-exp(-3/60) ≈ 0.0488 por frame.
+// Tras ~1s (60 frames) de RUNNING, velocidadAngular ≈ 7.2*(1-exp(-3*1)) ≈ 7.2*0.9502 ≈ 6.84 rad/s,
+// y converge prácticamente al 100% del objetivo (7.2 rad/s) bien dentro de los 2.5s
+// de ANIMATION_DURATION_MS — sin salto instantáneo, como exige el brief.
+// Al pasar a RESULT, objetivo=0 y por el mismo lerp la rueda decelera suavemente
+// hasta el snap a 0 (reposo), nunca se detiene en seco.
+
+// Drawing.js
+// Funciones de dibujo puras (Canvas 2D) para "Hidrodinámica: La Rueda del Molino".
+// Estilo "Lab Moderno" plano del portal (navy/sky-blue/gold) — NO pixel art.
+//
+// Bloque JS plano. SIN import/export ES6 (se carga vía <script> directo en el
+// HTML autocontenido, igual que el resto de módulos del portal).
+//
+// Todas las funciones son puras: reciben `ctx` + datos por parámetro, no leen
+// estado global ni dependen de variables fuera de su propio scope. Excepción
+// deliberada: el array `_waterParticlesCache` que cachea partículas internas
+// de drawWaterFlow (ver comentario en esa función) — no es estado de juego,
+// es solo un detalle de implementación del efecto visual.
+//
+// Fuentes reutilizadas tal cual (ver hidrodinamica/briefs/artist-brief.md):
+// - Gradiente de agua: idéntico al de `drawSky()` en
+//   proferamiro-app/public/juegos/presion.html (líneas ~186-190):
+//   g.addColorStop(0,'#1a6fa8'); g.addColorStop(0.6,'#5bafd6'); g.addColorStop(1,'#aadff7');
+//   (Nota: el brief decía "resonancia.html" pero el gradiente exacto vive en
+//   presion.html; resonancia.html no dibuja agua con esos hex. Se usó la
+//   fuente real verificada por grep en todo el repo.)
+// - Tonos de madera: reutilizados de `Juegos y simuladores/arquimedes.html`
+//   (bote/tierra): '#8d6e4a' claro, '#5d4037' oscuro.
+
+// ===========================================================================
+// CONSTANTES DE ESCALA VISUAL (documentadas para Publisher e Interface)
+// ===========================================================================
+
+// Factor de dibujo: cuántos píxeles de canvas representan 1 cm real de
+// diámetro de tubería. D1≈5.53cm constante, D2 varía 3.91→1.95cm entre
+// rondas (ver game-spec.md). Con PX_PER_CM=8: D1 dibujado ≈44px, D2 dibujado
+// entre ≈31px (ronda1) y ≈16px (ronda5) — visible y proporcional en los 800px
+// de ancho del canvas sin saturarlo.
+const PX_PER_CM = 8;
+
+// Radio de dibujo de la tubería ∝ sqrt(A), no a A directamente (si no, el
+// angostamiento se ve exagerado: A1/A2=8 en ronda5 daría un cociente de
+// diámetros de 8x en vez de sqrt(8)≈2.83x, que es lo físicamente correcto
+// ya que A = π·r² → r ∝ sqrt(A)).
+// A en m² → diámetro real en cm: D_cm = 2 * sqrt(A_m2 / Math.PI) * 100.
+function _diametroCmFromArea(A_m2) {
+  return 2 * Math.sqrt(A_m2 / Math.PI) * 100;
+}
+
+// Escala visual de la velocidad de las partículas de agua (px/s), INDEPENDIENTE
+// de PIXELS_PER_METER (100 px/m del portal). A v2 máximo de diseño (12 m/s,
+// ver game-spec.md "clamp anti-cavitación") una escala literal de 100px/m
+// daría 1200 px/s: ilegible (cruza el tramo angosto en una fracción de
+// frame). VISUAL_FLOW_SCALE mapea m/s reales a px/s de animación legible:
+// a v=12 m/s, velocidad visual = 12*22 = 264 px/s (cruza ~125px de tramo
+// angosto en ~0.5s: fluido pero seguible a simple vista). A v=0.75 m/s
+// (mínimo "correcto", ronda 5) → 16.5 px/s, todavía visiblemente en movimiento.
+const VISUAL_FLOW_SCALE = 22; // px/s por cada 1 m/s real
+
+// Densidad de partículas (cantidad simultánea) en cada tramo, proporcional
+// a cuán angosto es el tramo (más rápido y más "apretado" se ve el flujo).
+const WATER_PARTICLES_ANCHO = 14;  // tramo ancho (entrada/salida, A1)
+const WATER_PARTICLES_ANGOSTO = 22; // tramo angosto (garganta Venturi, A2)
+
+// Paleta (idéntica a la documentada en artist-brief.md, no modificar)
+const COLOR_AGUA = ['#1a6fa8', '#5bafd6', '#aadff7'];
+const COLOR_TUBERIA = { cuerpo: '#5c6b7a', sombra: '#3a4654', brillo: '#8a99a8' };
+const COLOR_MADERA = { claro: '#8d6e4a', oscuro: '#5d4037', remache: '#ffd166' };
+const COLOR_GAUGE = { cara: '#f5f0e6', aguja: '#ff6b6b' };
+const COLOR_CATEGORIA = { optima: '#81c784', aceptable: '#64b5f6', forzada: '#ffd166', rotura: '#ff6b6b' };
+
+// ===========================================================================
+// drawTank — tanque/reserva de agua a la izquierda, alimenta la tubería
+// ===========================================================================
+// (x,y) = esquina superior izquierda del tanque.
+function drawTank(ctx, x, y) {
+  const w = 90;
+  const h = 130;
+
+  ctx.save();
+
+  // Cuerpo del tanque (metal, mismo lenguaje visual que la tubería)
+  const bodyGrad = ctx.createLinearGradient(x, y, x + w, y);
+  bodyGrad.addColorStop(0, COLOR_TUBERIA.sombra);
+  bodyGrad.addColorStop(0.5, COLOR_TUBERIA.cuerpo);
+  bodyGrad.addColorStop(1, COLOR_TUBERIA.brillo);
+  ctx.fillStyle = bodyGrad;
+  ctx.strokeStyle = COLOR_TUBERIA.sombra;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 6);
+  ctx.fill();
+  ctx.stroke();
+
+  // Agua dentro del tanque (gradiente reutilizado tal cual)
+  const padding = 8;
+  const waterX = x + padding;
+  const waterY = y + padding + 14; // deja "aire" arriba, tanque no 100% lleno
+  const waterW = w - padding * 2;
+  const waterH = h - padding * 2 - 14;
+
+  const waterGrad = ctx.createLinearGradient(waterX, waterY, waterX, waterY + waterH);
+  waterGrad.addColorStop(0, COLOR_AGUA[0]);
+  waterGrad.addColorStop(0.6, COLOR_AGUA[1]);
+  waterGrad.addColorStop(1, COLOR_AGUA[2]);
+  ctx.fillStyle = waterGrad;
+  ctx.beginPath();
+  ctx.roundRect(waterX, waterY, waterW, waterH, 3);
+  ctx.fill();
+
+  // Línea de superficie (espejo de agua) con leve brillo
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(waterX, waterY);
+  ctx.lineTo(waterX + waterW, waterY);
+  ctx.stroke();
+
+  // Remaches decorativos (gold), coherentes con el resto del juego
+  ctx.fillStyle = COLOR_MADERA.remache;
+  for (let i = 0; i < 4; i++) {
+    const ry = y + 12 + i * ((h - 24) / 3);
+    ctx.beginPath();
+    ctx.arc(x + 6, ry, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x + w - 6, ry, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Etiqueta
+  ctx.fillStyle = '#87ceeb';
+  ctx.font = 'bold 12px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('TANQUE', x + w / 2, y - 8);
+
+  ctx.restore();
+}
+
+// ===========================================================================
+// drawVenturiPipe — tubería ancha→angosta→ancha
+// ===========================================================================
+// A1, A2 en m² (mismas unidades que HydraulicsEngine.computeV2/computeQ).
+// (originX, originY) = punto de inicio (borde izquierdo, eje vertical centrado
+// en originY) por donde la tubería sale del tanque.
+//
+// Geometría longitudinal (fija, no depende de A1/A2): tramo ancho de entrada,
+// rampa de contracción, garganta angosta, rampa de expansión, tramo ancho de
+// salida hacia la rueda. Los anchos SÍ dependen de A1/A2 vía sqrt(A).
+function drawVenturiPipe(ctx, A1, A2, originX, originY) {
+  const d1Cm = _diametroCmFromArea(A1);
+  const d2Cm = _diametroCmFromArea(A2);
+  const r1 = (d1Cm * PX_PER_CM) / 2; // radio dibujado del tramo ancho
+  const r2 = (d2Cm * PX_PER_CM) / 2; // radio dibujado del tramo angosto
+
+  // Tramos longitudinales (px), fijos en todas las rondas.
+  const lEntrada = 70;
+  const lRampaIn = 50;
+  const lGarganta = 110;
+  const lRampaOut = 50;
+  const lSalida = 70;
+
+  const xEntradaIni = originX;
+  const xEntradaFin = xEntradaIni + lEntrada;
+  const xGargantaIni = xEntradaFin + lRampaIn;
+  const xGargantaFin = xGargantaIni + lGarganta;
+  const xSalidaIni = xGargantaFin + lRampaOut;
+  const xSalidaFin = xSalidaIni + lSalida;
+
+  ctx.save();
+
+  // -- contorno relleno (cuerpo metálico) --
+  const bodyGrad = ctx.createLinearGradient(originX, originY - r1, originX, originY + r1);
+  bodyGrad.addColorStop(0, COLOR_TUBERIA.brillo);
+  bodyGrad.addColorStop(0.5, COLOR_TUBERIA.cuerpo);
+  bodyGrad.addColorStop(1, COLOR_TUBERIA.sombra);
+
+  function trazarContorno() {
+    ctx.beginPath();
+    ctx.moveTo(xEntradaIni, originY - r1);
+    ctx.lineTo(xEntradaFin, originY - r1);
+    ctx.lineTo(xGargantaIni, originY - r2);
+    ctx.lineTo(xGargantaFin, originY - r2);
+    ctx.lineTo(xSalidaIni, originY - r1);
+    ctx.lineTo(xSalidaFin, originY - r1);
+    ctx.lineTo(xSalidaFin, originY + r1);
+    ctx.lineTo(xSalidaIni, originY + r1);
+    ctx.lineTo(xGargantaFin, originY + r2);
+    ctx.lineTo(xGargantaIni, originY + r2);
+    ctx.lineTo(xEntradaFin, originY + r1);
+    ctx.lineTo(xEntradaIni, originY + r1);
+    ctx.closePath();
+  }
+
+  trazarContorno();
+  ctx.fillStyle = bodyGrad;
+  ctx.fill();
+  ctx.strokeStyle = COLOR_TUBERIA.sombra;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // -- interior (donde se ve el agua a través, recorte) --
+  ctx.save();
+  trazarContorno();
+  ctx.clip();
+
+  const waterGrad = ctx.createLinearGradient(originX, originY - r1, originX, originY + r1);
+  waterGrad.addColorStop(0, COLOR_AGUA[2]);
+  waterGrad.addColorStop(0.5, COLOR_AGUA[1]);
+  waterGrad.addColorStop(1, COLOR_AGUA[0]);
+  ctx.fillStyle = waterGrad;
+  ctx.fillRect(originX, originY - r1, xSalidaFin - originX, r1 * 2);
+  ctx.restore();
+
+  // -- brillo superior (línea fina, da volumen al metal) --
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(xEntradaIni, originY - r1 + 4);
+  ctx.lineTo(xEntradaFin, originY - r1 + 4);
+  ctx.lineTo(xGargantaIni, originY - r2 + 3);
+  ctx.lineTo(xGargantaFin, originY - r2 + 3);
+  ctx.lineTo(xSalidaIni, originY - r1 + 4);
+  ctx.lineTo(xSalidaFin, originY - r1 + 4);
+  ctx.stroke();
+
+  ctx.restore();
+
+  // Devuelve geometría útil para que otras funciones (rueda, partículas,
+  // manómetros) se posicionen de forma consistente sin recalcular.
+  return {
+    xEntradaIni, xEntradaFin, xGargantaIni, xGargantaFin, xSalidaIni, xSalidaFin,
+    r1, r2,
+  };
+}
+
+// ===========================================================================
+// drawWaterFlow — partículas de agua fluyendo dentro del caño
+// ===========================================================================
+// v1, v2 en m/s (vienen de HydraulicsEngine: v1 = control del jugador, v2 =
+// computeV2(v1,A1,A2)). t = tiempo acumulado en segundos (para animar fase).
+// originX, originY = mismo punto de origen pasado a drawVenturiPipe (debe
+// llamarse con los mismos argumentos para que la geometría coincida).
+//
+// Esta función es pura en el sentido del contrato (no lee estado global de
+// juego), pero SÍ necesita "memoria" de posiciones de partícula entre frames
+// para que el flujo se vea continuo y no como ruido aleatorio en cada
+// llamada. Esa memoria vive en un closure local (_waterParticlesCache), no en
+// el objeto de estado del juego — análogo a cómo Resonancia/Presión cachean
+// arrays de partículas a nivel de módulo de dibujo.
+const _waterParticlesCache = { tramoAncho: null, tramoAngosto: null };
+
+function drawWaterFlow(ctx, v1, v2, originX, originY, A1, A2, t) {
+  const d1Cm = _diametroCmFromArea(A1);
+  const d2Cm = _diametroCmFromArea(A2);
+  const r1 = (d1Cm * PX_PER_CM) / 2;
+  const r2 = (d2Cm * PX_PER_CM) / 2;
+
+  const lEntrada = 70;
+  const lRampaIn = 50;
+  const lGarganta = 110;
+  const lRampaOut = 50;
+  const lSalida = 70;
+
+  const xEntradaIni = originX;
+  const xEntradaFin = xEntradaIni + lEntrada;
+  const xGargantaIni = xEntradaFin + lRampaIn;
+  const xGargantaFin = xGargantaIni + lGarganta;
+  const xSalidaIni = xGargantaFin + lRampaOut;
+  const xSalidaFin = xSalidaIni + lSalida;
+
+  // Velocidades visuales (px/s), escala propia — NO PIXELS_PER_METER literal.
+  const velPxAncho = Math.max(8, v1 * VISUAL_FLOW_SCALE);
+  const velPxAngosto = Math.max(8, v2 * VISUAL_FLOW_SCALE);
+
+  // Inicialización lazy del cache (una sola vez por sesión de módulo).
+  if (!_waterParticlesCache.tramoAncho) {
+    _waterParticlesCache.tramoAncho = [];
+    for (let i = 0; i < WATER_PARTICLES_ANCHO; i++) {
+      _waterParticlesCache.tramoAncho.push({
+        x: xEntradaIni + Math.random() * (xEntradaFin - xEntradaIni),
+        yOff: (Math.random() * 2 - 1) * 0.8, // fracción de radio, [-0.8,0.8]
+        r: 1.5 + Math.random() * 1.5,
+      });
+    }
+  }
+  if (!_waterParticlesCache.tramoAngosto) {
+    _waterParticlesCache.tramoAngosto = [];
+    for (let i = 0; i < WATER_PARTICLES_ANGOSTO; i++) {
+      _waterParticlesCache.tramoAngosto.push({
+        x: xGargantaIni + Math.random() * (xGargantaFin - xGargantaIni),
+        yOff: (Math.random() * 2 - 1) * 0.8,
+        r: 1 + Math.random() * 1.2,
+      });
+    }
+  }
+
+  ctx.save();
+
+  // Recorte al interior del caño para que las partículas no se vean "fuera".
+  ctx.beginPath();
+  ctx.moveTo(xEntradaIni, originY - r1);
+  ctx.lineTo(xEntradaFin, originY - r1);
+  ctx.lineTo(xGargantaIni, originY - r2);
+  ctx.lineTo(xGargantaFin, originY - r2);
+  ctx.lineTo(xSalidaIni, originY - r1);
+  ctx.lineTo(xSalidaFin, originY - r1);
+  ctx.lineTo(xSalidaFin, originY + r1);
+  ctx.lineTo(xSalidaIni, originY + r1);
+  ctx.lineTo(xGargantaFin, originY + r2);
+  ctx.lineTo(xGargantaIni, originY + r2);
+  ctx.lineTo(xEntradaFin, originY + r1);
+  ctx.lineTo(xEntradaIni, originY + r1);
+  ctx.closePath();
+  ctx.clip();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+
+  // -- tramo ancho (entrada): avanza a velPxAncho, recicla en xEntradaFin --
+  for (const p of _waterParticlesCache.tramoAncho) {
+    p.x += velPxAncho * (1 / 60); // dt aproximado a 60fps (animación visual, no física)
+    if (p.x > xEntradaFin) p.x = xEntradaIni;
+    const cy = originY + p.yOff * r1;
+    ctx.globalAlpha = 0.55;
+    ctx.beginPath();
+    ctx.arc(p.x, cy, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // -- tramo angosto (garganta): avanza a velPxAngosto, más denso y rápido --
+  for (const p of _waterParticlesCache.tramoAngosto) {
+    p.x += velPxAngosto * (1 / 60);
+    if (p.x > xGargantaFin) p.x = xGargantaIni;
+    const cy = originY + p.yOff * r2;
+    ctx.globalAlpha = 0.75;
+    ctx.beginPath();
+    ctx.arc(p.x, cy, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+// ===========================================================================
+// drawMillWheel — rueda de paletas de madera en el tramo angosto
+// ===========================================================================
+// (x,y) = centro de la rueda. anguloRad viene de MillWheel.anguloRad.
+// categoria: 'optima' | 'aceptable' | 'forzada' | 'rotura' (de resolveRoundOutcome).
+// sobra: boolean, solo relevante si categoria === 'rotura'
+//   - sobra=true  (gira demasiado rápido) → aspa con grieta/desprendiéndose.
+//   - sobra=false (no gira, caudal insuficiente) → rueda quieta + agua estancada.
+function drawMillWheel(ctx, x, y, anguloRad, categoria, sobra) {
+  const radioRueda = 46;
+  const numAspas = 6;
+  const esRoturaSinGiro = categoria === 'rotura' && sobra === false;
+  const esRoturaConGiro = categoria === 'rotura' && sobra === true;
+
+  ctx.save();
+
+  // Agua estancada detrás de la rueda (solo si rotura sin giro): charco opaco,
+  // sin brillo de movimiento, comunica "el agua no fluye lo suficiente".
+  if (esRoturaSinGiro) {
+    ctx.fillStyle = 'rgba(26,111,168,0.45)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + radioRueda * 0.55, radioRueda * 1.3, radioRueda * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Eje central (remache gold)
+  ctx.translate(x, y);
+
+  // Soporte/estructura fija (no rota), tonos de madera oscura
+  ctx.fillStyle = COLOR_MADERA.oscuro;
+  ctx.fillRect(-6, radioRueda - 4, 12, 22);
+
+  // Grupo que SÍ rota con anguloRad
+  ctx.save();
+  ctx.rotate(anguloRad);
+
+  for (let i = 0; i < numAspas; i++) {
+    const ang = (i / numAspas) * Math.PI * 2;
+    ctx.save();
+    ctx.rotate(ang);
+
+    const esAspaRota = esRoturaConGiro && (i === 0); // una sola aspa visiblemente dañada
+    ctx.fillStyle = esAspaRota ? '#7a5230' : COLOR_MADERA.claro;
+    ctx.strokeStyle = COLOR_MADERA.oscuro;
+    ctx.lineWidth = 2;
+
+    ctx.beginPath();
+    ctx.roundRect(-7, 6, 14, radioRueda - 6, 3);
+    ctx.fill();
+    ctx.stroke();
+
+    if (esAspaRota) {
+      // Grieta: línea en zig-zag + fragmento desprendido
+      ctx.strokeStyle = '#2b1c10';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-3, radioRueda * 0.45);
+      ctx.lineTo(2, radioRueda * 0.55);
+      ctx.lineTo(-2, radioRueda * 0.65);
+      ctx.stroke();
+
+      ctx.fillStyle = COLOR_MADERA.claro;
+      ctx.save();
+      ctx.translate(10, radioRueda * 0.8);
+      ctx.rotate(0.6);
+      ctx.fillRect(-4, -3, 8, 6);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // Aro central + remaches (gold), igual lenguaje visual que el tanque
+  ctx.beginPath();
+  ctx.arc(0, 0, 11, 0, Math.PI * 2);
+  ctx.fillStyle = COLOR_MADERA.oscuro;
+  ctx.fill();
+  ctx.strokeStyle = COLOR_MADERA.remache;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  ctx.restore(); // fin grupo rotado
+
+  ctx.restore(); // fin translate(x,y)
+}
+
+// ===========================================================================
+// drawPressureGauge — manómetro reutilizable para P1 y P2
+// ===========================================================================
+// (x,y) = centro del manómetro. label = string ("P₁" / "P₂").
+// presionPa = presión actual (Pa). presionMax = presión de referencia para
+// normalizar el arco de color (game-spec: usar P1_PASCAL como referencia,
+// ya que P2 siempre es < P1 en este juego — efecto Venturi).
+function drawPressureGauge(ctx, x, y, label, presionPa, presionMax) {
+  const radio = 34;
+  const fraccion = Math.max(0, Math.min(1, presionPa / presionMax));
+
+  // Ángulos del arco: de 135° a 405° (270° de recorrido), estilo manómetro clásico.
+  const angIni = Math.PI * 0.75;
+  const angFin = Math.PI * 0.75 + Math.PI * 1.5;
+  const angValor = angIni + fraccion * (angFin - angIni);
+
+  ctx.save();
+  ctx.translate(x, y);
+
+  // Cara del manómetro
+  ctx.beginPath();
+  ctx.arc(0, 0, radio, 0, Math.PI * 2);
+  ctx.fillStyle = COLOR_GAUGE.cara;
+  ctx.strokeStyle = COLOR_TUBERIA.sombra;
+  ctx.lineWidth = 3;
+  ctx.fill();
+  ctx.stroke();
+
+  // Arco de color de fondo: verde (alta presión, cerca de P1) → ámbar → rojo
+  // (baja presión). Se dibuja en 3 tercios fijos del recorrido angular.
+  const segmentos = [
+    { color: COLOR_CATEGORIA.optima, desde: 0, hasta: 1 / 3 },
+    { color: COLOR_CATEGORIA.forzada, desde: 1 / 3, hasta: 2 / 3 },
+    { color: COLOR_CATEGORIA.rotura, desde: 2 / 3, hasta: 1 },
+  ];
+  const radioArco = radio - 6;
+  ctx.lineWidth = 5;
+  ctx.lineCap = 'butt';
+  for (const seg of segmentos) {
+    ctx.beginPath();
+    ctx.strokeStyle = seg.color;
+    ctx.arc(
+      0, 0, radioArco,
+      angIni + seg.desde * (angFin - angIni),
+      angIni + seg.hasta * (angFin - angIni)
+    );
+    ctx.stroke();
+  }
+
+  // Aguja
+  ctx.save();
+  ctx.rotate(angValor + Math.PI / 2); // +90° porque 0rad de canvas = "este", aguja parte "hacia arriba"
+  ctx.beginPath();
+  ctx.moveTo(0, 6);
+  ctx.lineTo(-3, 0);
+  ctx.lineTo(0, -radio + 9);
+  ctx.lineTo(3, 0);
+  ctx.closePath();
+  ctx.fillStyle = COLOR_GAUGE.aguja;
+  ctx.fill();
+  ctx.restore();
+
+  // Centro de la aguja (remache)
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI * 2);
+  ctx.fillStyle = COLOR_MADERA.oscuro;
+  ctx.fill();
+
+  // Etiqueta y valor numérico
+  ctx.fillStyle = '#0a1628';
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, 0, radio + 14);
+
+  ctx.fillStyle = '#ffd166';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillText(`${Math.round(presionPa / 1000)} kPa`, 0, radio + 27);
+
+  ctx.restore();
+}
+
+// GameFSM.js — Hidrodinámica: La Rueda del Molino
+// Patrón: html-patterns-state (FSM con Map de estados + onEnter/onExit/onUpdate).
+// SIN import/export ES6 — bloque plano para inlinear en el <script> final.
+//
+// Estados (contrato-comun.md): SETUP, RUNNING, RESULT, SUMMARY
+// Transiciones (architect-brief.md):
+//   SETUP(ronda)  --VALVE_OPENED-->          RUNNING
+//   RUNNING       --timer ANIMATION_DURATION_MS termina-->  RESULT (emite ROUND_RESOLVED)
+//   RESULT        --NEXT_ROUND_REQUESTED-->
+//                     si ronda < 5  -> SETUP(ronda+1)
+//                     si ronda === 5 -> SUMMARY (emite GAME_SUMMARY_READY)
+//
+// IMPORTANTE: este archivo NO calcula física. Para resolver una ronda (v2, Q, P2,
+// categoria, error, sobra) delega en las funciones globales planas que define el
+// Physicist con los nombres EXACTOS del contrato común:
+//   computeV2(v1, A1, A2), computeQ(A1, v1), computeP2(v1, v2),
+//   resolveRoundOutcome(v2, v2Objetivo)
+// y en la tabla global RONDAS (también del Physicist/contrato común).
+// Si esos símbolos no existen todavía en window cuando se carga este archivo en el
+// portal vacío, RUNNING._resolve() fallará — el Publisher debe garantizar el orden
+// de scripts (Physicist antes que GameFSM, o todo en un único <script> en el orden
+// EventBus -> [funciones físicas] -> GameFSM -> ... -> bootstrap).
+
+// StateMachine genérica reutilizable (igual a la de html-patterns-state, sin imports).
+class StateMachine {
+  constructor(owner) {
+    this._owner = owner;
+    this._states = new Map();
+    this._current = null;
+  }
+
+  addState(name, { onEnter, onExit, onUpdate } = {}) {
+    this._states.set(name, { onEnter, onExit, onUpdate });
+    return this;
+  }
+
+  transition(nextName, payload) {
+    if (!this._states.has(nextName)) return;
+    if (this._current) {
+      this._states.get(this._current)?.onExit?.call(this._owner);
+    }
+    this._current = nextName;
+    this._states.get(nextName)?.onEnter?.call(this._owner, payload);
+  }
+
+  update(dt) {
+    if (!this._current) return;
+    this._states.get(this._current)?.onUpdate?.call(this._owner, dt);
+  }
+
+  get state() {
+    return this._current;
+  }
+
+  is(name) {
+    return this._current === name;
+  }
+}
+
+// GameFSM — estado + wiring del juego completo (no es la FSM de una entidad física,
+// es la FSM de la partida: SETUP/RUNNING/RESULT/SUMMARY).
+class GameFSM {
+  constructor({ eventBus, inputManager, ronda = 1 } = {}) {
+    this.eventBus = eventBus || EventBus;
+    this.inputManager = inputManager || null;
+
+    // Estado de partida expuesto para que Interface/Artist lo lean (solo lectura
+    // desde afuera; el Architect es el único que lo muta).
+    this.ronda = ronda;            // 1..5
+    this.rondaData = null;         // entrada de RONDAS correspondiente a this.ronda
+    this.v1Actual = 0;             // último valor de v1 leído del slider en SETUP
+    this.v1Max = 0;                // clampV1Max(A1, A2) de la ronda actual
+    this.resultadoActual = null;   // payload de ROUND_RESOLVED de la ronda actual
+    this.resultados = [];          // acumulado de resultados de las 5 rondas (para SUMMARY)
+
+    this._runningElapsedMs = 0;    // acumulador del timer de animación de RUNNING
+
+    this.fsm = new StateMachine(this);
+    this._buildStates();
+    this._wireEvents();
+  }
+
+  _buildStates() {
+    this.fsm
+      .addState('SETUP', {
+        onEnter(ronda) {
+          const targetRonda = ronda || this.ronda;
+          this.ronda = targetRonda;
+          this.rondaData = RONDAS[targetRonda - 1];
+          this.resultadoActual = null;
+
+          // Recalcular el máximo seleccionable del slider para esta ronda
+          // (la física real del clamp es del Physicist; acá solo se invoca y se aplica).
+          this.v1Max = clampV1Max(this.rondaData.A1, this.rondaData.A2);
+
+          if (this.inputManager) {
+            this.inputManager.setSliderRange({ max: this.v1Max });
+            this.inputManager.enableSlider(true);
+            this.inputManager.setValveButtonLabel('Abrir válvula');
+            this.inputManager.enableValveButton(true);
+            // Lee el valor real del slider (el HTML lo inicializa en 0.10) en vez de
+            // asumir 0, para que el preview en vivo de Interface coincida desde el
+            // primer frame (fix de integración aplicado por el Publisher).
+            this.v1Actual = this.inputManager.getV1();
+          } else {
+            this.v1Actual = 0;
+          }
+
+          // Hook opcional para que el Publisher refresque el HUD al cambiar de ronda
+          // (no agrega un evento nuevo al contrato común — ver interface-brief.md).
+          if (typeof this.onRoundChanged === 'function') this.onRoundChanged();
+        },
+        onExit() {
+          if (this.inputManager) this.inputManager.enableSlider(false);
+        },
+      })
+      .addState('RUNNING', {
+        onEnter() {
+          this._runningElapsedMs = 0;
+          // Lección de Tiro Libre: bloquear el parámetro físico apenas arranca la simulación.
+          if (this.inputManager) {
+            this.inputManager.enableSlider(false);
+            this.inputManager.enableValveButton(false);
+          }
+        },
+        onUpdate(dt) {
+          this._runningElapsedMs += dt * 1000;
+          if (this._runningElapsedMs >= ANIMATION_DURATION_MS) {
+            this._resolveRound();
+            this.fsm.transition('RESULT');
+          }
+        },
+      })
+      .addState('RESULT', {
+        onEnter() {
+          if (this.inputManager) {
+            this.inputManager.setValveButtonLabel(
+              this.ronda === 5 ? 'Ver resumen' : 'Siguiente ronda'
+            );
+            this.inputManager.enableValveButton(true);
+          }
+        },
+      })
+      .addState('SUMMARY', {
+        onEnter() {
+          this.eventBus.emit(EVENTS.GAME_SUMMARY_READY, { resultados: this.resultados.slice() });
+          if (this.inputManager) {
+            this.inputManager.setValveButtonLabel('Jugar de nuevo');
+            this.inputManager.enableValveButton(true);
+            this.inputManager.enableSlider(false);
+          }
+        },
+      });
+  }
+
+  _wireEvents() {
+    this.eventBus.on(EVENTS.SLIDER_CHANGED, (payload) => {
+      if (!this.fsm.is('SETUP')) return; // el slider solo es válido en SETUP
+      this.v1Actual = payload.v1;
+      // El Architect SOLO reenvía: no calcula v2/Q/P2 acá, eso lo escucha
+      // directamente el Physicist/Interface desde el mismo SLIDER_CHANGED.
+    });
+
+    this.eventBus.on(EVENTS.VALVE_OPENED, () => {
+      if (this.fsm.is('SETUP')) {
+        this.fsm.transition('RUNNING');
+      } else if (this.fsm.is('RESULT')) {
+        // El botón "Siguiente ronda" / "Ver resumen" reusa el mismo evento de input,
+        // pero el contrato común espera NEXT_ROUND_REQUESTED para esta transición.
+        // InputManager es responsable de emitir el evento correcto según el label
+        // del botón (ver InputManager.js). Si llega VALVE_OPENED estando en RESULT
+        // se ignora a propósito: evita doble-disparo si algo emite el evento viejo.
+      }
+    });
+
+    this.eventBus.on(EVENTS.NEXT_ROUND_REQUESTED, () => {
+      if (!this.fsm.is('RESULT')) return;
+      if (this.ronda < 5) {
+        this.fsm.transition('SETUP', this.ronda + 1);
+      } else {
+        this.fsm.transition('SUMMARY');
+      }
+    });
+  }
+
+  _resolveRound() {
+    const { A1, A2, v2Objetivo } = this.rondaData;
+    const v1 = this.v1Actual;
+    const v2 = computeV2(v1, A1, A2);
+    const Q = computeQ(A1, v1);
+    const P2 = computeP2(v1, v2);
+    const { error, categoria, sobra } = resolveRoundOutcome(v2, v2Objetivo);
+
+    const payload = { ronda: this.ronda, v1, v2, Q, P2, categoria, error, sobra };
+    this.resultadoActual = payload;
+    this.resultados.push(payload);
+    this.eventBus.emit(EVENTS.ROUND_RESOLVED, payload);
+  }
+
+  // Reinicio completo para "Jugar de nuevo" desde SUMMARY.
+  restart() {
+    this.resultados = [];
+    this.resultadoActual = null;
+    this.fsm.transition('SETUP', 1);
+  }
+
+  start() {
+    this.fsm.transition('SETUP', this.ronda);
+  }
+
+  update(dt) {
+    this.fsm.update(dt);
+  }
+
+  get state() {
+    return this.fsm.state;
+  }
+}
+
+// GameLoop.js — Hidrodinámica: La Rueda del Molino
+// Patrón: html-systems-loop (requestAnimationFrame + acumulador + fixed timestep).
+// SIN import/export ES6 — bloque plano para inlinear en el <script> final.
+//
+// Corre siempre, incluso en SETUP (architect-brief.md): el agua en reposo / preview
+// y las partículas de la tubería necesitan animarse aunque el jugador todavía no
+// haya abierto la válvula. GameFSM.update(dt) se llama desde onFixedUpdate sin
+// condicionar por estado — cada estado de la FSM decide internamente si hace algo
+// con ese dt (RUNNING cuenta el timer, SETUP/RESULT/SUMMARY no hacen nada propio).
+
+class GameLoop {
+  constructor({ fixedHz = TARGET_FPS, maxFrameTime = 0.1 } = {}) {
+    this.fixedDt = 1 / fixedHz;
+    this.maxFrame = maxFrameTime; // cap para evitar spiral of death
+    this.timeScale = 1.0;
+    this.paused = false;
+
+    this._accumulator = 0;
+    this._lastTime = 0;
+    this._rafId = null;
+
+    this.onFixedUpdate = null; // (dt: number) => void  — física/estado, 60Hz fijo
+    this.onDraw = null; // (alpha: number) => void — rendering con interpolación
+  }
+
+  start() {
+    const tick = (timestamp) => {
+      this._rafId = requestAnimationFrame(tick);
+      if (this.paused) return;
+
+      const rawDt = Math.min((timestamp - this._lastTime) / 1000, this.maxFrame);
+      this._lastTime = timestamp;
+      const scaledDt = rawDt * this.timeScale;
+      this._accumulator += scaledDt;
+
+      while (this._accumulator >= this.fixedDt) {
+        this.onFixedUpdate?.(this.fixedDt);
+        this._accumulator -= this.fixedDt;
+      }
+
+      const alpha = this._accumulator / this.fixedDt;
+      this.onDraw?.(alpha);
+    };
+    requestAnimationFrame((t) => {
+      this._lastTime = t;
+      requestAnimationFrame(tick);
+    });
+  }
+
+  stop() {
+    cancelAnimationFrame(this._rafId);
+  }
+
+  pause() {
+    this.paused = true;
+  }
+
+  resume() {
+    this.paused = false;
+  }
+
+  setTimeScale(scale) {
+    this.timeScale = Math.max(0, scale);
+  }
+}
+
+// InputManager.js — Hidrodinámica: La Rueda del Molino
+// Patrón: html-systems-input (mínimo, sin teclado — este juego no lo necesita).
+// SIN import/export ES6 — bloque plano para inlinear en el <script> final.
+//
+// Controles del juego (architect-brief.md):
+//   - slider v1 (input[type=range]) → SOLO habilitado durante SETUP
+//   - botón único de acción, cuyo label/efecto cambia según el estado de GameFSM:
+//       SETUP    -> "Abrir válvula"     -> emite VALVE_OPENED
+//       RESULT   -> "Siguiente ronda" / "Ver resumen" -> emite NEXT_ROUND_REQUESTED
+//       SUMMARY  -> "Jugar de nuevo"    -> llama gameFSM.restart() directamente
+//
+// Nota de integración (para el Publisher): "Jugar de nuevo" NO tiene evento propio
+// en el contrato-comun.md (solo existen los 5 eventos documentados). Como el brief
+// prohíbe agregar eventos sin avisar, en vez de inventar un RESTART_REQUESTED el
+// InputManager llama directamente a gameFSM.restart() en SUMMARY. Si Interface/
+// Publisher prefieren un evento explícito, avisar para agregarlo al contrato.
+
+class InputManager {
+  constructor({ eventBus, sliderEl, valveButtonEl, gameFSM } = {}) {
+    this.eventBus = eventBus || EventBus;
+    this.sliderEl = sliderEl || null; // input[type=range] de v1
+    this.valveButtonEl = valveButtonEl || null; // botón único de acción
+    this.gameFSM = gameFSM || null; // referencia para el caso "Jugar de nuevo"
+
+    this._sliderEnabled = false;
+    this._valveButtonEnabled = true;
+
+    this._bindSlider();
+    this._bindValveButton();
+  }
+
+  _bindSlider() {
+    if (!this.sliderEl) return;
+    this.sliderEl.addEventListener('input', () => {
+      if (!this._sliderEnabled) return; // ignorar input si está fuera de SETUP
+      const v1 = parseFloat(this.sliderEl.value);
+      this.eventBus.emit(EVENTS.SLIDER_CHANGED, { v1 });
+    });
+  }
+
+  _bindValveButton() {
+    if (!this.valveButtonEl) return;
+    this.valveButtonEl.addEventListener('click', () => {
+      if (!this._valveButtonEnabled) return;
+
+      const state = this.gameFSM ? this.gameFSM.state : null;
+      if (state === 'SUMMARY') {
+        this.gameFSM?.restart();
+        return;
+      }
+      if (state === 'RESULT') {
+        this.eventBus.emit(EVENTS.NEXT_ROUND_REQUESTED);
+        return;
+      }
+      // Por defecto (SETUP, o sin FSM asociada todavía): abrir válvula.
+      this.eventBus.emit(EVENTS.VALVE_OPENED);
+    });
+  }
+
+  // --- API usada por GameFSM para reflejar el estado en los controles ---
+
+  enableSlider(enabled) {
+    this._sliderEnabled = !!enabled;
+    if (this.sliderEl) this.sliderEl.disabled = !enabled;
+  }
+
+  setSliderRange({ min = 0.1, max, step = 0.02 } = {}) {
+    if (!this.sliderEl) return;
+    this.sliderEl.min = String(min);
+    if (max !== undefined) this.sliderEl.max = String(max);
+    this.sliderEl.step = String(step);
+    // Si el valor actual quedó fuera del nuevo rango (ronda más angosta), reclampear.
+    const current = parseFloat(this.sliderEl.value);
+    if (max !== undefined && current > max) {
+      this.sliderEl.value = String(max);
+    }
+  }
+
+  enableValveButton(enabled) {
+    this._valveButtonEnabled = !!enabled;
+    if (this.valveButtonEl) this.valveButtonEl.disabled = !enabled;
+  }
+
+  setValveButtonLabel(text) {
+    if (this.valveButtonEl) this.valveButtonEl.textContent = text;
+  }
+
+  getV1() {
+    return this.sliderEl ? parseFloat(this.sliderEl.value) : 0;
+  }
+}
+
+// HUD.js — Hidrodinámica: La Rueda del Molino
+// Rol: Interface. Bloque JS plano, SIN import/export ES6 (se inlinea en el <script>
+// final del HTML autocontenido del juego, igual que el resto de módulos del portal).
+//
+// Depende de símbolos globales ya definidos por otros agentes (deben cargarse ANTES
+// que este archivo en el <script> final, ver orden sugerido al final del archivo):
+//   - EventBus, EVENTS                                   (core/EventBus.js)
+//   - computeV2, computeQ, computeP2, clampV1Max, RONDAS  (physics/HydraulicsEngine.js)
+//   - GameFSM (instancia)                                 (core/GameFSM.js)
+//   - InputManager (instancia)                             (core/InputManager.js)
+//   - drawPressureGauge(ctx, x, y, label, presionPa, presionMax)  (Artist — ver nota
+//     en HUD_renderGauges más abajo; si todavía no existe, el call-site queda
+//     documentado y no romperá el juego: se chequea su existencia antes de invocar).
+//
+// Convención visual reusada de proferamiro-app/public/juegos/presion.html:
+// clases .panel, .panel h2, .rrow, .rrow .lbl, .rrow .val, .rrow .val.yellow/.blue/
+// .red/.green, .nota — mismos nombres y mismos tonos, para no romper la identidad
+// visual ya construida en el portal (navy #0a1628, sky-blue #87ceeb, gold #ffd166).
+//
+// Lección aplicada (agents/lessons-learned.md → Interface, Tiro Libre run #1):
+// "Cuando el HUD modifica parámetros de física, tiene que emitir una señal que otros
+// componentes puedan escuchar para refrescar visualizaciones en vivo." Por eso el
+// preview en vivo de v2/Q/P2 de este HUD se recalcula en el MISMO callback que emite
+// SLIDER_CHANGED (no espera ningún evento de vuelta) Y, además, el HUD vuelve a
+// escuchar SLIDER_CHANGED él mismo — así cualquier otro módulo (Artist, manómetros)
+// que también escuche SLIDER_CHANGED se refresca en el mismo tick, sin previews
+// desactualizados entre componentes.
+
+// ---------------------------------------------------------------------------
+// 1) CSS — template string, se inyecta una sola vez en un <style> al montar el HUD.
+// ---------------------------------------------------------------------------
+const HUD_CSS = `
+  .side-panel {
+    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.13);
+    border-radius: 18px; padding: 18px 16px; width: 100%; max-width: 360px;
+    backdrop-filter: blur(8px); color: #fff; font-family: 'Segoe UI', sans-serif;
+  }
+  .side-panel h1 {
+    font-size: 1.2rem; color: #87ceeb; letter-spacing: .5px; margin-bottom: 4px;
+  }
+  .side-panel .subtitle {
+    font-size: .78rem; color: #aac; margin-bottom: 10px;
+    background: rgba(0,0,0,0.35); padding: 4px 12px; border-radius: 20px;
+    display: inline-block;
+  }
+  .side-panel .subtitle b { color: #ffd166; }
+
+  #round-badge {
+    display: inline-block; margin-bottom: 12px; padding: 3px 12px;
+    background: rgba(100,181,246,0.18); border: 1px solid rgba(100,181,246,0.4);
+    color: #64b5f6; font-weight: bold; font-size: .78rem; border-radius: 20px;
+  }
+
+  .panel { margin-bottom: 14px; }
+  .panel h2 {
+    font-size: .85rem; color: #87ceeb; margin-bottom: 9px;
+    border-bottom: 1px solid rgba(255,255,255,0.12); padding-bottom: 6px;
+  }
+  .panel-body { background: rgba(0,0,0,0.4); border-radius: 12px; padding: 10px 11px; }
+
+  .rrow {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: .82rem;
+  }
+  .rrow:last-child { border-bottom: none; }
+  .rrow .lbl { color: #9ac; }
+  .rrow .val { font-weight: bold; }
+  .rrow .val.yellow { color: #ffd166; }
+  .rrow .val.blue   { color: #64b5f6; }
+  .rrow .val.red    { color: #ff6b6b; }
+  .rrow .val.green  { color: #81c784; }
+  .rrow .val.amber  { color: #ffd166; }
+
+  .rrow.const-highlight .val.yellow {
+    text-shadow: 0 0 8px rgba(255,209,102,0.7);
+  }
+
+  /* --- Control (slider v1) --- */
+  .slider-wrap { margin: 4px 0 2px; }
+  .slider-label {
+    display: flex; justify-content: space-between; font-size: .8rem;
+    color: #ccc; margin-bottom: 5px;
+  }
+  .slider-label .v1-readout { color: #64b5f6; font-weight: bold; }
+  input[type=range]#slider-v1 {
+    width: 100%; accent-color: #64b5f6; cursor: pointer;
+  }
+  input[type=range]#slider-v1:disabled { opacity: .4; cursor: not-allowed; }
+
+  .preview-box {
+    margin-top: 10px; background: rgba(100,181,246,0.08);
+    border: 1px dashed rgba(100,181,246,0.35); border-radius: 10px; padding: 8px 10px;
+  }
+  .preview-box .preview-title {
+    font-size: .68rem; color: #7fb8e6; text-transform: uppercase;
+    letter-spacing: .5px; margin-bottom: 4px;
+  }
+
+  /* --- Gauges --- */
+  .panel-gauges .gauges-row {
+    display: flex; gap: 10px; justify-content: space-around;
+  }
+  .gauge-slot { text-align: center; flex: 1; }
+  .gauge-slot canvas { display: block; margin: 0 auto; }
+  .gauge-slot .gauge-caption { font-size: .72rem; color: #9ac; margin-top: 4px; }
+
+  /* --- Botón primario --- */
+  #btn-primary {
+    width: 100%; margin-top: 4px; padding: 11px 0; border: none; border-radius: 12px;
+    background: linear-gradient(180deg, #64b5f6, #3a8fd6); color: #fff;
+    font-size: .95rem; font-weight: bold; cursor: pointer;
+    box-shadow: 0 3px 10px rgba(100,181,246,0.35); transition: filter .15s, opacity .15s;
+  }
+  #btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+  #btn-primary:disabled { opacity: .45; cursor: not-allowed; }
+
+  /* --- Resultado --- */
+  .panel-resultado { display: none; }
+  .panel-resultado.visible { display: block; }
+  .resultado-categoria {
+    margin-top: 8px; padding: 9px 11px; border-radius: 10px;
+    font-size: .82rem; font-weight: bold; text-align: center;
+  }
+  .resultado-mensaje {
+    margin-top: 4px; font-size: .76rem; font-weight: normal; text-align: left;
+    line-height: 1.4;
+  }
+  .resultado-formula {
+    margin-top: 9px; font-size: .76rem; color: #aac; background: rgba(0,0,0,0.35);
+    border-left: 3px solid #ffd166; padding: 6px 9px; border-radius: 0 8px 8px 0;
+    font-family: 'Consolas', monospace;
+  }
+  .resultado-formula b { color: #ffd166; }
+
+  /* --- Summary --- */
+  #summary-screen { display: none; }
+  #summary-screen.visible { display: block; }
+  .summary-table { width: 100%; border-collapse: collapse; font-size: .78rem; margin-top: 6px; }
+  .summary-table th, .summary-table td {
+    padding: 5px 6px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1);
+  }
+  .summary-table th { color: #87ceeb; font-size: .72rem; text-transform: uppercase; }
+  .summary-conclusion {
+    margin-top: 12px; background: rgba(255,209,102,0.1); border: 1px solid rgba(255,209,102,0.35);
+    border-radius: 10px; padding: 10px 11px; font-size: .8rem; color: #ffd166; line-height: 1.5;
+  }
+  .summary-conclusion b { color: #fff; }
+  .summary-sequence {
+    margin-top: 6px; font-size: .9rem; font-weight: bold; color: #ffd166; text-align: center;
+    letter-spacing: .5px;
+  }
+
+  .nota { margin-top: 12px; font-size: .72rem; color: #8ab; line-height: 1.5; }
+  .nota b { color: #ffd166; }
+`;
+
+// ---------------------------------------------------------------------------
+// 2) Constantes de categoría — colores y mensajes EXACTOS del game-spec.
+//    No se inventan variantes; estos son los únicos 4+2 mensajes posibles.
+// ---------------------------------------------------------------------------
+const CATEGORIA_INFO = {
+  optima: {
+    color: '#81c784',
+    claseVal: 'green',
+    label: 'ÓPTIMA',
+    mensaje: 'La rueda gira a régimen perfecto: el molino muele a su mejor rendimiento.',
+  },
+  aceptable: {
+    color: '#64b5f6',
+    claseVal: 'blue',
+    label: 'ACEPTABLE',
+    mensaje: 'La rueda gira bien, el molino funciona correctamente.',
+  },
+  forzada: {
+    color: '#ffd166',
+    claseVal: 'amber',
+    label: 'FORZADA',
+    mensaje: {
+      false: 'Gira muy despacio, el grano casi no se muele.',
+      true: 'Gira demasiado rápido y vibra, fuerza el eje.',
+    },
+  },
+  rotura: {
+    color: '#ff6b6b',
+    claseVal: 'red',
+    label: 'ROTURA',
+    mensaje: {
+      false: 'El caudal es tan bajo que la rueda no se mueve.',
+      true: 'Gira tan rápido que las aspas se rompen.',
+    },
+  },
+};
+
+function HUD_getCategoriaMensaje(categoria, sobra) {
+  const info = CATEGORIA_INFO[categoria];
+  if (!info) return '';
+  return typeof info.mensaje === 'string' ? info.mensaje : info.mensaje[String(!!sobra)];
+}
+
+// ---------------------------------------------------------------------------
+// 3) Formateo numérico (regla del brief: nunca más de 4 decimales;
+//    v en 2 decimales, presión en Pa sin decimales, Q en L/s con 1 decimal).
+// ---------------------------------------------------------------------------
+function HUD_fmtV(v) { return v.toFixed(2); }
+function HUD_fmtPa(p) { return Math.round(p).toLocaleString('es-AR'); }
+function HUD_fmtQ_Ls(q_m3s) { return (q_m3s * 1000).toFixed(1); }
+function HUD_fmtA_cm2(a_m2) { return (a_m2 * 10000).toFixed(0); }
+
+// ---------------------------------------------------------------------------
+// 4) Construcción del DOM del panel lateral.
+//    Estructura asumida (ver resumen final): el Publisher inserta el resultado
+//    de HUD_buildPanel(parentEl) dentro de `#side-panel` (game-spec.md), que a su
+//    vez vive en `#game-container` junto a `#canvas-wrap > canvas#game-canvas`.
+// ---------------------------------------------------------------------------
+function HUD_injectStyles() {
+  if (document.getElementById('hud-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'hud-styles';
+  style.textContent = HUD_CSS;
+  document.head.appendChild(style);
+}
+
+function HUD_buildPanel(parentEl) {
+  HUD_injectStyles();
+
+  const root = document.createElement('div');
+  root.className = 'side-panel';
+  root.id = 'side-panel';
+  root.innerHTML = `
+    <h1>Hidrodinámica — La Rueda del Molino</h1>
+    <div class="subtitle" id="hud-subtitle">A₁ = <b>--</b> cm² · A₂ = <b>--</b> cm² · razón <b>--</b></div>
+    <div id="round-badge">Ronda 1 / 5</div>
+
+    <div class="panel panel-datos">
+      <h2>Datos de la ronda</h2>
+      <div class="panel-body">
+        <div class="rrow"><span class="lbl">A₁ (sección ancha)</span><span class="val yellow" id="dato-a1">-- cm²</span></div>
+        <div class="rrow"><span class="lbl">A₂ (sección angosta)</span><span class="val yellow" id="dato-a2">-- cm²</span></div>
+        <div class="rrow"><span class="lbl">Razón A₁/A₂</span><span class="val yellow" id="dato-razon">--</span></div>
+        <div class="rrow const-highlight"><span class="lbl">v₂ objetivo (constante)</span><span class="val yellow" id="dato-v2obj">6.00 m/s</span></div>
+      </div>
+    </div>
+
+    <div class="panel panel-control">
+      <h2>Velocidad de bombeo</h2>
+      <div class="panel-body">
+        <div class="slider-wrap">
+          <div class="slider-label">
+            <span>v₁ — Velocidad de bombeo</span>
+            <span class="v1-readout"><span id="v1-readout-val">0.10</span> m/s</span>
+          </div>
+          <input type="range" id="slider-v1" min="0.10" max="3.60" step="0.02" value="0.10">
+        </div>
+
+        <div class="preview-box" id="preview-box">
+          <div class="preview-title">Previsto en vivo (antes de abrir la válvula)</div>
+          <div class="rrow"><span class="lbl">v₂ previsto</span><span class="val blue" id="prev-v2">-- m/s</span></div>
+          <div class="rrow"><span class="lbl">Q previsto</span><span class="val blue" id="prev-q">-- L/s</span></div>
+          <div class="rrow"><span class="lbl">P₂ previsto</span><span class="val blue" id="prev-p2">-- Pa</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel panel-gauges">
+      <h2>Manómetros</h2>
+      <div class="panel-body">
+        <div class="gauges-row">
+          <div class="gauge-slot">
+            <canvas id="gauge-p1" width="90" height="90"></canvas>
+            <div class="gauge-caption">P₁ (fijo)</div>
+          </div>
+          <div class="gauge-slot">
+            <canvas id="gauge-p2" width="90" height="90"></canvas>
+            <div class="gauge-caption">P₂ (en vivo)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <button id="btn-primary" type="button">▶ Abrir válvula</button>
+
+    <div class="panel panel-resultado" id="panel-resultado">
+      <h2>Resultado de la ronda</h2>
+      <div class="panel-body">
+        <div class="rrow"><span class="lbl">v₂ logrado</span><span class="val" id="res-v2">-- m/s</span></div>
+        <div class="rrow"><span class="lbl">v₂ objetivo</span><span class="val yellow" id="res-v2obj">6.00 m/s</span></div>
+        <div class="rrow"><span class="lbl">Error</span><span class="val" id="res-error">-- m/s</span></div>
+        <div class="resultado-categoria" id="res-categoria">
+          <div id="res-categoria-label">--</div>
+          <div class="resultado-mensaje" id="res-mensaje"></div>
+        </div>
+        <div class="resultado-formula" id="res-formula">v₂ = v₁·(A₁/A₂) = --</div>
+      </div>
+    </div>
+
+    <div class="panel" id="summary-screen">
+      <h2>Resumen — Las 5 rondas</h2>
+      <div class="panel-body">
+        <table class="summary-table">
+          <thead>
+            <tr><th>Ronda</th><th>v₁ usado</th><th>v₂ logrado</th><th>Categoría</th></tr>
+          </thead>
+          <tbody id="summary-tbody"></tbody>
+        </table>
+        <div class="summary-conclusion">
+          A medida que el caño se angosta, necesitás <b>MENOS</b> velocidad de bombeo
+          para lograr la misma velocidad de salida.
+          <div class="summary-sequence">3.00 → 2.00 → 1.50 → 1.00 → 0.75 m/s</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="nota">
+      <b>Simplificación:</b> régimen estacionario y fluido incompresible (por eso vale
+      A₁v₁=A₂v₂), fluido ideal (sin viscosidad), sin pérdidas de carga por fricción en
+      el caño.
+    </div>
+  `;
+  parentEl.appendChild(root);
+  return root;
+}
+
+// ---------------------------------------------------------------------------
+// 5) Wiring — conecta el panel recién creado con EventBus / GameFSM / HydraulicsEngine.
+//    No duplica el wiring de InputManager: el slider y el botón primario emiten sus
+//    eventos a través de la instancia de InputManager que recibe el HUD por parámetro
+//    (mismo input[type=range] y mismo botón, InputManager los toma por referencia).
+// ---------------------------------------------------------------------------
+function HUD_wire(rootEl, { eventBus, gameFSM, inputManager } = {}) {
+  const bus = eventBus || EventBus;
+
+  const els = {
+    subtitle: rootEl.querySelector('#hud-subtitle'),
+    roundBadge: rootEl.querySelector('#round-badge'),
+    datoA1: rootEl.querySelector('#dato-a1'),
+    datoA2: rootEl.querySelector('#dato-a2'),
+    datoRazon: rootEl.querySelector('#dato-razon'),
+    datoV2Obj: rootEl.querySelector('#dato-v2obj'),
+    slider: rootEl.querySelector('#slider-v1'),
+    v1Readout: rootEl.querySelector('#v1-readout-val'),
+    prevV2: rootEl.querySelector('#prev-v2'),
+    prevQ: rootEl.querySelector('#prev-q'),
+    prevP2: rootEl.querySelector('#prev-p2'),
+    btnPrimary: rootEl.querySelector('#btn-primary'),
+    panelResultado: rootEl.querySelector('#panel-resultado'),
+    resV2: rootEl.querySelector('#res-v2'),
+    resV2Obj: rootEl.querySelector('#res-v2obj'),
+    resError: rootEl.querySelector('#res-error'),
+    resCategoria: rootEl.querySelector('#res-categoria'),
+    resCategoriaLabel: rootEl.querySelector('#res-categoria-label'),
+    resMensaje: rootEl.querySelector('#res-mensaje'),
+    resFormula: rootEl.querySelector('#res-formula'),
+    summaryScreen: rootEl.querySelector('#summary-screen'),
+    summaryTbody: rootEl.querySelector('#summary-tbody'),
+    gaugeP1: rootEl.querySelector('#gauge-p1'),
+    gaugeP2: rootEl.querySelector('#gauge-p2'),
+  };
+
+  // -- Estado local mínimo del HUD: solo lo que necesita para pintar el preview.
+  let rondaData = gameFSM ? gameFSM.rondaData : RONDAS[0];
+
+  function refreshDatosRonda() {
+    rondaData = gameFSM ? gameFSM.rondaData : rondaData;
+    if (!rondaData) return;
+    const { A1, A2, v2Objetivo, ronda } = rondaData;
+    const razon = A1 / A2;
+
+    els.subtitle.innerHTML =
+      `A₁ = <b>${HUD_fmtA_cm2(A1)}</b> cm² · A₂ = <b>${HUD_fmtA_cm2(A2)}</b> cm² · razón <b>${razon.toFixed(0)}</b>`;
+    els.roundBadge.textContent = `Ronda ${ronda} / 5`;
+    els.datoA1.textContent = `${HUD_fmtA_cm2(A1)} cm²`;
+    els.datoA2.textContent = `${HUD_fmtA_cm2(A2)} cm²`;
+    els.datoRazon.textContent = razon.toFixed(0);
+    els.datoV2Obj.textContent = `${HUD_fmtV(v2Objetivo)} m/s`;
+    els.resV2Obj.textContent = `${HUD_fmtV(v2Objetivo)} m/s`;
+
+    // Slider: rango [0.10, clampV1Max(A1,A2)], paso 0.02 (recalculado por ronda).
+    // GameFSM ya hace este mismo cálculo y lo aplica vía inputManager.setSliderRange;
+    // se repite acá solo como fallback si el HUD se usa sin GameFSM/InputManager.
+    const v1Max = clampV1Max(A1, A2);
+    if (!inputManager) {
+      els.slider.min = '0.10';
+      els.slider.max = String(v1Max);
+      els.slider.step = '0.02';
+      if (parseFloat(els.slider.value) > v1Max) els.slider.value = String(v1Max);
+    }
+    updatePreview();
+  }
+
+  // -- Preview en vivo: usa SIEMPRE las funciones del Physicist (HydraulicsEngine),
+  //    nunca reimplementa la fórmula. Se llama tanto al mover el slider como al
+  //    cambiar de ronda, para que nunca quede un preview desactualizado (lección
+  //    de Interface en lessons-learned.md).
+  function updatePreview() {
+    if (!rondaData) return;
+    const v1 = parseFloat(els.slider.value);
+    const { A1, A2 } = rondaData;
+    const v2 = computeV2(v1, A1, A2);
+    const Q = computeQ(A1, v1);
+    const P2 = computeP2(v1, v2);
+
+    els.v1Readout.textContent = HUD_fmtV(v1);
+    els.prevV2.textContent = `${HUD_fmtV(v2)} m/s`;
+    els.prevQ.textContent = `${HUD_fmtQ_Ls(Q)} L/s`;
+    els.prevP2.textContent = `${HUD_fmtPa(P2)} Pa`;
+
+    // Manómetro P2 en vivo durante el preview (fase SETUP) — ver nota drawPressureGauge.
+    HUD_renderGauges({ p1: P1_PASCAL, p2: P2 }, els);
+  }
+
+  // -- Botón primario: el wiring real de click vive en InputManager (no se duplica
+  //    el listener acá). El HUD solo refleja el LABEL según el estado de la FSM,
+  //    igual que ya hace GameFSM/InputManager — esta función queda para el caso en
+  //    que el HUD se monte standalone, sin GameFSM (entonces gestiona su propio label).
+  function refreshButtonLabelFallback() {
+    if (inputManager) return; // InputManager/GameFSM ya gestionan el label real.
+    const state = gameFSM ? gameFSM.state : 'SETUP';
+    const labels = {
+      SETUP: '▶ Abrir válvula',
+      RUNNING: '▶ Abrir válvula',
+      RESULT: gameFSM && gameFSM.ronda === 5 ? 'Ver resumen ▶' : 'Siguiente ronda ▶',
+      SUMMARY: '↻ Jugar de nuevo',
+    };
+    els.btnPrimary.textContent = labels[state] || '▶ Abrir válvula';
+    els.btnPrimary.disabled = state === 'RUNNING';
+
+    els.btnPrimary.onclick = () => {
+      if (state === 'SETUP') bus.emit(EVENTS.VALVE_OPENED);
+      else if (state === 'RESULT') bus.emit(EVENTS.NEXT_ROUND_REQUESTED);
+      else if (state === 'SUMMARY' && gameFSM) gameFSM.restart();
+    };
+  }
+
+  function showResultado(payload) {
+    const { v1, v2, error, categoria, sobra, A1, A2 } = { ...rondaData, ...payload };
+    const info = CATEGORIA_INFO[categoria];
+
+    els.resV2.textContent = `${HUD_fmtV(v2)} m/s`;
+    els.resV2.className = `val ${info.claseVal}`;
+    els.resError.textContent = `${HUD_fmtV(error)} m/s`;
+    els.resError.className = `val ${info.claseVal}`;
+
+    els.resCategoria.style.background = `${info.color}26`; // ~15% alpha
+    els.resCategoria.style.border = `1px solid ${info.color}66`;
+    els.resCategoria.style.color = info.color;
+    els.resCategoriaLabel.textContent = info.label;
+    els.resMensaje.textContent = HUD_getCategoriaMensaje(categoria, sobra);
+
+    const razon = A1 / A2;
+    els.resFormula.innerHTML =
+      `v₂ = v₁·(A₁/A₂) = ${HUD_fmtV(v1)} · ${razon.toFixed(0)} = <b>${HUD_fmtV(v2)} m/s</b>`;
+
+    els.panelResultado.classList.add('visible');
+    refreshButtonLabelFallback();
+  }
+
+  function hideResultado() {
+    els.panelResultado.classList.remove('visible');
+  }
+
+  function showSummary(resultados) {
+    els.summaryTbody.innerHTML = resultados.map((r) => {
+      const info = CATEGORIA_INFO[r.categoria];
+      return `<tr>
+        <td>${r.ronda}</td>
+        <td>${HUD_fmtV(r.v1)} m/s</td>
+        <td>${HUD_fmtV(r.v2)} m/s</td>
+        <td style="color:${info.color};font-weight:bold;">${info.label}</td>
+      </tr>`;
+    }).join('');
+    els.summaryScreen.classList.add('visible');
+    refreshButtonLabelFallback();
+  }
+
+  // -- Suscripciones EventBus (nombres EXACTOS del contrato común) --
+  bus.on(EVENTS.SLIDER_CHANGED, () => {
+    updatePreview();
+  });
+
+  bus.on(EVENTS.VALVE_OPENED, () => {
+    hideResultado();
+    refreshButtonLabelFallback();
+  });
+
+  bus.on(EVENTS.ROUND_RESOLVED, (payload) => {
+    showResultado(payload);
+  });
+
+  bus.on(EVENTS.NEXT_ROUND_REQUESTED, () => {
+    hideResultado();
+    // refreshDatosRonda() se vuelve a llamar cuando GameFSM dispare la siguiente
+    // ronda; si el caller quiere refrescar ya mismo, puede invocar HUD_onRoundChanged.
+  });
+
+  bus.on(EVENTS.GAME_SUMMARY_READY, (payload) => {
+    showSummary(payload.resultados);
+  });
+
+  // El input "vivo" del slider lo emite InputManager (SLIDER_CHANGED); acá solo
+  // escuchamos. Si no hay InputManager externo, agregamos un listener mínimo de
+  // respaldo para que el HUD funcione standalone (no duplica si ya existe).
+  if (!inputManager) {
+    els.slider.addEventListener('input', () => {
+      const v1 = parseFloat(els.slider.value);
+      bus.emit(EVENTS.SLIDER_CHANGED, { v1 });
+    });
+  }
+
+  refreshDatosRonda();
+  refreshButtonLabelFallback();
+
+  return {
+    refreshDatosRonda,
+    updatePreview,
+    showResultado,
+    hideResultado,
+    showSummary,
+  };
+}
+
+// Punto de entrada que el Publisher debe llamar cuando cambia `gameFSM.ronda`
+// (p.ej. dentro del onEnter de SETUP, o escuchando el mismo evento que dispara esa
+// transición) para que el HUD vuelva a leer gameFSM.rondaData y repintar.
+// No se agrega un evento nuevo al contrato: el Publisher decide el hook exacto
+// (puede llamarlo directamente después de gameFSM.fsm.transition('SETUP', n)).
+function HUD_onRoundChanged(hudApi) {
+  hudApi.refreshDatosRonda();
+}
+
+// ---------------------------------------------------------------------------
+// 6) Manómetros — call-site documentado para el Artist.
+//
+// Firma EXACTA esperada (interface-brief.md):
+//   drawPressureGauge(ctx, x, y, label, presionPa, presionMax)
+//
+// Mientras esa función no esté disponible en window, HUD_renderGauges cae a un
+// dibujo mínimo de respaldo (texto plano) para no romper el juego ni dejar los
+// canvases en blanco. Cuando el Publisher conecte el Artist, este fallback deja
+// de usarse automáticamente (se detecta con `typeof drawPressureGauge`).
+// ---------------------------------------------------------------------------
+const GAUGE_PRESION_MAX = 220000; // Pa — techo de escala (algo por encima de P1_PASCAL)
+
+function HUD_renderGauges({ p1, p2 }, els) {
+  HUD_renderOneGauge(els.gaugeP1, 'P₁', p1, GAUGE_PRESION_MAX);
+  HUD_renderOneGauge(els.gaugeP2, 'P₂', p2, GAUGE_PRESION_MAX);
+}
+
+function HUD_renderOneGauge(canvasEl, label, presionPa, presionMax) {
+  if (!canvasEl) return;
+  const ctx = canvasEl.getContext('2d');
+  const cx = canvasEl.width / 2;
+  const cy = canvasEl.height / 2;
+
+  if (typeof drawPressureGauge === 'function') {
+    // Call-site real, firma exacta del Artist:
+    drawPressureGauge(ctx, cx, cy, label, presionPa, presionMax);
+    return;
+  }
+
+  // --- Fallback mínimo (solo hasta que el Artist entregue drawPressureGauge) ---
+  ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
+  ctx.fillStyle = '#f5f0e6';
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.min(cx, cy) - 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#3a4654';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  const pct = Math.max(0, Math.min(1, presionPa / presionMax));
+  const angle = Math.PI * 0.75 + pct * Math.PI * 1.5; // arco tipo dial
+  ctx.strokeStyle = '#ff6b6b';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + Math.cos(angle) * (Math.min(cx, cy) - 12), cy + Math.sin(angle) * (Math.min(cx, cy) - 12));
+  ctx.stroke();
+
+  ctx.fillStyle = '#0a1628';
+  ctx.font = 'bold 10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(label, cx, cy + Math.min(cx, cy) - 8);
+  ctx.font = '9px sans-serif';
+  ctx.fillText(`${HUD_fmtPa(presionPa)} Pa`, cx, cy - Math.min(cx, cy) + 14);
+}
+
+// ---------------------------------------------------------------------------
+// Orden de carga sugerido al Publisher en el <script> final:
+//   EventBus.js -> HydraulicsEngine.js -> MillWheel.js -> [Artist: drawPressureGauge,
+//   render de tubería/rueda] -> GameFSM.js -> InputManager.js -> HUD.js -> bootstrap
+//   (crear instancias: const gameFSM = new GameFSM({inputManager}); HUD_buildPanel +
+//   HUD_wire; gameFSM.start()).
+// ---------------------------------------------------------------------------
+
+// main.js — Hidrodinámica: La Rueda del Molino
+// Rol: Publisher. Bootstrap + audio mínimo (Web Audio API) + render loop.
+// SIN import/export ES6 — bloque plano, último en cargarse del <script> final.
+
+// ---------------------------------------------------------------------------
+// Audio mínimo: ruido de agua fluyendo durante RUNNING + un tono corto al
+// resolver la ronda (ascendente en óptima/aceptable, grave/buzz en forzada/rotura).
+// Se crea el AudioContext recién al abrir la válvula (gesto del usuario), nunca
+// antes — evita el bloqueo de autoplay de los navegadores.
+// ---------------------------------------------------------------------------
+function createAudioEngine() {
+  let ctx = null;
+  let flowSource = null;
+
+  function ensureCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    return ctx;
+  }
+
+  function startFlow() {
+    const ac = ensureCtx();
+    stopFlow();
+    const bufferSize = 2 * ac.sampleRate;
+    const buffer = ac.createBuffer(1, bufferSize, ac.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+    const noise = ac.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+
+    const filter = ac.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 650;
+
+    const gain = ac.createGain();
+    gain.gain.value = 0.05;
+
+    noise.connect(filter).connect(gain).connect(ac.destination);
+    noise.start();
+    flowSource = noise;
+  }
+
+  function stopFlow() {
+    if (flowSource) {
+      try { flowSource.stop(); } catch (e) { /* ya detenido */ }
+      flowSource.disconnect();
+      flowSource = null;
+    }
+  }
+
+  function playResultSound(categoria) {
+    const ac = ensureCtx();
+    const osc = ac.createOscillator();
+    const gain = ac.createGain();
+    osc.connect(gain).connect(ac.destination);
+    const now = ac.currentTime;
+    const esBueno = categoria === 'optima' || categoria === 'aceptable';
+
+    if (esBueno) {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(880, now + 0.25);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.14, now + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    } else {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(170, now);
+      osc.frequency.exponentialRampToValueAtTime(60, now + 0.45);
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.exponentialRampToValueAtTime(0.13, now + 0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    }
+    osc.start(now);
+    osc.stop(now + 0.55);
+  }
+
+  return { startFlow, stopFlow, playResultSound };
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap
+// ---------------------------------------------------------------------------
+function main() {
+  const canvas = document.getElementById('game-canvas');
+  canvas.width = CANVAS_WIDTH;
+  canvas.height = CANVAS_HEIGHT;
+  const ctx = canvas.getContext('2d');
+
+  const sidePanelMount = document.getElementById('side-panel-mount');
+  const hudRoot = HUD_buildPanel(sidePanelMount);
+  const sliderEl = hudRoot.querySelector('#slider-v1');
+  const valveButtonEl = hudRoot.querySelector('#btn-primary');
+
+  const inputManager = new InputManager({ sliderEl, valveButtonEl });
+  const gameFSM = new GameFSM({ inputManager, ronda: 1 });
+  inputManager.gameFSM = gameFSM;
+
+  const millWheel = new MillWheel();
+  const audio = createAudioEngine();
+  const hudApi = HUD_wire(hudRoot, { gameFSM, inputManager });
+
+  // Hook de Publisher (ver GameFSM.js): al entrar a una nueva ronda (incluida la
+  // ronda 1 tras "Jugar de nuevo"), refrescar HUD, ocultar resultado/resumen
+  // previos y devolver la rueda a reposo.
+  gameFSM.onRoundChanged = () => {
+    hudApi.hideResultado();
+    const summaryEl = hudRoot.querySelector('#summary-screen');
+    if (summaryEl) summaryEl.classList.remove('visible');
+    HUD_onRoundChanged(hudApi);
+    millWheel.reset();
+  };
+
+  // Al abrir la válvula, fijar el v2 objetivo de la rueda con el v1 que el
+  // jugador dejó cargado en SETUP (gameFSM.v1Actual ya está fijado por su propio
+  // listener de SLIDER_CHANGED, que corre antes que este por orden de registro).
+  EventBus.on(EVENTS.VALVE_OPENED, () => {
+    if (gameFSM.state === 'RUNNING') {
+      const { A1, A2 } = gameFSM.rondaData;
+      const v2 = computeV2(gameFSM.v1Actual, A1, A2);
+      millWheel.setV2(v2);
+      audio.startFlow();
+    }
+  });
+
+  EventBus.on(EVENTS.ROUND_RESOLVED, (payload) => {
+    audio.stopFlow();
+    audio.playResultSound(payload.categoria);
+  });
+
+  // --- Loop principal: física/estado a dt fijo, dibujo cada frame ---
+  let elapsedSec = 0;
+  const loop = new GameLoop({ fixedHz: TARGET_FPS });
+
+  loop.onFixedUpdate = (dt) => {
+    elapsedSec += dt;
+    gameFSM.update(dt);
+    millWheel.update(dt, gameFSM.state);
+  };
+
+  loop.onDraw = () => render(elapsedSec);
+
+  // Posiciones fijas de la escena (no dependen de la ronda, solo A1/A2 cambian
+  // el ancho dibujado de la tubería vía drawVenturiPipe).
+  const ORIGIN_X = 220;
+  const ORIGIN_Y = 250;
+  const TANK_X = 100;
+  const FLOOR_Y = 400;
+
+  // --- Composición de escena (Publisher): fondo + grilla de referencia + piso,
+  // siguiendo la convención del portal (ui skill: grid sutil cada 50px, opacity .08).
+  // No toca Drawing.js (eso es del Artist) — es decoración de escena, no física.
+  function drawSceneBackground() {
+    ctx.fillStyle = '#0a1628';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    ctx.strokeStyle = 'rgba(135,206,235,0.07)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= CANVAS_WIDTH; x += 50) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, CANVAS_HEIGHT); ctx.stroke();
+    }
+    for (let y = 0; y <= CANVAS_HEIGHT; y += 50) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(CANVAS_WIDTH, y); ctx.stroke();
+    }
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(20, FLOOR_Y);
+    ctx.lineTo(CANVAS_WIDTH - 20, FLOOR_Y);
+    ctx.stroke();
+  }
+
+  // Poste de apoyo simple (metal), ancla visualmente el tanque/tubería al piso.
+  function drawSupportPost(x, topY) {
+    ctx.fillStyle = COLOR_TUBERIA.sombra;
+    ctx.fillRect(x - 4, topY, 8, FLOOR_Y - topY);
+    ctx.fillStyle = COLOR_TUBERIA.brillo;
+    ctx.fillRect(x - 4, topY, 3, FLOOR_Y - topY);
+  }
+
+  // Cuenca de salida: recibe el agua tras pasar por la rueda, cierra
+  // visualmente el circuito tanque→tubería→rueda→cuenca (sin presión, a
+  // diferencia del tanque de entrada, por eso es más baja y abierta arriba).
+  function drawOutputBasin(x, y) {
+    const w = 80, h = 46;
+    ctx.save();
+    ctx.fillStyle = COLOR_TUBERIA.sombra;
+    ctx.beginPath();
+    ctx.moveTo(x, y); ctx.lineTo(x + w, y);
+    ctx.lineTo(x + w - 8, y + h); ctx.lineTo(x + 8, y + h);
+    ctx.closePath(); ctx.fill();
+
+    ctx.fillStyle = COLOR_AGUA[1];
+    ctx.beginPath();
+    ctx.moveTo(x + 6, y + 7); ctx.lineTo(x + w - 6, y + 7);
+    ctx.lineTo(x + w - 12, y + h - 6); ctx.lineTo(x + 12, y + h - 6);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  function render(t) {
+    drawSceneBackground();
+
+    const { A1, A2 } = gameFSM.rondaData;
+    const v1 = gameFSM.v1Actual;
+    const v2 = computeV2(v1, A1, A2);
+
+    drawSupportPost(TANK_X + 5, ORIGIN_Y + 65);
+    drawTank(ctx, TANK_X, ORIGIN_Y - 65);
+    const geo = drawVenturiPipe(ctx, A1, A2, ORIGIN_X, ORIGIN_Y);
+    drawSupportPost(geo.xEntradaFin + 18, ORIGIN_Y + geo.r1);
+    drawSupportPost(geo.xSalidaIni + 18, ORIGIN_Y + geo.r1);
+    drawOutputBasin(geo.xSalidaFin - 16, ORIGIN_Y + geo.r1 - 4);
+    drawWaterFlow(ctx, v1, v2, ORIGIN_X, ORIGIN_Y, A1, A2, t);
+
+    const wheelX = (geo.xGargantaIni + geo.xGargantaFin) / 2;
+    const resultado = gameFSM.resultadoActual;
+    const categoria = resultado ? resultado.categoria : null;
+    const sobra = resultado ? resultado.sobra : false;
+    drawMillWheel(ctx, wheelX, ORIGIN_Y, millWheel.anguloRad, categoria, sobra);
+
+    // Etiquetas rápidas de v1/v2 directamente sobre el diagrama (refuerzo visual,
+    // el panel lateral ya muestra los valores con más precisión).
+    ctx.fillStyle = '#87ceeb';
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`v₁ = ${v1.toFixed(2)} m/s`, geo.xEntradaIni + 35, ORIGIN_Y - geo.r1 - 16);
+    ctx.fillText(`v₂ = ${v2.toFixed(2)} m/s`, wheelX, ORIGIN_Y - 72);
+  }
+
+  loop.start();
+  gameFSM.start();
+}
+
+window.addEventListener('load', main);
+
+
+  </script>
+</body>
+</html>

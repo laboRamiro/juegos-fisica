@@ -1,0 +1,1388 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>El Empujón Exacto — Rozamiento</title>
+<style>/* ../../comunes/ui/estilos-comunes.css */
+:root {
+  /* Paleta fría oscura (definida por el usuario el 2026-07-18) — ver
+     PLAN.md §9. El naranja es el único acento cálido: se reserva para
+     botones y elementos que deben llamar la atención, nunca decoración. */
+  --azul-marino: #191A2D;
+  --turquesa: #46A9A4;
+  --marron-madera: #5A3E26;
+  --marron-oscuro: #2B2520;
+  --azul-acero: #325365;
+  --verde-azulado: #507C74;
+  --negro: #0A0A0D;
+  --naranja: #DA5D29;
+
+  --color-fondo: var(--azul-marino);
+  --color-tarjeta: var(--marron-madera);
+  --color-texto: #ECE7DC;
+  --color-borde: var(--turquesa);
+  --radio-borde: 12px;
+  --sombra-suave: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --fuente-base: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+
+  /* Fuentes de sistema (offline-first) para el tono "retro" de la intro y la
+     mascota — ver skill art-direction (evita Google Fonts vía CDN). */
+  --pixel-madera-oscura: var(--marron-oscuro);
+  --pixel-madera-clara: var(--marron-madera);
+  --pixel-pergamino: var(--azul-acero);
+  --pixel-sombra: var(--negro);
+  --pixel-dorado: var(--naranja);
+  --pixel-exito: #4CAF50;
+  --pixel-peligro: #B52121;
+  --fuente-pixel-titulo: 'Trebuchet MS', 'Segoe UI', sans-serif;
+  --fuente-pixel-texto: 'Courier New', 'Consolas', monospace;
+}
+
+body {
+  margin: 0;
+  font-family: var(--fuente-base);
+  color: var(--color-texto);
+  background: var(--color-fondo);
+}
+
+.panel {
+  background: var(--color-tarjeta);
+  border: 1px solid var(--color-borde);
+  border-radius: var(--radio-borde);
+  box-shadow: var(--sombra-suave);
+  padding: 16px;
+  color: var(--color-texto);
+}
+
+.boton {
+  font-family: var(--fuente-base);
+  border: none;
+  border-radius: var(--radio-borde);
+  padding: 10px 18px;
+  font-size: 15px;
+  cursor: pointer;
+  background: var(--naranja);
+  color: #fff;
+}
+
+.boton:hover {
+  opacity: 0.85;
+}
+
+.boton:disabled {
+  background: var(--marron-oscuro);
+  color: var(--color-texto);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ui-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.ui-slider label {
+  font-size: 14px;
+}
+
+.panel-metricas .metrica-fila {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  padding: 2px 0;
+}
+
+.selector-nivel {
+  display: flex;
+  gap: 8px;
+}
+
+.chip-nivel {
+  font-family: var(--fuente-base);
+  border: 1px solid var(--color-borde);
+  background: var(--color-tarjeta);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chip-nivel.activo {
+  background: var(--color-texto);
+  color: var(--color-tarjeta);
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal-overlay.oculto {
+  display: none;
+}
+
+.modal-contenido {
+  max-width: 420px;
+  width: 90%;
+}
+
+.modal-contenido h4 {
+  margin-bottom: 4px;
+}
+
+.modal-contenido p {
+  margin-top: 0;
+}
+
+/* --- Personaje guía (Newtín, mascota recurrente) --- */
+
+.personaje-guia {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.personaje-guia canvas {
+  width: 72px;
+  height: 72px;
+}
+
+.burbuja-dialogo {
+  background: var(--pixel-pergamino);
+  border: 3px solid var(--pixel-madera-oscura);
+  box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.35);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-family: var(--fuente-pixel-texto);
+  font-size: 13px;
+  max-width: 220px;
+  color: var(--color-texto);
+}
+
+/* --- Animación final de celebración --- */
+
+.animacion-final {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 200;
+}
+
+.animacion-final.oculto {
+  display: none;
+}
+
+.animacion-final-icono {
+  font-size: 64px;
+  color: var(--pixel-dorado);
+  opacity: 0;
+  text-shadow: 0 0 12px rgba(255, 217, 33, 0.8);
+}
+
+.animacion-final-activa .animacion-final-icono {
+  animation: celebrar-final 1.1s ease-out;
+}
+
+@keyframes celebrar-final {
+  0%   { transform: scale(0.4) rotate(0deg); opacity: 0; }
+  25%  { transform: scale(1.3) rotate(-10deg); opacity: 1; }
+  50%  { transform: scale(1.15) rotate(10deg); opacity: 1; }
+  75%  { transform: scale(1.05) rotate(-5deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0deg); opacity: 0; }
+}
+
+/* --- Escena de introducción (contexto histórico) --- */
+
+.escena-intro {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0;
+  z-index: 150;
+}
+
+.escena-intro-fondo {
+  max-width: 600px;
+  width: 90%;
+  height: auto;
+  border-radius: var(--radio-borde) var(--radio-borde) 0 0;
+  display: block;
+}
+
+.escena-intro-tarjeta {
+  max-width: 600px;
+  width: 90%;
+  background: var(--pixel-pergamino);
+  border: 4px solid var(--pixel-madera-oscura);
+  border-top: none;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.35);
+  border-radius: 0 0 var(--radio-borde) var(--radio-borde);
+  padding: 16px 20px;
+  color: var(--color-texto);
+}
+
+.escena-intro-tarjeta h2 {
+  font-family: var(--fuente-pixel-titulo);
+  letter-spacing: 0.03em;
+  margin: 0 0 8px;
+}
+
+.escena-intro-texto {
+  font-family: var(--fuente-pixel-texto);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+</style>
+<style>/* style.css */
+body {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.cabecera-juego {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cabecera-juego h1 {
+  font-size: 22px;
+}
+
+.contenedor-nivel {
+  margin-bottom: 16px;
+}
+
+.area-juego {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+}
+
+.escena {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#canvasEscena {
+  width: 100%;
+  height: auto;
+  background: #191A2D;
+  border-radius: var(--radio-borde);
+}
+
+.meta-texto {
+  font-size: 14px;
+  opacity: 0.8;
+  margin: 0;
+}
+
+.panel-lateral {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.graficos {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.titulo-grafico {
+  font-size: 12px;
+  margin: 0 0 2px;
+  opacity: 0.7;
+}
+
+.graficos canvas {
+  width: 100%;
+  height: auto;
+  background: var(--color-tarjeta);
+  border: 1px solid var(--color-borde);
+  border-radius: 8px;
+}
+
+.eleccion-prediccion {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.eleccion-prediccion .boton.activo {
+  outline: 3px solid var(--color-texto);
+}
+
+.acciones {
+  display: flex;
+  gap: 8px;
+}
+
+.resultado {
+  min-height: 20px;
+  font-weight: bold;
+  margin: 0;
+}
+
+.resultado.exito {
+  color: #2f9e44;
+}
+
+.resultado.fallo {
+  color: #d64545;
+}
+
+@media (max-width: 720px) {
+  .area-juego {
+    grid-template-columns: 1fr;
+  }
+}
+
+</style>
+</head>
+<body>
+
+<header class="cabecera-juego">
+  <h1>El Empujón Exacto</h1>
+  <button class="boton" id="btnAyuda">?</button>
+</header>
+
+<div id="contenedorNivel" class="contenedor-nivel"></div>
+
+<main class="area-juego">
+  <section class="escena panel">
+    <canvas id="canvasEscena" width="700" height="200"></canvas>
+    <p id="metaTexto" class="meta-texto"></p>
+  </section>
+
+  <aside class="panel-lateral">
+    <div id="controles" class="panel"></div>
+    <div id="metricas"></div>
+
+    <div class="graficos">
+      <div>
+        <p class="titulo-grafico">Velocidad vs tiempo</p>
+        <canvas id="graficoVelocidad" width="260" height="110"></canvas>
+      </div>
+    </div>
+
+    <div class="acciones">
+      <button class="boton" id="btnProbar">Probar</button>
+      <button class="boton" id="btnReiniciar">Reiniciar</button>
+    </div>
+
+    <p id="resultado" class="resultado"></p>
+  </aside>
+</main>
+
+<script>/* ../../comunes/utilidades/mathUtils.js */
+window.Utilidades = window.Utilidades || {};
+
+window.Utilidades.clamp = (valor, min, max) => Math.min(Math.max(valor, min), max);
+
+window.Utilidades.lerp = (a, b, t) => a + (b - a) * t;
+
+window.Utilidades.mapearRango = (valor, inMin, inMax, outMin, outMax) =>
+  outMin + ((valor - inMin) * (outMax - outMin)) / (inMax - inMin);
+
+</script>
+<script>/* ../../comunes/utilidades/tema.js */
+window.Utilidades = window.Utilidades || {};
+
+// Un color de acento por categoría, usado en el catálogo y en el HUD de cada juego.
+// Ver PLAN.md §9 (identidad visual).
+window.Utilidades.TEMA_CATEGORIAS = {
+  mecanica: '#2f6fed',
+  fluidos: '#1f9e8f',
+  ondas: '#8b5cf6',
+  electricidad: '#e0a712',
+  magnetismo: '#d64545',
+  termodinamica: '#e0722f',
+  optica: '#c2338f',
+  fisicaModerna: '#4338ca',
+};
+
+</script>
+<script>/* ../../comunes/fisica/vector2.js */
+window.Fisica = window.Fisica || {};
+
+window.Fisica.Vector2 = class Vector2 {
+  constructor(x = 0, y = 0) {
+    this.x = x;
+    this.y = y;
+  }
+
+  add(v) { return new window.Fisica.Vector2(this.x + v.x, this.y + v.y); }
+  sub(v) { return new window.Fisica.Vector2(this.x - v.x, this.y - v.y); }
+  scale(s) { return new window.Fisica.Vector2(this.x * s, this.y * s); }
+  dot(v) { return this.x * v.x + this.y * v.y; }
+  clone() { return new window.Fisica.Vector2(this.x, this.y); }
+
+  get magnitud() { return Math.hypot(this.x, this.y); }
+
+  normalizado() {
+    const m = this.magnitud;
+    return m === 0 ? new window.Fisica.Vector2(0, 0) : this.scale(1 / m);
+  }
+};
+
+</script>
+<script>/* ../../comunes/fisica/constantes.js */
+window.Fisica = window.Fisica || {};
+
+window.Fisica.GRAVEDAD_TIERRA = 9.81;   // m/s^2
+window.Fisica.GRAVEDAD_LUNA = 1.62;     // m/s^2
+window.Fisica.DENSIDAD_AGUA = 1000;     // kg/m^3
+window.Fisica.DENSIDAD_AIRE = 1.225;    // kg/m^3
+
+</script>
+<script>/* ../../comunes/motor/GameLoop.js */
+window.Motor = window.Motor || {};
+
+// Loop de juego sobre requestAnimationFrame, con dt limitado para evitar saltos
+// grandes si la pestaña pierde el foco.
+window.Motor.GameLoop = class GameLoop {
+  constructor({ actualizar, dibujar, dtMaximo = 1 / 30 }) {
+    this.actualizar = actualizar;
+    this.dibujar = dibujar;
+    this.dtMaximo = dtMaximo;
+    this.corriendo = false;
+    this.ultimoTiempo = 0;
+    this._frame = this._frame.bind(this);
+  }
+
+  iniciar() {
+    if (this.corriendo) return;
+    this.corriendo = true;
+    this.ultimoTiempo = performance.now();
+    requestAnimationFrame(this._frame);
+  }
+
+  detener() {
+    this.corriendo = false;
+  }
+
+  _frame(tiempoActual) {
+    if (!this.corriendo) return;
+    const dt = Math.min((tiempoActual - this.ultimoTiempo) / 1000, this.dtMaximo);
+    this.ultimoTiempo = tiempoActual;
+    this.actualizar(dt);
+    this.dibujar();
+    requestAnimationFrame(this._frame);
+  }
+};
+
+</script>
+<script>/* ../../comunes/motor/PixelArt.js */
+window.Motor = window.Motor || {};
+
+// Helpers de dibujo estilo pixel art (ver skill art-direction, estilo Stardew
+// Pixel). No usa sprites cargados: todo se dibuja con primitivas de Canvas,
+// igual que el prototipo Phaser descartado (arquimedes-barca) dibujaba con
+// Graphics — acá con ctx nativo, sin dependencias.
+window.Motor.PixelArt = {
+  TILE: 16,
+  ESCALA: 3,
+
+  rectanguloBloques(ctx, x, y, anchoBloques, altoBloques, color, escala = window.Motor.PixelArt.ESCALA) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, anchoBloques * escala, altoBloques * escala);
+  },
+
+  // Patrón de sombra tipo damero (dithering), en vez de un gradiente suave.
+  sombraDitherizada(ctx, x, y, anchoBloques, altoBloques, color, escala = window.Motor.PixelArt.ESCALA) {
+    ctx.fillStyle = color;
+    for (let py = 0; py < altoBloques; py++) {
+      for (let px = 0; px < anchoBloques; px++) {
+        if ((px + py) % 2 === 0) {
+          ctx.fillRect(x + px * escala, y + py * escala, escala, escala);
+        }
+      }
+    }
+  },
+};
+
+</script>
+<script>/* ../../comunes/ui/Panel.js */
+window.UI = window.UI || {};
+
+window.UI.crearPanel = function ({ contenedor, claseExtra = '' }) {
+  const panel = document.createElement('div');
+  panel.className = `panel ${claseExtra}`.trim();
+  contenedor.appendChild(panel);
+  return panel;
+};
+
+</script>
+<script>/* ../../comunes/ui/Boton.js */
+window.UI = window.UI || {};
+
+window.UI.Boton = class Boton {
+  constructor({ contenedor, texto, onClick }) {
+    this.elemento = document.createElement('button');
+    this.elemento.className = 'boton';
+    this.elemento.textContent = texto;
+    this.elemento.addEventListener('click', onClick);
+    contenedor.appendChild(this.elemento);
+  }
+};
+
+</script>
+<script>/* ../../comunes/ui/Slider.js */
+window.UI = window.UI || {};
+
+window.UI.Slider = class Slider {
+  constructor({ contenedor, etiqueta, min, max, valorInicial, paso = 1, unidad = '', onChange }) {
+    this.onChange = onChange;
+    this.etiqueta = etiqueta;
+    this.unidad = unidad;
+
+    this.raiz = document.createElement('div');
+    this.raiz.className = 'ui-slider';
+
+    this.etiquetaElemento = document.createElement('label');
+    this._actualizarEtiqueta(valorInicial);
+
+    this.input = document.createElement('input');
+    this.input.type = 'range';
+    this.input.min = min;
+    this.input.max = max;
+    this.input.step = paso;
+    this.input.value = valorInicial;
+
+    this.input.addEventListener('input', () => {
+      const valor = parseFloat(this.input.value);
+      this._actualizarEtiqueta(valor);
+      this.onChange(valor);
+    });
+
+    this.raiz.appendChild(this.etiquetaElemento);
+    this.raiz.appendChild(this.input);
+    contenedor.appendChild(this.raiz);
+  }
+
+  _actualizarEtiqueta(valor) {
+    this.etiquetaElemento.textContent = `${this.etiqueta}: ${valor} ${this.unidad}`.trim();
+  }
+
+  get valor() {
+    return parseFloat(this.input.value);
+  }
+};
+
+</script>
+<script>/* ../../comunes/ui/PanelMetricas.js */
+window.UI = window.UI || {};
+
+// HUD simple de pares etiqueta-valor, para variables físicas en vivo.
+window.UI.PanelMetricas = class PanelMetricas {
+  constructor({ contenedor, metricas }) {
+    this.raiz = window.UI.crearPanel({ contenedor, claseExtra: 'panel-metricas' });
+    this.filas = {};
+
+    metricas.forEach(({ clave, etiqueta, unidad = '' }) => {
+      const fila = document.createElement('div');
+      fila.className = 'metrica-fila';
+      fila.innerHTML = `<span>${etiqueta}</span><strong data-valor></strong>`;
+      this.raiz.appendChild(fila);
+      this.filas[clave] = { elemento: fila.querySelector('[data-valor]'), unidad };
+    });
+  }
+
+  actualizar(clave, valor) {
+    const fila = this.filas[clave];
+    if (!fila) return;
+    fila.elemento.textContent = `${valor} ${fila.unidad}`.trim();
+  }
+};
+
+</script>
+<script>/* ../../comunes/ui/GraficoLinea.js */
+window.UI = window.UI || {};
+
+// Mini gráfico canvas de variable-vs-tiempo, con buffer de puntos de tamaño fijo.
+window.UI.GraficoLinea = class GraficoLinea {
+  constructor({ canvas, maxPuntos = 200, min, max, color = '#2f6fed' }) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    this.maxPuntos = maxPuntos;
+    this.min = min;
+    this.max = max;
+    this.color = color;
+    this.puntos = [];
+  }
+
+  agregarPunto(valor) {
+    this.puntos.push(valor);
+    if (this.puntos.length > this.maxPuntos) this.puntos.shift();
+    this._dibujar();
+  }
+
+  _dibujar() {
+    const { ctx, canvas } = this;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.strokeStyle = this.color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+
+    this.puntos.forEach((valor, i) => {
+      const x = (i / this.maxPuntos) * canvas.width;
+      const t = window.Utilidades.clamp((valor - this.min) / (this.max - this.min), 0, 1);
+      const y = canvas.height - t * canvas.height;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+
+    ctx.stroke();
+  }
+};
+
+</script>
+<script>/* ../../comunes/ui/ModalAyuda.js */
+window.UI = window.UI || {};
+
+// Modal de ayuda: pregunta guía, controles y pista de observación.
+// Nunca la explicación física — eso vive en ModalExplicacion (ver PLAN.md §7-8).
+window.UI.ModalAyuda = class ModalAyuda {
+  constructor({ pregunta, controles, pista }) {
+    this.overlay = document.createElement('div');
+    this.overlay.className = 'modal-overlay oculto';
+    this.overlay.innerHTML = `
+      <div class="panel modal-contenido">
+        <h3>¿Qué estamos poniendo a prueba?</h3>
+        <p>${pregunta}</p>
+        <h4>Controles</h4>
+        <p>${controles}</p>
+        <h4>Mirá esto mientras jugás</h4>
+        <p>${pista}</p>
+        <button class="boton" data-cerrar>Entendido</button>
+      </div>`;
+    document.body.appendChild(this.overlay);
+    this.overlay.querySelector('[data-cerrar]').addEventListener('click', () => this.ocultar());
+  }
+
+  mostrar() { this.overlay.classList.remove('oculto'); }
+  ocultar() { this.overlay.classList.add('oculto'); }
+};
+
+</script>
+<script>/* ../../comunes/ui/ModalExplicacion.js */
+window.UI = window.UI || {};
+
+// Sistema de explicación científica (PLAN.md §8). Se muestra recién después de
+// un umbral de exploración, nunca al empezar — descubrir antes que explicar.
+window.UI.ModalExplicacion = class ModalExplicacion {
+  constructor({ ley, formula, analogia, limitesAnalogia, erroresComunes }) {
+    this.overlay = document.createElement('div');
+    this.overlay.className = 'modal-overlay oculto';
+    this.overlay.innerHTML = `
+      <div class="panel modal-contenido">
+        <h3>${ley}</h3>
+        <p><strong>${formula}</strong></p>
+        <h4>La analogía de este juego</h4>
+        <p>${analogia}</p>
+        <h4>Dónde deja de aplicar esta analogía</h4>
+        <p>${limitesAnalogia}</p>
+        <h4>Errores comunes que este juego evita</h4>
+        <p>${erroresComunes}</p>
+        <button class="boton" data-cerrar>Cerrar</button>
+      </div>`;
+    document.body.appendChild(this.overlay);
+    this.overlay.querySelector('[data-cerrar]').addEventListener('click', () => this.ocultar());
+  }
+
+  mostrar() { this.overlay.classList.remove('oculto'); }
+  ocultar() { this.overlay.classList.add('oculto'); }
+};
+
+</script>
+<script>/* ../../comunes/ui/SelectorNivel.js */
+window.UI = window.UI || {};
+
+// Chips de "Explorar / Desafío / Predicción" — ver PLAN.md §6.
+window.UI.SelectorNivel = class SelectorNivel {
+  constructor({ contenedor, onCambio }) {
+    const niveles = [
+      { clave: 'explorar', etiqueta: 'Explorar libre' },
+      { clave: 'desafio', etiqueta: 'Desafío guiado' },
+      { clave: 'prediccion', etiqueta: 'Predicción' },
+    ];
+
+    this.raiz = document.createElement('div');
+    this.raiz.className = 'selector-nivel';
+
+    niveles.forEach(({ clave, etiqueta }) => {
+      const chip = document.createElement('button');
+      chip.className = 'chip-nivel';
+      chip.textContent = etiqueta;
+      chip.addEventListener('click', () => {
+        this.raiz.querySelectorAll('.chip-nivel').forEach((c) => c.classList.remove('activo'));
+        chip.classList.add('activo');
+        onCambio(clave);
+      });
+      this.raiz.appendChild(chip);
+    });
+
+    contenedor.appendChild(this.raiz);
+  }
+};
+
+</script>
+<script>/* ../../comunes/ui/PersonajeGuia.js */
+window.UI = window.UI || {};
+
+// Newtín, el búho guía — mascota recurrente de toda la biblioteca (arquetipo
+// "Científico Guía" de la skill character). Aparece en una esquina con un
+// globo de diálogo contextual y nunca interrumpe el juego, solo comenta.
+window.UI.PersonajeGuia = class PersonajeGuia {
+  constructor({ contenedor, dialogos }) {
+    this.dialogos = dialogos;
+    this.estado = 'neutral'; // 'neutral' | 'celebrando'
+    this.tiempo = 0;
+    this.proximoParpadeo = 2 + Math.random() * 2;
+    this.parpadeando = false;
+    this.activo = true;
+
+    this.raiz = document.createElement('div');
+    this.raiz.className = 'personaje-guia';
+
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = 72;
+    this.canvas.height = 72;
+    this.ctx = this.canvas.getContext('2d');
+
+    this.burbuja = document.createElement('div');
+    this.burbuja.className = 'burbuja-dialogo';
+
+    this.raiz.appendChild(this.canvas);
+    this.raiz.appendChild(this.burbuja);
+    contenedor.appendChild(this.raiz);
+
+    this.decir('gameStart');
+    this._animar = this._animar.bind(this);
+    requestAnimationFrame(this._animar);
+  }
+
+  decir(situacion) {
+    const opciones = this.dialogos[situacion];
+    if (!opciones || opciones.length === 0) return;
+    this.burbuja.textContent = opciones[Math.floor(Math.random() * opciones.length)];
+  }
+
+  celebrar() {
+    this.estado = 'celebrando';
+    this.tiempo = 0;
+    setTimeout(() => { this.estado = 'neutral'; }, 1200);
+  }
+
+  destruir() {
+    this.activo = false;
+    this.raiz.remove();
+  }
+
+  _dibujar() {
+    const ctx = this.ctx;
+    ctx.clearRect(0, 0, 72, 72);
+
+    const salto = this.estado === 'celebrando' ? Math.abs(Math.sin(this.tiempo * 8)) * 10 : 0;
+    const cx = 36;
+    const cy = 44 - salto;
+
+    ctx.fillStyle = '#8B6914';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 20, 22, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#F5E6C8';
+    ctx.beginPath();
+    ctx.ellipse(cx, cy + 4, 12, 14, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const aleteo = Math.sin(this.tiempo * 4) * 4;
+    ctx.fillStyle = '#6B3710';
+    ctx.beginPath();
+    ctx.ellipse(cx - 20, cy + 2 + aleteo, 7, 14, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(cx + 20, cy + 2 - aleteo, 7, 14, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#8B6914';
+    ctx.beginPath();
+    ctx.moveTo(cx - 12, cy - 20);
+    ctx.lineTo(cx - 6, cy - 30);
+    ctx.lineTo(cx - 2, cy - 18);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(cx + 12, cy - 20);
+    ctx.lineTo(cx + 6, cy - 30);
+    ctx.lineTo(cx + 2, cy - 18);
+    ctx.fill();
+
+    const ojoAbierto = !this.parpadeando;
+    ctx.fillStyle = '#FFFFFF';
+    [-9, 9].forEach((dx) => {
+      ctx.beginPath();
+      ctx.ellipse(cx + dx, cy - 8, 8, ojoAbierto ? 8 : 1.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    if (ojoAbierto) {
+      ctx.fillStyle = '#2C1810';
+      [-9, 9].forEach((dx) => {
+        ctx.beginPath();
+        ctx.arc(cx + dx, cy - 8, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    ctx.fillStyle = '#E8A020';
+    ctx.beginPath();
+    ctx.moveTo(cx - 4, cy - 2);
+    ctx.lineTo(cx + 4, cy - 2);
+    ctx.lineTo(cx, cy + 5);
+    ctx.fill();
+  }
+
+  _animar() {
+    if (!this.activo) return;
+    const dt = 1 / 60;
+    this.tiempo += dt;
+
+    if (this.tiempo >= this.proximoParpadeo && !this.parpadeando) {
+      this.parpadeando = true;
+      setTimeout(() => { this.parpadeando = false; }, 120);
+      this.proximoParpadeo = this.tiempo + 2 + Math.random() * 3;
+    }
+
+    this._dibujar();
+    requestAnimationFrame(() => this._animar());
+  }
+};
+
+</script>
+<script>/* ../../comunes/ui/AnimacionFinal.js */
+window.UI = window.UI || {};
+
+// Animación de celebración al completar un desafío (skill character,
+// celebrationAnimation). Overlay breve y no bloqueante, se auto-oculta.
+window.UI.AnimacionFinal = class AnimacionFinal {
+  constructor() {
+    this.overlay = document.createElement('div');
+    this.overlay.className = 'animacion-final oculto';
+    this.overlay.innerHTML = '<div class="animacion-final-icono">★</div>';
+    document.body.appendChild(this.overlay);
+  }
+
+  reproducir() {
+    this.overlay.classList.remove('oculto');
+    this.overlay.classList.remove('animacion-final-activa');
+    void this.overlay.offsetWidth; // fuerza reflow para poder re-disparar la animación
+    this.overlay.classList.add('animacion-final-activa');
+    setTimeout(() => this.overlay.classList.add('oculto'), 1200);
+  }
+};
+
+</script>
+<script>/* ../../comunes/ui/EscenaIntro.js */
+window.UI = window.UI || {};
+
+// Tarjeta de introducción: contexto histórico + fondo temático dibujado a
+// mano, antes de empezar a jugar. Se cierra con "Comenzar" y no vuelve a
+// aparecer sola (ver PLAN.md — complejidad artística, contexto histórico).
+window.UI.EscenaIntro = class EscenaIntro {
+  constructor({ titulo, contextoHistorico, dibujarFondo, onComenzar }) {
+    this.overlay = document.createElement('div');
+    this.overlay.className = 'escena-intro';
+
+    this.canvas = document.createElement('canvas');
+    this.canvas.width = 600;
+    this.canvas.height = 200;
+    this.canvas.className = 'escena-intro-fondo';
+
+    const tarjeta = document.createElement('div');
+    tarjeta.className = 'escena-intro-tarjeta';
+    tarjeta.innerHTML = `
+      <h2>${titulo}</h2>
+      <p class="escena-intro-texto">${contextoHistorico}</p>
+      <button class="boton" data-comenzar>Comenzar</button>
+    `;
+
+    this.overlay.appendChild(this.canvas);
+    this.overlay.appendChild(tarjeta);
+    document.body.appendChild(this.overlay);
+
+    if (dibujarFondo) dibujarFondo(this.canvas.getContext('2d'), this.canvas.width, this.canvas.height);
+
+    tarjeta.querySelector('[data-comenzar]').addEventListener('click', () => {
+      this.overlay.remove();
+      if (onComenzar) onComenzar();
+    });
+  }
+};
+
+</script>
+<script>/* script.js */
+(function () {
+  const G = window.Fisica.GRAVEDAD_TIERRA;
+  const MU_ESTATICO = 0.6;
+  const MU_CINETICO = 0.4;
+  const LARGO_PISO_M = 15;
+  const ESCALA_PX_POR_M = (700 - 80) / LARGO_PISO_M;
+  const MARGEN_PX = 40;
+  const UMBRAL_ACEL_CONSTANTE = 0.15; // m/s², por debajo se considera "velocidad constante"
+  const DURACION_OBJETIVO_DESAFIO = 2; // s
+
+  const MASA_FIJA_PREDICCION = 10;
+  const TASA_RAMPA_PREDICCION = 10; // N/s
+
+  const estado = {
+    nivel: 'explorar',
+    fuerzaAplicada: 0,
+    masa: 10,
+    moviendo: false,
+    velocidad: 0,
+    posicion: 0,
+    tiempo: 0,
+    tiempoVelocidadConstante: 0,
+    exitoDesafioEsteIntento: false,
+    prediccionJugador: null,
+    rampaActiva: false,
+    fuerzaPrediccionActual: 0,
+    tiempoRampa: 0,
+    exploracionCount: 0,
+    logroDesafio: false,
+    logroPrediccion: false,
+    intentosFallidos: 0,
+    discoveryDicho: false,
+    expresion: 'neutral',
+  };
+
+  let guia = null;
+  let animacionFinal = null;
+
+  const canvasEscena = document.getElementById('canvasEscena');
+  const ctxEscena = canvasEscena.getContext('2d');
+  const metaTextoEl = document.getElementById('metaTexto');
+  const resultadoEl = document.getElementById('resultado');
+  const controlesEl = document.getElementById('controles');
+  const btnProbar = document.getElementById('btnProbar');
+  const btnReiniciar = document.getElementById('btnReiniciar');
+
+  let sliderFuerza = null;
+  let sliderMasa = null;
+
+  const panelMetricas = new window.UI.PanelMetricas({
+    contenedor: document.getElementById('metricas'),
+    metricas: [
+      { clave: 'fuerza', etiqueta: 'Fuerza aplicada', unidad: 'N' },
+      { clave: 'estadoCaja', etiqueta: 'Estado', unidad: '' },
+      { clave: 'velocidad', etiqueta: 'Velocidad', unidad: 'm/s' },
+    ],
+  });
+
+  const graficoVelocidad = new window.UI.GraficoLinea({
+    canvas: document.getElementById('graficoVelocidad'),
+    min: 0,
+    max: 10,
+    color: window.Utilidades.TEMA_CATEGORIAS.mecanica,
+  });
+
+  function pesoNormal(masa) { return masa * G; }
+  function fuerzaEstaticaMax(masa) { return MU_ESTATICO * pesoNormal(masa); }
+  function fuerzaCinetica(masa) { return MU_CINETICO * pesoNormal(masa); }
+
+  function construirControles(nivel) {
+    controlesEl.innerHTML = '';
+
+    if (nivel === 'prediccion') {
+      const contenedorEleccion = document.createElement('div');
+      contenedorEleccion.className = 'eleccion-prediccion';
+
+      const opciones = [
+        { clave: 'suave', texto: 'Va a arrancar suave, acelerando de a poco' },
+        { clave: 'tiron', texto: 'Va a pegar un tirón brusco apenas arranque' },
+      ];
+
+      opciones.forEach(({ clave, texto }) => {
+        const boton = document.createElement('button');
+        boton.className = 'boton';
+        boton.textContent = texto;
+        boton.addEventListener('click', () => {
+          estado.prediccionJugador = clave;
+          contenedorEleccion.querySelectorAll('.boton').forEach((b) => b.classList.remove('activo'));
+          boton.classList.add('activo');
+          btnProbar.disabled = false;
+        });
+        contenedorEleccion.appendChild(boton);
+      });
+
+      controlesEl.appendChild(contenedorEleccion);
+      btnProbar.disabled = true;
+      return;
+    }
+
+    sliderFuerza = new window.UI.Slider({
+      contenedor: controlesEl,
+      etiqueta: 'Fuerza aplicada',
+      min: 0,
+      max: 250,
+      paso: 5,
+      valorInicial: estado.fuerzaAplicada,
+      unidad: 'N',
+      onChange: (valor) => {
+        estado.fuerzaAplicada = valor;
+        if (nivel === 'explorar') {
+          estado.exploracionCount++;
+          verificarDesbloqueoExplicacion();
+        }
+      },
+    });
+
+    sliderMasa = new window.UI.Slider({
+      contenedor: controlesEl,
+      etiqueta: 'Masa de la caja',
+      min: 5,
+      max: 30,
+      paso: 1,
+      valorInicial: estado.masa,
+      unidad: 'kg',
+      onChange: (valor) => {
+        estado.masa = valor;
+        if (nivel === 'explorar') {
+          estado.exploracionCount++;
+          verificarDesbloqueoExplicacion();
+        }
+      },
+    });
+  }
+
+  function actualizarMetaTexto() {
+    if (estado.nivel === 'explorar') {
+      metaTextoEl.textContent = 'Modo libre: subí la fuerza de a poco. Fijate cuánta hace falta para arrancar la caja, y cuánta para mantenerla andando.';
+    } else if (estado.nivel === 'desafio') {
+      metaTextoEl.textContent = `Meta: arrancá la caja y después mantenela a velocidad constante durante ${DURACION_OBJETIVO_DESAFIO} s seguidos.`;
+    } else {
+      metaTextoEl.textContent = `Una caja de ${MASA_FIJA_PREDICCION} kg está quieta, empujada casi al límite. Si aumento un poco más la fuerza, ¿cómo arranca?`;
+    }
+  }
+
+  function reiniciarCorrida() {
+    estado.moviendo = false;
+    estado.velocidad = 0;
+    estado.posicion = 0;
+    estado.tiempo = 0;
+    estado.tiempoVelocidadConstante = 0;
+    estado.exitoDesafioEsteIntento = false;
+    estado.prediccionJugador = null;
+    estado.rampaActiva = false;
+    estado.tiempoRampa = 0;
+    estado.expresion = 'neutral';
+    if (estado.nivel !== 'prediccion') estado.fuerzaAplicada = 0;
+    resultadoEl.textContent = '';
+    resultadoEl.className = 'resultado';
+    graficoVelocidad.puntos = [];
+    if (sliderFuerza) sliderFuerza.input.value = 0;
+    construirControles(estado.nivel);
+    btnProbar.style.display = estado.nivel === 'prediccion' ? 'inline-block' : 'none';
+  }
+
+  function configurarNivel(nivel) {
+    estado.nivel = nivel;
+    reiniciarCorrida();
+    actualizarMetaTexto();
+  }
+
+  function evaluarDesafioExito() {
+    estado.logroDesafio = true;
+    resultadoEl.textContent = '¡Lograste mantenerla a velocidad constante!';
+    resultadoEl.className = 'resultado exito';
+    estado.expresion = 'feliz';
+    if (guia) { guia.decir('victory'); guia.celebrar(); }
+    if (animacionFinal) animacionFinal.reproducir();
+    verificarDesbloqueoExplicacion();
+  }
+
+  function evaluarPrediccion() {
+    const acerto = estado.prediccionJugador === 'tiron';
+    if (acerto) {
+      resultadoEl.textContent = '¡Correcto! Al arrancar, el rozamiento baja de golpe (de estático a cinético) y sobra fuerza — por eso el tirón.';
+      resultadoEl.className = 'resultado exito';
+      estado.logroPrediccion = true;
+      estado.expresion = 'feliz';
+      if (guia) { guia.decir('victory'); guia.celebrar(); }
+      if (animacionFinal) animacionFinal.reproducir();
+    } else {
+      resultadoEl.textContent = 'No: apenas se vence el rozamiento estático, la resistencia cae al rozamiento cinético (menor) y sobra fuerza de golpe — por eso el tirón, no un arranque suave.';
+      resultadoEl.className = 'resultado fallo';
+      estado.expresion = 'triste';
+    }
+    verificarDesbloqueoExplicacion();
+  }
+
+  function verificarDesbloqueoExplicacion() {
+    const desbloqueado = estado.exploracionCount >= 6 || estado.logroDesafio || estado.logroPrediccion;
+    if (desbloqueado) {
+      btnExplicacion.classList.remove('oculto');
+      if (guia && !estado.discoveryDicho) {
+        estado.discoveryDicho = true;
+        guia.decir('discovery');
+      }
+    }
+  }
+
+  function dibujarFondoTallerPlano(ctx, w, h) {
+    const yPiso = 150; // misma altura que usa la física de la escena
+
+    const pared = ctx.createLinearGradient(0, 0, 0, yPiso);
+    pared.addColorStop(0, '#191A2D');
+    pared.addColorStop(1, '#325365');
+    ctx.fillStyle = pared;
+    ctx.fillRect(0, 0, w, yPiso);
+
+    ctx.fillStyle = '#5A3E26';
+    ctx.fillRect(0, yPiso, w, h - yPiso);
+    ctx.strokeStyle = 'rgba(43, 37, 32, 0.4)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x < w; x += 40) {
+      ctx.beginPath();
+      ctx.moveTo(x, yPiso);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = 'rgba(43, 37, 32, 0.35)';
+    for (let x = 20; x < w; x += 90) {
+      ctx.fillRect(x, 0, 8, yPiso);
+    }
+
+    const ventanaAncho = w * 0.14;
+    const ventanaAlto = yPiso * 0.5;
+    const ventanaX = w * 0.75;
+    const ventanaY = yPiso * 0.15;
+    ctx.fillStyle = '#46A9A4';
+    ctx.fillRect(ventanaX, ventanaY, ventanaAncho, ventanaAlto);
+    ctx.strokeStyle = '#2B2520';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(ventanaX, ventanaY, ventanaAncho, ventanaAlto);
+  }
+
+  function dibujarEscena() {
+    dibujarFondoTallerPlano(ctxEscena, canvasEscena.width, canvasEscena.height);
+
+    const yPiso = 150;
+    ctxEscena.strokeStyle = '#2B2520';
+    ctxEscena.lineWidth = 2;
+    ctxEscena.beginPath();
+    ctxEscena.moveTo(0, yPiso);
+    ctxEscena.lineTo(canvasEscena.width, yPiso);
+    ctxEscena.stroke();
+
+    const masaActiva = estado.nivel === 'prediccion' ? MASA_FIJA_PREDICCION : estado.masa;
+    const fuerzaActiva = estado.nivel === 'prediccion' ? estado.fuerzaPrediccionActual : estado.fuerzaAplicada;
+    const fEstMax = fuerzaEstaticaMax(masaActiva);
+
+    let jitter = 0;
+    if (!estado.moviendo && fEstMax > 0) {
+      const proximidad = window.Utilidades.clamp(fuerzaActiva / fEstMax, 0, 1);
+      if (proximidad > 0.6) jitter = (Math.random() - 0.5) * (proximidad - 0.6) * 12;
+    }
+
+    const anchoCaja = 20 + masaActiva * 0.8;
+    const xCaja = MARGEN_PX + estado.posicion * ESCALA_PX_POR_M + jitter;
+
+    // color de la caja: tiñe brevemente en verde/rojo según el resultado del
+    // último intento (sin humanizarla — sin cara, ver PLAN.md §9).
+    const colorCaja = estado.expresion === 'feliz' ? '#4CAF50'
+      : estado.expresion === 'triste' ? '#B52121'
+      : window.Utilidades.TEMA_CATEGORIAS.mecanica;
+    ctxEscena.fillStyle = colorCaja;
+    ctxEscena.fillRect(xCaja, yPiso - anchoCaja, anchoCaja, anchoCaja);
+
+    // líneas de movimiento cuando va rápido
+    if (estado.velocidad > 1) {
+      const cx = xCaja + anchoCaja / 2;
+      ctxEscena.strokeStyle = 'rgba(236, 231, 220, 0.35)';
+      ctxEscena.lineWidth = 2;
+      for (let i = 0; i < 3; i++) {
+        ctxEscena.beginPath();
+        ctxEscena.moveTo(cx - 6 - i * 6, yPiso - anchoCaja * 0.3 - i * 6);
+        ctxEscena.lineTo(cx - 14 - i * 6, yPiso - anchoCaja * 0.3 - i * 6);
+        ctxEscena.stroke();
+      }
+    }
+  }
+
+  const loop = new window.Motor.GameLoop({
+    actualizar(dt) {
+      estado.tiempo += dt;
+
+      if (estado.nivel === 'prediccion') {
+        if (!estado.rampaActiva) return;
+
+        estado.tiempoRampa += dt;
+        const N = pesoNormal(MASA_FIJA_PREDICCION);
+        const fEstMax = MU_ESTATICO * N;
+        const fCin = MU_CINETICO * N;
+
+        if (!estado.moviendo) {
+          estado.fuerzaPrediccionActual += TASA_RAMPA_PREDICCION * dt;
+          if (estado.fuerzaPrediccionActual > fEstMax) {
+            estado.moviendo = true;
+          }
+        } else {
+          const acel = (estado.fuerzaPrediccionActual - fCin) / MASA_FIJA_PREDICCION;
+          estado.velocidad += acel * dt;
+          estado.posicion += estado.velocidad * dt;
+        }
+
+        panelMetricas.actualizar('fuerza', estado.fuerzaPrediccionActual.toFixed(0));
+        panelMetricas.actualizar('estadoCaja', estado.moviendo ? 'Deslizando' : 'Quieta');
+        panelMetricas.actualizar('velocidad', estado.velocidad.toFixed(1));
+        graficoVelocidad.agregarPunto(estado.velocidad);
+
+        if (estado.moviendo && estado.tiempoRampa > 1.8) {
+          estado.rampaActiva = false;
+          evaluarPrediccion();
+        }
+        return;
+      }
+
+      const N = pesoNormal(estado.masa);
+      const fEstMax = MU_ESTATICO * N;
+      const fCin = MU_CINETICO * N;
+
+      if (!estado.moviendo && estado.fuerzaAplicada > fEstMax) {
+        estado.moviendo = true;
+        estado.velocidad = 0.05;
+      }
+
+      if (estado.moviendo) {
+        const acel = (estado.fuerzaAplicada - fCin) / estado.masa;
+        estado.velocidad += acel * dt;
+
+        if (estado.velocidad <= 0) {
+          estado.velocidad = 0;
+          estado.moviendo = false;
+          estado.tiempoVelocidadConstante = 0;
+        } else {
+          estado.posicion += estado.velocidad * dt;
+          if (estado.posicion >= LARGO_PISO_M) estado.posicion = 0;
+
+          if (estado.nivel === 'desafio' && !estado.exitoDesafioEsteIntento) {
+            if (Math.abs(acel) < UMBRAL_ACEL_CONSTANTE) {
+              estado.tiempoVelocidadConstante += dt;
+              if (estado.tiempoVelocidadConstante >= DURACION_OBJETIVO_DESAFIO) {
+                estado.exitoDesafioEsteIntento = true;
+                evaluarDesafioExito();
+              }
+            } else {
+              estado.tiempoVelocidadConstante = 0;
+            }
+          }
+        }
+      } else {
+        estado.tiempoVelocidadConstante = 0;
+      }
+
+      panelMetricas.actualizar('fuerza', estado.fuerzaAplicada.toFixed(0));
+      panelMetricas.actualizar('estadoCaja', estado.moviendo ? 'Deslizando' : 'Quieta');
+      panelMetricas.actualizar('velocidad', estado.velocidad.toFixed(1));
+      graficoVelocidad.agregarPunto(estado.velocidad);
+    },
+    dibujar: dibujarEscena,
+  });
+
+  new window.UI.SelectorNivel({
+    contenedor: document.getElementById('contenedorNivel'),
+    onCambio: configurarNivel,
+  });
+
+  btnProbar.addEventListener('click', () => {
+    if (estado.nivel !== 'prediccion' || !estado.prediccionJugador || estado.rampaActiva) return;
+
+    const N = pesoNormal(MASA_FIJA_PREDICCION);
+    estado.fuerzaPrediccionActual = 0.85 * MU_ESTATICO * N;
+    estado.moviendo = false;
+    estado.velocidad = 0;
+    estado.posicion = 0;
+    estado.tiempoRampa = 0;
+    estado.rampaActiva = true;
+    resultadoEl.textContent = '';
+    resultadoEl.className = 'resultado';
+    graficoVelocidad.puntos = [];
+  });
+
+  btnReiniciar.addEventListener('click', reiniciarCorrida);
+
+  const modalAyuda = new window.UI.ModalAyuda({
+    pregunta: '¿Hace falta la misma fuerza para arrancar una caja quieta que para mantenerla deslizando?',
+    controles: 'En Explorar y Desafío, subís la fuerza y la masa con los sliders, en vivo. En Predicción, elegís tu respuesta y apretás Probar.',
+    pista: 'Subí la fuerza de a poco desde cero. Mirá bien el instante justo en que la caja arranca.',
+  });
+
+  document.getElementById('btnAyuda').addEventListener('click', () => modalAyuda.mostrar());
+
+  const modalExplicacion = new window.UI.ModalExplicacion({
+    ley: 'Rozamiento estático y cinético',
+    formula: 'Rozamiento estático máximo: μₛ·N &nbsp;·&nbsp; Rozamiento cinético: μₖ·N &nbsp;(μₛ=0.6 > μₖ=0.4 en este juego)',
+    analogia: 'Empujar una caja pesada por el piso de un taller representa cualquier objeto que hay que arrancar desde el reposo contra el rozamiento.',
+    limitesAnalogia: 'Se usan coeficientes de rozamiento constantes — en la realidad pueden variar con el desgaste, la humedad o la temperatura de las superficies en contacto.',
+    erroresComunes: 'Arrancar un objeto en reposo necesita MÁS fuerza que mantenerlo deslizando, porque el rozamiento estático máximo es mayor que el cinético. Por eso, apenas arranca, sobra fuerza de golpe y pega un tirón — no es un arranque gradual. Además, el rozamiento no depende de qué tan rápido desliza ni del área de contacto, solo del peso y los coeficientes μ.',
+  });
+
+  const btnExplicacion = document.createElement('button');
+  btnExplicacion.className = 'boton oculto';
+  btnExplicacion.textContent = 'Ver la explicación científica';
+  btnExplicacion.addEventListener('click', () => modalExplicacion.mostrar());
+  document.querySelector('.acciones').appendChild(btnExplicacion);
+
+  function iniciarJuego() {
+    guia = new window.UI.PersonajeGuia({
+      contenedor: document.body,
+      dialogos: {
+        gameStart: ['Subí la fuerza de a poco y fijate cuándo arranca la caja.'],
+        victory: ['¡Eso es dominar el rozamiento!', '¡Excelente! Sentiste el tirón del arranque.'],
+        multipleFailures: ['Pista: la fuerza para MANTENER el movimiento es menor que para arrancar.', '¿Probaste bajar la fuerza justo después de que arranca?'],
+        discovery: ['¡Gran observación! Ya podés ver la explicación científica.'],
+      },
+    });
+    animacionFinal = new window.UI.AnimacionFinal();
+
+    construirControles('explorar');
+    configurarNivel('explorar');
+    loop.iniciar();
+  }
+
+  new window.UI.EscenaIntro({
+    titulo: 'El Empujón Exacto',
+    contextoHistorico: 'Alrededor de 1500, Leonardo da Vinci fue el primero en estudiar el rozamiento de forma sistemática en sus cuadernos, notando que depende del peso pero no del área de contacto. Sus notas se perdieron por siglos, y recién en 1699 Guillaume Amontons —y luego Charles-Augustin de Coulomb, en 1785— redescubrieron y formalizaron esas mismas leyes.',
+    dibujarFondo: dibujarFondoTallerPlano,
+    onComenzar: iniciarJuego,
+  });
+})();
+
+</script>
+</body>
+</html>

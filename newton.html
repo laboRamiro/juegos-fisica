@@ -1,0 +1,1073 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Leyes de Newton: Depósito de Cargas</title>
+<style>
+:root {
+  --teal-dark: #0f4a50;
+  --teal: #1a7070;
+  --teal-light: #cfeff2;
+  --gold: #e8b84b;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 20px;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  background: #06262a; color: var(--teal-light);
+  display: flex; justify-content: center;
+}
+.game-container { width: 840px; }
+header { text-align: center; margin-bottom: 10px; }
+header h1 { color: var(--gold); margin: 0 0 4px; font-size: 22px; }
+.subtitle { font-size: 13px; color: #9fd0d4; margin: 0; }
+
+.objective-panel {
+  text-align: center; margin: 10px auto; max-width: 760px;
+  border: 2px solid var(--teal); border-radius: 6px; padding: 8px 14px;
+  font-size: 14px;
+}
+.objective-panel span { color: var(--gold); font-weight: bold; }
+
+.track-wrap {
+  position: relative; width: 800px; height: 420px; margin: 0 auto;
+  border: 2px solid var(--teal); border-radius: 8px; overflow: hidden;
+}
+#track-canvas { display: block; }
+
+.graphs-row {
+  display: flex; gap: 12px; margin-top: 12px; justify-content: center; flex-wrap: wrap;
+}
+.graph-box { text-align: center; }
+.graph-title { font-size: 11px; color: var(--teal-light); margin-bottom: 4px; }
+.graph-box canvas {
+  display: block; border: 1px solid rgba(255,255,255,0.25); border-radius: 4px;
+}
+
+.controls-panel {
+  display: flex; gap: 18px; align-items: flex-start; margin-top: 14px; flex-wrap: wrap;
+}
+.slider-wrap { flex: 1 1 260px; }
+.slider-label { display: block; font-size: 13px; color: var(--teal-light); margin-bottom: 4px; }
+input[type=range] { width: 100%; accent-color: var(--gold); }
+input[type=range]:disabled { opacity: 0.5; }
+
+#start-btn, #next-btn, #restart-btn {
+  background: var(--gold); color: var(--teal-dark); border: none;
+  padding: 10px 18px; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 14px;
+  margin-top: 4px;
+}
+#start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+#start-btn:hover:not(:disabled), #next-btn:hover, #restart-btn:hover { background: #f5d98a; }
+
+.metrics-panel {
+  background: rgba(15,74,80,0.85); border: 1px solid var(--teal);
+  border-radius: 6px; padding: 10px 14px; min-width: 160px;
+  font-family: monospace; font-size: 13px;
+}
+.metric-row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; }
+.metric-label { color: var(--teal-light); }
+.metric-value { color: var(--gold); font-weight: bold; min-width: 60px; text-align: right; }
+.metric-unit  { color: #7fb8bd; width: 50px; }
+
+.formula-label {
+  font-family: monospace; font-size: 14px; color: var(--teal-light);
+  background: rgba(15,74,80,0.6); border-left: 3px solid var(--gold);
+  padding: 6px 10px; margin: 8px 0; border-radius: 0 4px 4px 0;
+  flex: 1 1 100%;
+}
+.formula-value { color: var(--gold); font-weight: bold; }
+
+.hidden { display: none; }
+
+.result-panel, .summary-panel {
+  margin-top: 14px; text-align: center;
+  border: 2px solid var(--teal); border-radius: 8px; padding: 14px 18px;
+  background: rgba(15,74,80,0.92);
+}
+.result-title { font-size: 18px; font-weight: bold; margin-bottom: 6px; }
+.result-line { font-size: 14px; margin: 4px 0; color: var(--teal-light); }
+.result-panel.res-no-mueve .result-title { color: #9fd0d4; }
+.result-panel.res-lento    .result-title { color: var(--teal-light); }
+.result-panel.res-perfecto .result-title { color: var(--gold); }
+.result-panel.res-choque   .result-title { color: #e8493d; }
+
+.stars { font-size: 28px; letter-spacing: 4px; }
+.star-filled { color: var(--gold); }
+.star-empty  { color: rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+<div class="game-container">
+  <header>
+    <h1>Leyes de Newton — Depósito de Cargas</h1>
+    <p class="subtitle">2ª ley de Newton con rozamiento: a = (F − f) / m. El piso opone una fuerza de rozamiento que primero es ESTÁTICA (se ajusta para igualar tu empuje, f=F, e impide que arranque) y al superarla pasa a ser DINÁMICA (constante, menor que el pico). Elegí la fuerza justa para vencer el rozamiento y llegar a la zona de descarga con la velocidad segura.</p>
+  </header>
+
+  <div class="objective-panel" id="objective-panel">
+    Ronda <span id="round-num">1</span>/5 — Masa del cajón: <span id="round-m">5</span> kg — Distancia: <span id="round-d">6</span> m — Velocidad objetivo: <span id="round-vobj">6</span> m/s — μₑ=<span id="round-mus">0.4</span> · μ_d=<span id="round-muk">0.3</span>
+  </div>
+
+  <div class="track-wrap">
+    <canvas id="track-canvas" width="800" height="420"></canvas>
+  </div>
+
+  <div class="graphs-row" id="graphs-row">
+    <div class="graph-box">
+      <div class="graph-title">Rozamiento: F vs f</div>
+      <canvas id="friction-graph-canvas" width="240" height="150"></canvas>
+    </div>
+    <div class="graph-box">
+      <div class="graph-title">Velocidad (v-t)</div>
+      <canvas id="graph-canvas" width="240" height="150"></canvas>
+    </div>
+    <div class="graph-box">
+      <div class="graph-title">Posición (x-t)</div>
+      <canvas id="xt-graph-canvas" width="240" height="150"></canvas>
+    </div>
+  </div>
+
+  <div class="controls-panel" id="controls-panel">
+    <div id="slider-host" class="slider-wrap"></div>
+    <button id="start-btn">Empujar</button>
+    <div id="metrics-host" class="metrics-panel"></div>
+    <div id="formula-host" class="formula-label"></div>
+  </div>
+
+  <div class="result-panel hidden" id="result-panel">
+    <div class="result-title" id="result-title"></div>
+    <div class="result-line" id="result-line-1"></div>
+    <div class="result-line" id="result-line-2"></div>
+    <button id="next-btn">Siguiente ronda →</button>
+  </div>
+
+  <div class="summary-panel hidden" id="summary-panel">
+    <div class="result-title" id="summary-title">¡Turno terminado!</div>
+    <div class="result-line" id="summary-score"></div>
+    <div class="stars" id="summary-stars"></div>
+    <button id="restart-btn">Jugar de nuevo</button>
+  </div>
+</div>
+
+<script>
+// ===================================================================
+// CONSTANTES FÍSICAS — Leyes de Newton: Depósito de Cargas (con rozamiento)
+// D y v_objetivo son constantes en las 5 rondas -> a_ideal constante.
+// Solo la masa cambia por ronda. Ahora F debe vencer el rozamiento Y dar
+// la aceleración neta deseada: F_ideal = m·a_ideal + f_k(m), donde
+// f_k = μk·m·g (rozamiento dinámico). Por debajo de f_s_max = μs·m·g
+// (rozamiento estático máximo) el cajón ni se mueve (1ª ley: F neta = 0
+// porque el rozamiento estático se ajusta para cancelar F exactamente).
+// μs > μk siempre (la fricción estática máxima supera a la dinámica) —
+// por eso al superar f_s_max el cajón "arranca" con más aceleración neta
+// de la esperada (salto/tirón de arranque), efecto real y visible acá.
+// ===================================================================
+const NEWTON_PHYSICS = {
+  D_META: 6,              // m — distancia fija a la zona de descarga
+  V_OBJETIVO: 6,           // m/s — velocidad de manejo segura al llegar a D
+  A_IDEAL: 3.0,            // m/s² — v_objetivo^2 / (2*D) = 36/12
+  G: 10,                   // m/s² — gravedad redondeada (estándar de escuela media)
+  MU_S: 0.4,               // coeficiente de rozamiento ESTÁTICO (piso de cemento rugoso)
+  MU_K: 0.3,               // coeficiente de rozamiento DINÁMICO (μk < μs siempre)
+  MAX_ANIM_SECONDS: 6,     // s — tope visual de duración de animación por ronda
+  SLIDER_F_MIN: 10,        // N
+  SLIDER_F_MAX: 170,       // N
+  SLIDER_F_STEP: 1         // N
+};
+
+const TRACK_LEFT_MARGIN_PX = 135;  // margen izquierdo: caja (64px) + flecha de rozamiento (88px) sin cortarse
+const TRACK_RIGHT_BUFFER_PX = 170; // pared de descarga + mercadería + flecha de F (125px) sin cortarse
+
+// f_k = μk·m·g, f_s_max = μs·m·g, F_ideal = m·a_ideal + f_k — todo derivado,
+// no hardcodeado, para que quede explícito que F_ideal incluye vencer la fricción.
+function buildRound(massKg, toleranceN) {
+  const fK = NEWTON_PHYSICS.MU_K * massKg * NEWTON_PHYSICS.G;
+  const fsMax = NEWTON_PHYSICS.MU_S * massKg * NEWTON_PHYSICS.G;
+  const fIdeal = massKg * NEWTON_PHYSICS.A_IDEAL + fK;
+  return { m: massKg, fIdeal, tolerance: toleranceN, fK, fsMax };
+}
+
+const ROUNDS = [
+  buildRound(5,  8),
+  buildRound(10, 6),
+  buildRound(15, 5),
+  buildRound(20, 3),
+  buildRound(25, 0)
+];
+
+// ===================================================================
+// EventBus — mismo vocabulario que MRU/MRUV
+// ===================================================================
+const EventBus = {
+  _listeners: {},
+  on(event, cb) { (this._listeners[event] ||= []).push(cb); },
+  emit(event, data) { (this._listeners[event] || []).forEach(cb => cb(data)); }
+};
+
+const EVENTS = {
+  SLIDER_CHANGED: 'slider_changed',
+  START_PRESSED:  'start_pressed',
+  METRICS_UPDATE: 'metrics_update',
+  NEXT_ROUND:     'next_round',
+  GAME_FINISHED:  'game_finished'
+};
+
+// ===================================================================
+// CrateBody — cuerpo físico del cajón (Physicist). 1ª/2ª/3ª ley de Newton
+// con rozamiento. Fuerzas horizontales: F (aplicada) y f (rozamiento,
+// siempre opuesta al movimiento o a F mientras está en reposo).
+// Si F ≤ f_s_max: rozamiento ESTÁTICO, f = F exactamente (equilibrio,
+// 1ª ley: F neta = 0, no se mueve). Si F > f_s_max: rozamiento DINÁMICO,
+// f = f_k (constante) < f_s_max, a = (F - f_k)/m (2ª ley con fuerza neta).
+// ===================================================================
+function CrateBody(massKg, fsMax, fK) {
+  this.x = 0; this.v = 0; this.a = 0;
+  this.m = massKg; this.F = 0; this.froz = 0; this.t = 0;
+  this.fsMax = fsMax; this.fK = fK;
+  this.moving = false;
+  this.finished = false;
+}
+CrateBody.prototype.startPush = function (forceN) {
+  this.F = forceN;
+  this.x = 0; this.v = 0; this.t = 0;
+  this.finished = false;
+  if (forceN <= this.fsMax) {
+    // Rozamiento estático: se ajusta para cancelar F exactamente -> a=0
+    this.froz = forceN;
+    this.a = 0;
+    this.moving = false;
+  } else {
+    // Rozamiento dinámico: constante en f_k, ya no escala con F
+    this.froz = this.fK;
+    this.a = (forceN - this.fK) / this.m; // a = (F - f_k)/m (2ª ley, fuerza neta)
+    this.moving = true;
+  }
+};
+CrateBody.prototype.fixedUpdate = function (dt) {
+  if (this.finished || !this.moving) { this.t = this.t + dt; return; }
+  this.v = this.v + this.a * dt; // semi-implicit Euler
+  this.x = this.x + this.v * dt;
+  this.t = this.t + dt;
+  if (this.x >= NEWTON_PHYSICS.D_META) {
+    this.x = NEWTON_PHYSICS.D_META; // clamp: no atraviesa la pared
+    this.finished = true;
+  }
+};
+CrateBody.prototype.getMetrics = function () {
+  return { t: this.t, v: this.v, x: this.x, a: this.a, F: this.F, m: this.m, froz: this.froz };
+};
+
+// Resolución ANALÍTICA del resultado de la ronda, con fórmula cerrada,
+// ANTES de animar (mismo patrón que MRUV). 4 categorías: si F no supera
+// el rozamiento estático máximo, el cajón ni se mueve; si lo supera,
+// compara F contra F_ideal ± tolerancia (igual que antes, pero F_ideal
+// ahora incluye el término de rozamiento dinámico).
+function resolveRoundOutcome(forceN, massKg, distanceM, targetVms, toleranceN, fsMax, fK) {
+  const aIdeal = (targetVms * targetVms) / (2 * distanceM);
+  const fIdeal = massKg * aIdeal + fK;
+
+  if (forceN <= fsMax) {
+    return { categoria: 'no_se_mueve', fIdeal, aIdeal, aReal: 0, tLlegadaReal: Infinity, vLlegadaReal: 0, scored: false };
+  }
+
+  const aReal = massKg > 0 ? (forceN - fK) / massKg : 0;
+  const tLlegadaReal = aReal > 0 ? Math.sqrt((2 * distanceM) / aReal) : Infinity;
+  const vLlegadaReal = aReal > 0 ? Math.sqrt(2 * aReal * distanceM) : 0;
+
+  let categoria;
+  if (forceN < fIdeal - toleranceN) categoria = 'lento';
+  else if (forceN > fIdeal + toleranceN) categoria = 'choque';
+  else categoria = 'perfecto';
+
+  return { categoria, fIdeal, aIdeal, aReal, tLlegadaReal, vLlegadaReal, scored: categoria === 'perfecto' };
+}
+
+// Factor de aceleración SOLO visual: si el tiempo físico real de llegada
+// supera el tope, se aplica como GameLoop.timeScale (más fixedUpdate por
+// segundo real), sin alterar la fórmula física en sí (a=F/m sigue exacta
+// en cada paso, solo cambia cuántos pasos ocurren por segundo real).
+function computeTimeScale(tLlegadaReal, maxAnimSeconds) {
+  maxAnimSeconds = maxAnimSeconds || NEWTON_PHYSICS.MAX_ANIM_SECONDS;
+  if (!isFinite(tLlegadaReal) || tLlegadaReal <= maxAnimSeconds) return 1;
+  return tLlegadaReal / maxAnimSeconds;
+}
+
+// ===================================================================
+// GameLoop — fixed timestep (Architect)
+// ===================================================================
+class GameLoop {
+  constructor({ fixedHz = 60, maxFrameTime = 0.1 } = {}) {
+    this.fixedDt = 1 / fixedHz;
+    this.maxFrame = maxFrameTime;
+    this.timeScale = 1.0;
+    this.paused = false;
+    this._accumulator = 0;
+    this._lastTime = 0;
+    this.onFixedUpdate = null;
+    this.onDraw = null;
+  }
+  start() {
+    const tick = (timestamp) => {
+      requestAnimationFrame(tick);
+      if (this.paused) { this._lastTime = timestamp; return; }
+      const rawDt = Math.min((timestamp - this._lastTime) / 1000, this.maxFrame);
+      this._lastTime = timestamp;
+      this._accumulator += rawDt * this.timeScale;
+      while (this._accumulator >= this.fixedDt) {
+        this.onFixedUpdate?.(this.fixedDt);
+        this._accumulator -= this.fixedDt;
+      }
+      this.onDraw?.();
+    };
+    requestAnimationFrame((t) => { this._lastTime = t; requestAnimationFrame(tick); });
+  }
+  setTimeScale(scale) { this.timeScale = Math.max(0, scale); }
+}
+
+// ===================================================================
+// StateMachine genérica (Architect)
+// ===================================================================
+class StateMachine {
+  constructor(owner) { this._owner = owner; this._states = new Map(); this._current = null; }
+  addState(name, { onEnter, onExit, onUpdate } = {}) { this._states.set(name, { onEnter, onExit, onUpdate }); return this; }
+  transition(nextName) {
+    if (!this._states.has(nextName)) return;
+    if (this._current) this._states.get(this._current)?.onExit?.call(this._owner);
+    this._current = nextName;
+    this._states.get(nextName)?.onEnter?.call(this._owner);
+  }
+  update(dt) { if (!this._current) return; this._states.get(this._current)?.onUpdate?.call(this._owner, dt); }
+  is(name) { return this._current === name; }
+  get state() { return this._current; }
+}
+
+// ===================================================================
+// RoundManager
+// ===================================================================
+const RoundManager = {
+  totalRounds() { return ROUNDS.length; },
+  getCurrentRound() { return ROUNDS[Game.roundIndex]; }
+};
+
+// ===================================================================
+// ARTIST — funciones de dibujo puras (paleta teal/gold del portal)
+// ===================================================================
+function drawWarehouseFloor(ctx, canvasWidth, canvasHeight) {
+  const floorY = Math.round(canvasHeight * 0.62);
+  ctx.fillStyle = '#0f4a50';
+  ctx.fillRect(0, 0, canvasWidth, floorY);
+  ctx.fillStyle = '#1a7070';
+  ctx.fillRect(0, floorY, canvasWidth, canvasHeight - floorY);
+  ctx.strokeStyle = 'rgba(207,239,242,0.35)';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, floorY + 1); ctx.lineTo(canvasWidth, floorY + 1); ctx.stroke();
+  ctx.strokeStyle = 'rgba(15,74,80,0.30)'; ctx.lineWidth = 1;
+  const tileSize = 40;
+  for (let x = 0; x <= canvasWidth; x += tileSize) {
+    ctx.beginPath(); ctx.moveTo(x, floorY + 4); ctx.lineTo(x, canvasHeight); ctx.stroke();
+  }
+  for (let y = floorY + tileSize; y < canvasHeight; y += tileSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvasWidth, y); ctx.stroke();
+  }
+}
+
+function drawCrate(ctx, xPx, yPx, sizePx) {
+  const half = sizePx / 2;
+  const top = yPx - sizePx;
+  ctx.save();
+  ctx.globalAlpha = 0.30; ctx.fillStyle = '#000000';
+  ctx.beginPath(); ctx.ellipse(xPx, yPx + 2, half * 0.95, sizePx * 0.14, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = '#b8872b';
+  ctx.fillRect(xPx - half, top, sizePx, sizePx);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(xPx + half - sizePx * 0.12, top, sizePx * 0.12, sizePx);
+  ctx.fillRect(xPx - half, top + sizePx * 0.85, sizePx, sizePx * 0.15);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth = 1;
+  for (let i = 1; i <= 2; i++) {
+    const ly = top + (sizePx / 3) * i;
+    ctx.beginPath(); ctx.moveTo(xPx - half + 2, ly); ctx.lineTo(xPx + half - 2, ly); ctx.stroke();
+  }
+
+  ctx.strokeStyle = '#e8b84b'; ctx.lineWidth = Math.max(2, sizePx * 0.08);
+  ctx.strokeRect(xPx - half, top, sizePx, sizePx);
+  ctx.beginPath();
+  ctx.moveTo(xPx - half, top); ctx.lineTo(xPx + half, top + sizePx);
+  ctx.moveTo(xPx + half, top); ctx.lineTo(xPx - half, top + sizePx);
+  ctx.stroke();
+
+  ctx.fillStyle = '#f5d98a';
+  [[xPx - half, top], [xPx + half, top], [xPx - half, top + sizePx], [xPx + half, top + sizePx]]
+    .forEach(([cx, cy]) => { ctx.beginPath(); ctx.arc(cx, cy, Math.max(1.5, sizePx * 0.045), 0, Math.PI * 2); ctx.fill(); });
+}
+
+function drawForceArrow(ctx, xPx, yPx, magnitudeN, maxMagnitudeN) {
+  if (magnitudeN <= 0) return;
+  const MAX_ARROW_LEN_PX = 125;
+  const ratio = Math.max(0, Math.min(1, magnitudeN / maxMagnitudeN));
+  const len = Math.max(26, ratio * MAX_ARROW_LEN_PX);
+  const xEnd = xPx + len;
+  const headLen = Math.min(10, len * 0.4);
+
+  ctx.save();
+  ctx.strokeStyle = '#e8b84b'; ctx.fillStyle = '#e8b84b'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(xPx, yPx); ctx.lineTo(xEnd - headLen, yPx); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(xEnd, yPx); ctx.lineTo(xEnd - headLen, yPx - 5); ctx.lineTo(xEnd - headLen, yPx + 5);
+  ctx.closePath(); ctx.fill();
+  ctx.font = '10px monospace'; ctx.fillStyle = '#cfeff2';
+  ctx.fillText('F', xPx + len * 0.5 - 3, yPx - 8);
+  ctx.restore();
+}
+
+// Vector de fuerza genérico (dirección dada por dirX/dirY, unitario). Usado
+// para rozamiento (horizontal, opuesto a F), peso (abajo) y normal (arriba) —
+// drawForceArrow queda aparte porque F siempre es horizontal hacia la derecha.
+function drawForceVector(ctx, xPx, yPx, dirX, dirY, magnitudeN, maxMagnitudeN, color, label, maxLenPx) {
+  if (magnitudeN <= 0) return;
+  maxLenPx = maxLenPx || 60;
+  const ratio = Math.max(0, Math.min(1, magnitudeN / maxMagnitudeN));
+  const len = Math.max(26, ratio * maxLenPx);
+  const xEnd = xPx + dirX * len, yEnd = yPx + dirY * len;
+  const headLen = Math.min(9, len * 0.4);
+  const backX = xEnd - dirX * headLen, backY = yEnd - dirY * headLen;
+  const perpX = -dirY, perpY = dirX;
+
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(xPx, yPx); ctx.lineTo(backX, backY); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(xEnd, yEnd);
+  ctx.lineTo(backX + perpX * 5, backY + perpY * 5);
+  ctx.lineTo(backX - perpX * 5, backY - perpY * 5);
+  ctx.closePath(); ctx.fill();
+  ctx.font = '9px monospace'; ctx.fillStyle = color;
+  ctx.fillText(label, xEnd + dirX * 8 - 4, yEnd + dirY * 8 + 3);
+  ctx.restore();
+}
+
+function drawLoadingDock(ctx, xPx, canvasHeight) {
+  const floorY = Math.round(canvasHeight * 0.62);
+  const wallW = 18, wallTop = floorY - 90, wallH = floorY - wallTop;
+
+  ctx.fillStyle = '#0a3438';
+  let stackY = floorY;
+  [{ w: 26, h: 22 }, { w: 22, h: 18 }, { w: 18, h: 16 }].forEach((box) => {
+    stackY -= box.h;
+    ctx.fillRect(xPx + wallW / 2 + 4, stackY, box.w, box.h);
+    ctx.strokeStyle = 'rgba(232,184,75,0.25)'; ctx.lineWidth = 1;
+    ctx.strokeRect(xPx + wallW / 2 + 4, stackY, box.w, box.h);
+  });
+
+  ctx.save();
+  ctx.beginPath(); ctx.rect(xPx - wallW / 2, wallTop, wallW, wallH); ctx.clip();
+  const stripeW = 10;
+  ctx.fillStyle = '#1a1a1a'; ctx.fillRect(xPx - wallW / 2, wallTop, wallW, wallH);
+  ctx.fillStyle = '#e8b84b';
+  for (let d = -wallH; d < wallW + wallH; d += stripeW * 2) {
+    ctx.beginPath();
+    ctx.moveTo(xPx - wallW / 2 + d, wallTop + wallH);
+    ctx.lineTo(xPx - wallW / 2 + d + stripeW, wallTop + wallH);
+    ctx.lineTo(xPx - wallW / 2 + d + stripeW + wallH, wallTop);
+    ctx.lineTo(xPx - wallW / 2 + d + wallH, wallTop);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = '#000000'; ctx.lineWidth = 2;
+  ctx.strokeRect(xPx - wallW / 2, wallTop, wallW, wallH);
+}
+
+function drawDistanceMarks(ctx, canvasWidth, canvasHeight, pxPerMeter, totalMeters) {
+  const floorY = Math.round(canvasHeight * 0.62);
+  const stepM = totalMeters <= 10 ? 1 : 2;
+  ctx.font = '10px monospace'; ctx.fillStyle = '#cfeff2';
+  ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1;
+  for (let m = 0; m <= totalMeters; m += stepM) {
+    const px = m * pxPerMeter;
+    if (px > canvasWidth - 4) break;
+    ctx.beginPath(); ctx.moveTo(px, floorY + 4); ctx.lineTo(px, floorY + 12); ctx.stroke();
+    ctx.fillText(m + 'm', px - 8, floorY + 24);
+  }
+}
+
+function drawDustParticle(ctx, xPx, yPx, ageRatio) {
+  const alpha = Math.max(0, 1 - ageRatio);
+  if (alpha <= 0) return;
+  const r = 3 + ageRatio * 5;
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.5; ctx.fillStyle = '#cfeff2';
+  ctx.beginPath(); ctx.arc(xPx - ageRatio * 6, yPx, r, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(xPx - ageRatio * 12, yPx + 2, r * 0.6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawImpactEffect(ctx, xPx, yPx, ageRatio) {
+  if (ageRatio >= 1) return;
+  const alpha = 1 - ageRatio;
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.strokeStyle = '#e8493d'; ctx.lineWidth = 2.5;
+  const r = 8 + ageRatio * 22;
+  for (let i = 0; i < 6; i++) {
+    const ang = (i * Math.PI) / 3;
+    ctx.beginPath();
+    ctx.moveTo(xPx + Math.cos(ang) * r * 0.4, yPx + Math.sin(ang) * r * 0.4);
+    ctx.lineTo(xPx + Math.cos(ang) * r, yPx + Math.sin(ang) * r);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#e8493d'; ctx.globalAlpha = alpha * 0.7;
+  ctx.beginPath(); ctx.arc(xPx, yPx, 6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+function drawDockingEffect(ctx, xPx, yPx, ageRatio) {
+  if (ageRatio >= 1) return;
+  const alpha = 1 - ageRatio;
+  ctx.save();
+  ctx.globalAlpha = alpha; ctx.strokeStyle = '#e8b84b'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(xPx, yPx, 14 + ageRatio * 14, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+}
+
+// Orquestador de escena. `game` expone: canvasWidth, canvasHeight, pxPerMeter,
+// D_META, fsmState, crate{x,F,m}, previewForceN, maxForceN, categoria, effect.
+function drawScene(ctx, game) {
+  const w = game.canvasWidth, h = game.canvasHeight;
+  const floorY = Math.round(h * 0.62);
+  const crateY = floorY + 18;
+  const crateSize = 64;
+  const LEFT_MARGIN = TRACK_LEFT_MARGIN_PX;
+
+  drawWarehouseFloor(ctx, w, h);
+  ctx.save();
+  ctx.translate(LEFT_MARGIN, 0);
+  drawDistanceMarks(ctx, w - LEFT_MARGIN, h, game.pxPerMeter, game.D_META);
+  ctx.restore();
+
+  const dockXPx = LEFT_MARGIN + game.D_META * game.pxPerMeter;
+  drawLoadingDock(ctx, dockXPx, h);
+
+  const progress = game.fsmState === 'ready' ? 0 : Math.min(1, game.crate.x / game.D_META);
+  let crateXPx = LEFT_MARGIN + progress * (game.D_META * game.pxPerMeter);
+
+  const straining = game.fsmState === 'running' && !game.crate.moving;
+  if (straining) crateXPx += (Math.random() - 0.5) * 3; // forcejeo: tiembla sin avanzar
+
+  if (game.fsmState === 'running' && game.crate.v > 0) {
+    const dustAge = (game.crate.t * 3) % 1;
+    drawDustParticle(ctx, crateXPx - 14, crateY, dustAge);
+  }
+
+  drawCrate(ctx, crateXPx, crateY, crateSize);
+
+  // Diagrama de cuerpo libre completo: peso, normal, fuerza aplicada y rozamiento.
+  // Peso y normal nacen AMBOS en el centro de la caja (mismo punto de aplicación
+  // en el diagrama, aunque conceptualmente la normal actúa en la base de apoyo).
+  const pesoN = game.round.m * NEWTON_PHYSICS.G;
+  const maxVerticalForce = 25 * NEWTON_PHYSICS.G; // referencia: cajón más pesado (25kg)
+  const crateCenterY = crateY - crateSize / 2;
+  drawForceVector(ctx, crateXPx, crateCenterY, 0, 1, pesoN, maxVerticalForce, '#e8493d', 'P', 68); // peso, hacia abajo
+  drawForceVector(ctx, crateXPx, crateCenterY, 0, -1, pesoN, maxVerticalForce, '#9fd0d4', 'N', 68); // normal, hacia arriba
+
+  const arrowY = crateCenterY;
+  const appliedF = game.fsmState === 'ready' ? game.previewForceN : game.crate.F;
+  const frozN = game.fsmState === 'ready'
+    ? Math.min(game.previewForceN, game.round.fsMax)
+    : game.crate.froz;
+  if (appliedF > 0) {
+    drawForceArrow(ctx, crateXPx + crateSize / 2 + 6, arrowY, appliedF, game.maxForceN);
+  }
+  if (frozN > 0) {
+    drawForceVector(ctx, crateXPx - crateSize / 2 - 6, arrowY, -1, 0, frozN, game.maxForceN, '#cfeff2', 'f', 88);
+  }
+
+  if (game.fsmState === 'result' && game.effect) {
+    if (game.effect === 'choque') drawImpactEffect(ctx, dockXPx, crateY, 0.2);
+    else drawDockingEffect(ctx, dockXPx, crateY, 0.2);
+  }
+}
+
+// ===================================================================
+// INTERFACE — HUD DOM + gráfico
+// ===================================================================
+class PhysicsSlider {
+  constructor(parentEl, { name, label, min, max, step, value, unit }) {
+    this._name = name; this._value = value; this._step = step;
+    parentEl.innerHTML = `
+      <label class="slider-label">${label}: <span id="sv-${name}">${value.toFixed(step < 1 ? 2 : 0)}</span> ${unit}</label>
+      <input type="range" id="si-${name}" min="${min}" max="${max}" step="${step}" value="${value}">`;
+    this._input = parentEl.querySelector(`#si-${name}`);
+    this._display = parentEl.querySelector(`#sv-${name}`);
+    this._input.addEventListener('input', () => {
+      this._value = parseFloat(this._input.value);
+      this._display.textContent = this._value.toFixed(step < 1 ? 2 : 0);
+      EventBus.emit(EVENTS.SLIDER_CHANGED, { name: this._name, value: this._value });
+    });
+  }
+  get value() { return this._value; }
+  setEnabled(enabled) { this._input.disabled = !enabled; }
+  setValue(v) {
+    this._value = v; this._input.value = v;
+    this._display.textContent = v.toFixed(this._step < 1 ? 2 : 0);
+  }
+}
+
+class MetricsPanel {
+  constructor(parentEl) {
+    this._rows = new Map(); this._el = parentEl;
+    EventBus.on(EVENTS.METRICS_UPDATE, data => this.update(data));
+  }
+  addRow(key, label, unit, decimals) {
+    const row = document.createElement('div');
+    row.className = 'metric-row';
+    row.innerHTML = `<span class="metric-label">${label}</span>
+                      <span class="metric-value" id="mv-${key}">--</span>
+                      <span class="metric-unit">${unit}</span>`;
+    this._el.appendChild(row);
+    this._rows.set(key, { el: row.querySelector(`#mv-${key}`), decimals });
+    return this;
+  }
+  update(data) {
+    for (const [key, { el, decimals }] of this._rows) {
+      if (data[key] !== undefined) el.textContent = data[key].toFixed(decimals);
+    }
+  }
+}
+
+class FormulaLabel {
+  constructor(parentEl, template) {
+    this._template = template; this._el = parentEl;
+    this._render({});
+    EventBus.on(EVENTS.METRICS_UPDATE, data => this._render(data));
+  }
+  _render(data) {
+    this._el.innerHTML = this._template.replace(/\{(\w+)\}/g, (_, key) => {
+      const v = data[key];
+      return v !== undefined
+        ? `<span class="formula-value">${typeof v === 'number' ? v.toFixed(2) : v}</span>`
+        : `<span class="formula-value">--</span>`;
+    });
+  }
+}
+
+class VTGraph {
+  constructor(canvas) { this._canvas = canvas; this._ctx = canvas.getContext('2d'); this._points = []; this._showIdeal = false; }
+  reset() { this._points = []; this._showIdeal = false; }
+  push(t, v) { this._points.push({ t, v }); }
+  revealIdeal() { this._showIdeal = true; }
+  draw(aIdeal, vObjetivo) {
+    const ctx = this._ctx, cv = this._canvas;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = 'rgba(15,74,80,0.92)'; ctx.fillRect(0, 0, cv.width, cv.height);
+
+    const idealT = vObjetivo / aIdeal;
+    const last = this._points.length ? this._points[this._points.length - 1] : { t: 0, v: 0 };
+    const maxT = Math.max(idealT, last.t, 0.1) * 1.15;
+    const maxV = Math.max(vObjetivo, last.v, 0.1) * 1.15;
+    const padL = 26, padB = 16, padT = 10, padR = 8;
+    const w = cv.width - padL - padR, h = cv.height - padT - padB;
+    const toPx = (t, v) => [padL + (t / maxT) * w, padT + h - (v / maxV) * h];
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT); ctx.lineTo(padL, cv.height - padB); ctx.lineTo(cv.width - padR, cv.height - padB);
+    ctx.stroke();
+    ctx.fillStyle = '#cfeff2'; ctx.font = '9px monospace';
+    ctx.fillText('v(m/s)', 2, 10);
+    ctx.fillText('t(s)', cv.width - 22, cv.height - 3);
+
+    if (this._points.length > 1) {
+      ctx.strokeStyle = '#e8b84b'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(...toPx(0, 0));
+      this._points.forEach(p => ctx.lineTo(...toPx(p.t, p.v)));
+      ctx.stroke();
+    }
+    if (this._showIdeal) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(...toPx(0, 0)); ctx.lineTo(...toPx(idealT, vObjetivo)); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = '#e8b84b'; ctx.fillRect(cv.width - 64, 4, 6, 6);
+    ctx.fillStyle = '#cfeff2'; ctx.fillText('vos', cv.width - 54, 10);
+    if (this._showIdeal) {
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(cv.width - 30, 4, 6, 6);
+      ctx.fillStyle = '#cfeff2'; ctx.fillText('ideal', cv.width - 20, 10);
+    }
+  }
+}
+
+// XTGraph — posición x vs tiempo t. Misma estructura que VTGraph (reusar
+// patrón establecido en MRUV), pero la curva ideal es la parábola
+// x(t) = ½·a_ideal·t² (no una recta) y se agrega una línea punteada en
+// x=D (el objetivo de distancia) como referencia visual fija.
+class XTGraph {
+  constructor(canvas) { this._canvas = canvas; this._ctx = canvas.getContext('2d'); this._points = []; this._showIdeal = false; }
+  reset() { this._points = []; this._showIdeal = false; }
+  push(t, x) { this._points.push({ t, x }); }
+  revealIdeal() { this._showIdeal = true; }
+  draw(aIdeal, distanceM) {
+    const ctx = this._ctx, cv = this._canvas;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = 'rgba(15,74,80,0.92)'; ctx.fillRect(0, 0, cv.width, cv.height);
+
+    const idealT = Math.sqrt((2 * distanceM) / aIdeal);
+    const last = this._points.length ? this._points[this._points.length - 1] : { t: 0, x: 0 };
+    const maxT = Math.max(idealT, last.t, 0.1) * 1.15;
+    const maxX = Math.max(distanceM, last.x, 0.1) * 1.15;
+    const padL = 26, padB = 16, padT = 10, padR = 8;
+    const w = cv.width - padL - padR, h = cv.height - padT - padB;
+    const toPx = (t, x) => [padL + (t / maxT) * w, padT + h - (x / maxX) * h];
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT); ctx.lineTo(padL, cv.height - padB); ctx.lineTo(cv.width - padR, cv.height - padB);
+    ctx.stroke();
+    ctx.fillStyle = '#cfeff2'; ctx.font = '9px monospace';
+    ctx.fillText('x(m)', 2, 10);
+    ctx.fillText('t(s)', cv.width - 22, cv.height - 3);
+
+    // Línea punteada en x=D: el objetivo de distancia (la zona de descarga)
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(...toPx(0, distanceM)); ctx.lineTo(...toPx(maxT, distanceM)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (this._points.length > 1) {
+      ctx.strokeStyle = '#e8b84b'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(...toPx(0, 0));
+      this._points.forEach(p => ctx.lineTo(...toPx(p.t, p.x)));
+      ctx.stroke();
+    }
+    if (this._showIdeal) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      const STEPS = 24;
+      for (let i = 0; i <= STEPS; i++) {
+        const t = (idealT * i) / STEPS;
+        const x = 0.5 * aIdeal * t * t; // parábola: x(t) = ½·a_ideal·t²
+        const [px, py] = toPx(t, x);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.fillStyle = '#e8b84b'; ctx.fillRect(cv.width - 64, 4, 6, 6);
+    ctx.fillStyle = '#cfeff2'; ctx.fillText('vos', cv.width - 54, 10);
+    if (this._showIdeal) {
+      ctx.fillStyle = '#ffffff'; ctx.fillRect(cv.width - 30, 4, 6, 6);
+      ctx.fillStyle = '#cfeff2'; ctx.fillText('ideal', cv.width - 20, 10);
+    }
+  }
+}
+
+// FrictionGraph — curva teórica F (aplicada) vs f (rozamiento), distinguiendo
+// el tramo ESTÁTICO (f = F, recta a 45°, mientras el cajón no se mueve) del
+// tramo DINÁMICO (f = f_k, constante y MENOR al pico, una vez que arrancó).
+// El pico de la curva es f_s_max = μs·m·g. Es una curva DE REFERENCIA (no
+// depende del tiempo) — se redibuja cuando cambia la ronda (m) o la F elegida.
+class FrictionGraph {
+  constructor(canvas) { this._canvas = canvas; this._ctx = canvas.getContext('2d'); }
+  draw(round, currentF) {
+    const ctx = this._ctx, cv = this._canvas;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = 'rgba(15,74,80,0.92)'; ctx.fillRect(0, 0, cv.width, cv.height);
+
+    const fsMax = round.fsMax, fK = round.fK;
+    const maxF = Math.max(currentF, fsMax) * 1.25;
+    const maxFroz = fsMax * 1.2;
+    const padL = 28, padB = 16, padT = 10, padR = 8;
+    const w = cv.width - padL - padR, h = cv.height - padT - padB;
+    const toPx = (F, f) => [padL + (F / maxF) * w, padT + h - (f / maxFroz) * h];
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(padL, padT); ctx.lineTo(padL, cv.height - padB); ctx.lineTo(cv.width - padR, cv.height - padB);
+    ctx.stroke();
+    ctx.fillStyle = '#cfeff2'; ctx.font = '9px monospace';
+    ctx.fillText('f(N)', 2, 10);
+    ctx.fillText('F(N)', cv.width - 24, cv.height - 3);
+
+    // Tramo estático: f = F (45°) hasta el pico (fsMax, fsMax)
+    ctx.strokeStyle = '#cfeff2'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(...toPx(0, 0)); ctx.lineTo(...toPx(fsMax, fsMax)); ctx.stroke();
+    // Tramo dinámico: f = fK constante, para F > fsMax
+    ctx.strokeStyle = '#e8b84b'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(...toPx(fsMax, fK)); ctx.lineTo(...toPx(maxF, fK)); ctx.stroke();
+    // Salto vertical en el pico (la fricción CAE de fsMax a fK al arrancar)
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(...toPx(fsMax, fsMax)); ctx.lineTo(...toPx(fsMax, fK)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Marcador de la F elegida por el jugador, sobre la curva real
+    const fAtCurrent = currentF <= fsMax ? currentF : fK;
+    const [mx, my] = toPx(Math.min(currentF, maxF), fAtCurrent);
+    ctx.fillStyle = currentF <= fsMax ? '#cfeff2' : '#e8b84b';
+    ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI * 2); ctx.fill();
+
+    ctx.fillStyle = '#9fd0d4'; ctx.font = '9px monospace';
+    ctx.fillText('estático', padL + 2, padT + 9);
+    ctx.fillText('dinámico', cv.width - 60, padT + h - 4);
+  }
+}
+
+function renderObjectivePanel(round, roundIndex) {
+  document.getElementById('round-num').textContent = roundIndex + 1;
+  document.getElementById('round-m').textContent = round.m;
+  document.getElementById('round-d').textContent = NEWTON_PHYSICS.D_META;
+  document.getElementById('round-vobj').textContent = NEWTON_PHYSICS.V_OBJETIVO;
+  document.getElementById('round-mus').textContent = NEWTON_PHYSICS.MU_S;
+  document.getElementById('round-muk').textContent = NEWTON_PHYSICS.MU_K;
+}
+
+function renderResult(categoria, resultado, chosenF, round) {
+  const cfg = {
+    no_se_mueve: { title: 'No se mueve',     cls: 'res-no-mueve' },
+    lento:       { title: 'Demasiado lento', cls: 'res-lento' },
+    perfecto:    { title: '¡Empuje perfecto!', cls: 'res-perfecto' },
+    choque:      { title: '¡Choque!',          cls: 'res-choque' }
+  }[categoria];
+
+  const panel = document.getElementById('result-panel');
+  document.getElementById('result-title').textContent = cfg.title;
+  panel.classList.remove('res-no-mueve', 'res-lento', 'res-perfecto', 'res-choque');
+  panel.classList.add(cfg.cls);
+
+  document.getElementById('result-line-1').innerHTML = categoria === 'no_se_mueve'
+    ? `Elegiste <b>F = ${chosenF} N</b> · rozamiento estático máximo = <b>${round.fsMax.toFixed(0)} N</b>`
+    : `Elegiste <b>F = ${chosenF} N</b> · F ideal para esta masa = <b>${resultado.fIdeal.toFixed(0)} N</b> (incluye vencer el rozamiento dinámico de ${round.fK.toFixed(0)} N)`;
+
+  const linea2 = categoria === 'no_se_mueve'
+    ? `El rozamiento estático se ajustó para igualar tu empuje (f = F = ${chosenF} N) — como no superaste ${round.fsMax.toFixed(0)} N, la fuerza neta es cero y el cajón ni se mueve (1ª ley).`
+    : categoria === 'lento'
+      ? `El cajón llegó con solo <b>${resultado.vLlegadaReal.toFixed(2)} m/s</b> — no alcanzó la velocidad de manejo segura (${NEWTON_PHYSICS.V_OBJETIVO} m/s).`
+      : categoria === 'perfecto'
+        ? `Llegó a los ${NEWTON_PHYSICS.D_META} m con <b>${resultado.vLlegadaReal.toFixed(2)} m/s</b>, dentro del rango seguro.`
+        : `Llegó demasiado rápido: <b>${resultado.vLlegadaReal.toFixed(2)} m/s</b> — chocó contra la mercadería.`;
+  document.getElementById('result-line-2').innerHTML = linea2;
+}
+
+function renderSummary(score, totalRounds) {
+  document.getElementById('summary-score').textContent = `${score}/${totalRounds} empujes perfectos`;
+  const starsEl = document.getElementById('summary-stars');
+  starsEl.innerHTML = '';
+  for (let i = 0; i < totalRounds; i++) {
+    const span = document.createElement('span');
+    span.textContent = '★';
+    span.className = i < score ? 'star-filled' : 'star-empty';
+    starsEl.appendChild(span);
+  }
+}
+
+// ===================================================================
+// InputManager
+// ===================================================================
+const InputManager = {
+  _sliderInstance: null,
+  bindSlider(sliderInstance) { this._sliderInstance = sliderInstance; },
+  setSliderEnabled(enabled) { this._sliderInstance?.setEnabled(enabled); },
+  setStartButtonEnabled(enabled) {
+    const btn = document.getElementById('start-btn');
+    if (btn) btn.disabled = !enabled;
+  },
+  init() {
+    document.getElementById('start-btn').addEventListener('click', () => EventBus.emit(EVENTS.START_PRESSED));
+    document.getElementById('next-btn').addEventListener('click', () => EventBus.emit(EVENTS.NEXT_ROUND));
+    document.getElementById('restart-btn').addEventListener('click', () => {
+      Game.roundIndex = 0; Game.score = 0;
+      document.getElementById('summary-panel').classList.add('hidden');
+      Game.fsm.transition('ready');
+    });
+  }
+};
+
+// ===================================================================
+// Audio mínimo (Web Audio API) — empuje / perfecto / choque
+// ===================================================================
+const AudioFx = {
+  _ctx: null,
+  _get() { return this._ctx ||= new (window.AudioContext || window.webkitAudioContext)(); },
+  _tone(freq, duration, type = 'sine', gainPeak = 0.15) {
+    try {
+      const ctx = this._get();
+      const osc = ctx.createOscillator(); const gain = ctx.createGain();
+      osc.type = type; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(gainPeak, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + duration);
+    } catch (e) { /* audio no disponible, no es crítico */ }
+  },
+  push() { this._tone(180, 0.18, 'square', 0.08); },
+  perfecto() { this._tone(880, 0.25, 'sine', 0.12); },
+  choque() { this._tone(110, 0.3, 'sawtooth', 0.15); }
+};
+
+// ===================================================================
+// Game — owner de la FSM + wiring final (Publisher)
+// ===================================================================
+const Game = {
+  fsm: null, roundIndex: 0, score: 0, round: null,
+  chosenF: NEWTON_PHYSICS.SLIDER_F_MIN,
+  crate: new CrateBody(5),
+  lastResult: null, effect: null
+};
+
+const canvas = document.getElementById('track-canvas');
+const ctx = canvas.getContext('2d');
+const graphCanvas = document.getElementById('graph-canvas');
+const vtGraph = new VTGraph(graphCanvas);
+const xtGraphCanvas = document.getElementById('xt-graph-canvas');
+const xtGraph = new XTGraph(xtGraphCanvas);
+const frictionGraphCanvas = document.getElementById('friction-graph-canvas');
+const frictionGraph = new FrictionGraph(frictionGraphCanvas);
+const gameLoop = new GameLoop();
+
+const PX_PER_METER = (canvas.width - TRACK_LEFT_MARGIN_PX - TRACK_RIGHT_BUFFER_PX) / NEWTON_PHYSICS.D_META;
+
+let slider, metricsPanel, formulaLabel;
+
+function buildSceneState() {
+  return {
+    canvasWidth: canvas.width, canvasHeight: canvas.height,
+    pxPerMeter: PX_PER_METER, D_META: NEWTON_PHYSICS.D_META,
+    fsmState: Game.fsm.state, crate: Game.crate, round: Game.round,
+    previewForceN: Game.chosenF, maxForceN: NEWTON_PHYSICS.SLIDER_F_MAX,
+    categoria: Game.lastResult?.categoria, effect: Game.effect
+  };
+}
+
+Game.fsm = new StateMachine(Game)
+  .addState('ready', {
+    onEnter() {
+      this.round = RoundManager.getCurrentRound();
+      this.crate = new CrateBody(this.round.m, this.round.fsMax, this.round.fK);
+      this.effect = null;
+
+      renderObjectivePanel(this.round, this.roundIndex);
+      document.getElementById('result-panel').classList.add('hidden');
+
+      slider.setValue(NEWTON_PHYSICS.SLIDER_F_MIN);
+      this.chosenF = NEWTON_PHYSICS.SLIDER_F_MIN;
+      InputManager.setSliderEnabled(true);
+      InputManager.setStartButtonEnabled(true);
+
+      vtGraph.reset(); vtGraph.draw(NEWTON_PHYSICS.A_IDEAL, NEWTON_PHYSICS.V_OBJETIVO);
+      xtGraph.reset(); xtGraph.draw(NEWTON_PHYSICS.A_IDEAL, NEWTON_PHYSICS.D_META);
+      frictionGraph.draw(this.round, this.chosenF);
+      emitPreviewMetrics();
+    }
+  })
+  .addState('running', {
+    onEnter() {
+      InputManager.setSliderEnabled(false);
+      InputManager.setStartButtonEnabled(false);
+
+      this.crate.startPush(this.chosenF);
+      this.lastResult = resolveRoundOutcome(
+        this.chosenF, this.round.m, NEWTON_PHYSICS.D_META, NEWTON_PHYSICS.V_OBJETIVO,
+        this.round.tolerance, this.round.fsMax, this.round.fK
+      );
+      this._noMoveTimer = 0;
+      gameLoop.setTimeScale(computeTimeScale(this.lastResult.tLlegadaReal));
+      AudioFx.push();
+    },
+    onUpdate(dt) {
+      this.crate.fixedUpdate(dt);
+      const m = this.crate.getMetrics();
+      EventBus.emit(EVENTS.METRICS_UPDATE, m);
+      vtGraph.push(m.t, m.v);
+      vtGraph.draw(NEWTON_PHYSICS.A_IDEAL, NEWTON_PHYSICS.V_OBJETIVO);
+      xtGraph.push(m.t, m.x);
+      xtGraph.draw(NEWTON_PHYSICS.A_IDEAL, NEWTON_PHYSICS.D_META);
+      frictionGraph.draw(this.round, m.F);
+      if (!this.crate.moving) {
+        // Rozamiento estático > F: el cajón no se mueve. Se muestra un
+        // breve período "forcejeando" en el lugar antes de resolver, en
+        // vez de quedar esperando indefinidamente (nunca llegaría a D).
+        this._noMoveTimer += dt;
+        if (this._noMoveTimer >= 1.0) this.fsm.transition('result');
+      } else if (this.crate.finished) {
+        this.fsm.transition('result');
+      }
+    }
+  })
+  .addState('result', {
+    onEnter() {
+      gameLoop.setTimeScale(1);
+      if (this.lastResult.scored) this.score++;
+      this.effect = this.lastResult.categoria === 'choque' ? 'choque'
+        : this.lastResult.categoria === 'no_se_mueve' ? null
+        : 'docking';
+
+      const isLast = this.roundIndex >= RoundManager.totalRounds() - 1;
+      document.getElementById('next-btn').textContent = isLast ? 'Ver resumen final →' : 'Siguiente ronda →';
+      document.getElementById('result-panel').classList.remove('hidden');
+
+      renderResult(this.lastResult.categoria, this.lastResult, this.chosenF, this.round);
+      vtGraph.revealIdeal(); vtGraph.draw(NEWTON_PHYSICS.A_IDEAL, NEWTON_PHYSICS.V_OBJETIVO);
+      xtGraph.revealIdeal(); xtGraph.draw(NEWTON_PHYSICS.A_IDEAL, NEWTON_PHYSICS.D_META);
+      if (this.lastResult.categoria === 'perfecto') AudioFx.perfecto();
+      else if (this.lastResult.categoria === 'choque') AudioFx.choque();
+    },
+    onExit() { document.getElementById('result-panel').classList.add('hidden'); }
+  })
+  .addState('finished', {
+    onEnter() {
+      document.getElementById('controls-panel').classList.add('hidden');
+      renderSummary(this.score, RoundManager.totalRounds());
+      document.getElementById('summary-panel').classList.remove('hidden');
+    },
+    onExit() { document.getElementById('controls-panel').classList.remove('hidden'); }
+  });
+
+// Preview en vivo: mientras el slider está habilitado (estado 'ready'), cada cambio
+// recalcula a = F/m y reemite METRICS_UPDATE para que FormulaLabel/MetricsPanel
+// reflejen la F elegida ANTES de empujar (lección de Interface: no solo la flecha
+// debe reaccionar en vivo al slider, también las métricas).
+function emitPreviewMetrics() {
+  const round = Game.round;
+  const F = Game.chosenF;
+  const froz = F <= round.fsMax ? F : round.fK;
+  const a = F <= round.fsMax ? 0 : (F - round.fK) / round.m;
+  EventBus.emit(EVENTS.METRICS_UPDATE, { t: 0, v: 0, x: 0, a, F, m: round.m, froz });
+}
+
+EventBus.on(EVENTS.SLIDER_CHANGED, (data) => {
+  if (data.name !== 'force') return;
+  Game.chosenF = data.value;
+  if (Game.fsm.is('ready')) {
+    emitPreviewMetrics();
+    frictionGraph.draw(Game.round, Game.chosenF);
+  }
+});
+EventBus.on(EVENTS.START_PRESSED, () => { if (Game.fsm.is('ready')) Game.fsm.transition('running'); });
+EventBus.on(EVENTS.NEXT_ROUND, () => {
+  Game.roundIndex++;
+  if (Game.roundIndex < RoundManager.totalRounds()) Game.fsm.transition('ready');
+  else EventBus.emit(EVENTS.GAME_FINISHED);
+});
+EventBus.on(EVENTS.GAME_FINISHED, () => { Game.fsm.transition('finished'); });
+
+// ---- Inicialización ----
+slider = new PhysicsSlider(document.getElementById('slider-host'), {
+  name: 'force', label: 'Fuerza (F)',
+  min: NEWTON_PHYSICS.SLIDER_F_MIN, max: NEWTON_PHYSICS.SLIDER_F_MAX, step: NEWTON_PHYSICS.SLIDER_F_STEP,
+  value: NEWTON_PHYSICS.SLIDER_F_MIN, unit: 'N'
+});
+InputManager.bindSlider(slider);
+metricsPanel = new MetricsPanel(document.getElementById('metrics-host'))
+  .addRow('t', 't', 's', 2).addRow('v', 'v', 'm/s', 2).addRow('x', 'x', 'm', 2)
+  .addRow('froz', 'f', 'N', 1).addRow('a', 'a', 'm/s²', 2);
+formulaLabel = new FormulaLabel(document.getElementById('formula-host'), 'a = (F − f) / m = ({F} − {froz}) / {m} = {a} m/s²');
+InputManager.init();
+
+gameLoop.onFixedUpdate = (dt) => Game.fsm.update(dt);
+gameLoop.onDraw = () => drawScene(ctx, buildSceneState());
+gameLoop.start();
+
+Game.fsm.transition('ready');
+</script>
+</body>
+</html>

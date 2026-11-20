@@ -1,0 +1,1177 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Principio de Pascal – Prensa Hidráulica</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --sdv-bg-sky:        #87CEEB;
+  --sdv-bg-ground:     #8B6914;
+  --sdv-bg-grass:      #5DA832;
+  --sdv-bg-dark:       #2C1810;
+  --sdv-bg-panel:      #F5E6C8;
+  --sdv-obj-primary:   #E8A020;
+  --sdv-obj-shadow:    #8B5E0A;
+  --sdv-obj-highlight: #FFD966;
+  --sdv-obj-outline:   #2C1810;
+  --sdv-ui-frame:      #6B3710;
+  --sdv-ui-frame-light:#DDA059;
+  --sdv-ui-button:     #5DA832;
+  --sdv-ui-text-dark:  #2C1810;
+  --sdv-ui-text-light: #F5E6C8;
+  --sdv-metric-bg:     #1A0F08;
+  --sdv-metric-value:  #FFD921;
+  --sdv-metric-label:  #DDA059;
+  --sdv-success:       #5DA832;
+  --sdv-warning:       #E8A020;
+  --sdv-danger:        #B52121;
+  --sdv-info:          #59C9F1;
+  --sdv-font-title:    'Press Start 2P', monospace;
+  --sdv-font-readable: 'VT323', monospace;
+}
+
+body {
+  background: #2C1810;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 8px 24px;
+  color: var(--sdv-bg-panel);
+  image-rendering: pixelated;
+}
+
+.game-title {
+  font-family: var(--sdv-font-title);
+  font-size: 10px;
+  color: var(--sdv-obj-highlight);
+  text-shadow: 2px 2px 0 var(--sdv-bg-dark);
+  margin-bottom: 4px;
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+.formula-banner {
+  font-family: var(--sdv-font-readable);
+  font-size: 22px;
+  color: var(--sdv-metric-label);
+  background: var(--sdv-metric-bg);
+  border: 3px solid var(--sdv-ui-frame);
+  box-shadow: 3px 3px 0 var(--sdv-bg-dark);
+  padding: 4px 18px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+
+.layout {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+canvas {
+  display: block;
+  image-rendering: pixelated;
+  border: 4px solid var(--sdv-ui-frame);
+  box-shadow: inset 0 0 0 2px var(--sdv-ui-frame-light), 5px 5px 0 var(--sdv-bg-dark);
+}
+
+/* ── Panel lateral ─────────────────────────────── */
+.panel {
+  background: var(--sdv-bg-panel);
+  border: 4px solid var(--sdv-ui-frame);
+  box-shadow: inset 0 0 0 2px var(--sdv-ui-frame-light), 5px 5px 0 var(--sdv-bg-dark);
+  padding: 14px 14px;
+  width: 270px;
+  font-family: var(--sdv-font-readable);
+}
+
+.panel-title {
+  font-family: var(--sdv-font-title);
+  font-size: 7px;
+  color: var(--sdv-ui-frame);
+  border-bottom: 3px solid var(--sdv-ui-frame);
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+/* ── Métricas ───────────────────────────────────── */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.metric-card {
+  background: var(--sdv-metric-bg);
+  border: 3px solid var(--sdv-ui-frame);
+  box-shadow: 2px 2px 0 var(--sdv-bg-dark);
+  padding: 6px 8px;
+  text-align: center;
+}
+.metric-card.full-width {
+  grid-column: 1 / -1;
+}
+.m-label {
+  font-family: var(--sdv-font-title);
+  font-size: 6px;
+  color: var(--sdv-metric-label);
+  display: block;
+  margin-bottom: 3px;
+}
+.m-value {
+  font-family: var(--sdv-font-title);
+  font-size: 11px;
+  color: var(--sdv-metric-value);
+  text-shadow: 2px 2px 0 #000;
+  display: block;
+}
+.m-unit {
+  font-family: var(--sdv-font-readable);
+  font-size: 14px;
+  color: #9E6C3A;
+  display: block;
+}
+
+/* ── Controles ──────────────────────────────────── */
+.ctrl {
+  margin-bottom: 12px;
+}
+.ctrl-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--sdv-font-title);
+  font-size: 6px;
+  color: var(--sdv-ui-frame);
+  margin-bottom: 5px;
+}
+.ctrl-val {
+  font-family: var(--sdv-font-readable);
+  font-size: 18px;
+  color: var(--sdv-ui-frame);
+  font-weight: bold;
+}
+input[type=range] {
+  width: 100%;
+  height: 8px;
+  cursor: pointer;
+  accent-color: var(--sdv-obj-primary);
+  border-radius: 0;
+}
+input[type=range]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Botones ────────────────────────────────────── */
+.btn-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.sdv-button {
+  background: var(--sdv-ui-button);
+  border: 3px solid var(--sdv-ui-frame);
+  box-shadow: 3px 3px 0 var(--sdv-bg-dark);
+  color: var(--sdv-ui-text-light);
+  font-family: var(--sdv-font-title);
+  font-size: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: none;
+  image-rendering: pixelated;
+  flex: 1;
+}
+.sdv-button:hover  { transform: translate(1px, 1px); box-shadow: 2px 2px 0 var(--sdv-bg-dark); }
+.sdv-button:active { transform: translate(3px, 3px); box-shadow: none; }
+.sdv-button.secondary {
+  background: var(--sdv-obj-primary);
+  color: var(--sdv-ui-text-dark);
+}
+.sdv-button.hint-btn {
+  background: #4A6FA5;
+  border-color: #2C4770;
+  box-shadow: 3px 3px 0 #1A2E44;
+  width: 100%;
+  flex: none;
+}
+.sdv-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: 3px 3px 0 var(--sdv-bg-dark);
+}
+
+/* ── Nivel / Descripción ────────────────────────── */
+.level-display {
+  background: var(--sdv-metric-bg);
+  border: 3px solid var(--sdv-ui-frame);
+  padding: 6px 8px;
+  margin-bottom: 8px;
+}
+.level-name {
+  font-family: var(--sdv-font-title);
+  font-size: 7px;
+  color: var(--sdv-obj-highlight);
+  margin-bottom: 4px;
+}
+.level-desc {
+  font-family: var(--sdv-font-readable);
+  font-size: 15px;
+  color: #C8A870;
+  line-height: 1.3;
+}
+
+/* ── Diálogo guía ──────────────────────────────── */
+.guide-box {
+  background: #F5E6C8;
+  border: 3px solid var(--sdv-ui-frame);
+  box-shadow: 2px 2px 0 var(--sdv-bg-dark);
+  padding: 7px 9px;
+  margin-top: 8px;
+  font-family: var(--sdv-font-readable);
+  font-size: 16px;
+  color: var(--sdv-ui-text-dark);
+  line-height: 1.35;
+  min-height: 52px;
+}
+
+/* ── Navegación niveles ─────────────────────────── */
+.level-nav {
+  display: flex;
+  gap: 5px;
+  margin-bottom: 8px;
+  justify-content: center;
+}
+.level-dot {
+  width: 14px; height: 14px;
+  background: #8B6B3D;
+  border: 2px solid var(--sdv-ui-frame);
+  cursor: pointer;
+  font-family: var(--sdv-font-title);
+  font-size: 6px;
+  color: var(--sdv-bg-panel);
+  display: flex; align-items: center; justify-content: center;
+}
+.level-dot.active {
+  background: var(--sdv-obj-primary);
+  color: var(--sdv-ui-text-dark);
+}
+.level-dot.done {
+  background: var(--sdv-success);
+}
+
+@media (max-width: 700px) {
+  .layout { flex-direction: column; align-items: center; }
+  .panel  { width: 100%; max-width: 460px; }
+}
+</style>
+</head>
+<body>
+
+<h1 class="game-title">⚙ PRINCIPIO DE PASCAL</h1>
+<div class="formula-banner">P₁ = P₂ &nbsp;→&nbsp; F₁/A₁ = F₂/A₂</div>
+
+<div class="layout">
+  <canvas id="c" width="640" height="460"></canvas>
+
+  <div class="panel">
+    <!-- Nivel -->
+    <div class="panel-title">Nivel</div>
+    <div class="level-nav">
+      <div class="level-dot active" id="dot0" onclick="goLevel(0)">1</div>
+      <div class="level-dot"        id="dot1" onclick="goLevel(1)">2</div>
+      <div class="level-dot"        id="dot2" onclick="goLevel(2)">3</div>
+    </div>
+    <div class="level-display">
+      <div class="level-name" id="lv-name">Exploración libre</div>
+      <div class="level-desc" id="lv-desc">Ajustá los controles y observá cómo la presión se distribuye en el fluido.</div>
+    </div>
+
+    <!-- Métricas -->
+    <div class="panel-title">Métricas</div>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <span class="m-label">PRESIÓN (P)</span>
+        <span class="m-value" id="m-p">10.0</span>
+        <span class="m-unit">Pa</span>
+      </div>
+      <div class="metric-card">
+        <span class="m-label">F₂ SALIDA</span>
+        <span class="m-value" id="m-f2">80</span>
+        <span class="m-unit">N</span>
+      </div>
+      <div class="metric-card full-width">
+        <span class="m-label">MULTIPLICACIÓN DE FUERZA (A₂ / A₁)</span>
+        <span class="m-value" id="m-mult">4.0</span>
+        <span class="m-unit">× veces</span>
+      </div>
+    </div>
+
+    <!-- Controles -->
+    <div class="panel-title">Controles</div>
+
+    <div class="ctrl">
+      <div class="ctrl-label">
+        <span>F₁ — Fuerza entrada</span>
+        <span class="ctrl-val"><span id="lbl-f1">20</span> N</span>
+      </div>
+      <input type="range" id="sl-f1" min="1" max="500" step="1" value="20">
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrl-label">
+        <span>A₁ — Área pistón 1</span>
+        <span class="ctrl-val"><span id="lbl-a1">2.0</span> m²</span>
+      </div>
+      <input type="range" id="sl-a1" min="0.5" max="10" step="0.5" value="2">
+    </div>
+
+    <div class="ctrl">
+      <div class="ctrl-label">
+        <span>A₂ — Área pistón 2</span>
+        <span class="ctrl-val"><span id="lbl-a2">8.0</span> m²</span>
+      </div>
+      <input type="range" id="sl-a2" min="0.5" max="10" step="0.5" value="8">
+    </div>
+
+    <div class="btn-row">
+      <button class="sdv-button" id="btn-apply" onclick="applyForce()">▶ APLICAR</button>
+      <button class="sdv-button secondary" onclick="resetGame()">↺ RESET</button>
+    </div>
+    <button class="sdv-button hint-btn" id="btn-hint" onclick="showHint()">💡 PISTA</button>
+
+    <!-- Diálogo -->
+    <div class="guide-box" id="guide-msg">¡Hola! Soy el Mecánico Pixel. Mové los sliders para ver cómo funciona la prensa hidráulica.</div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════
+//  MOTOR FÍSICO — Principio de Pascal
+// ══════════════════════════════════════════════════════
+const phys = {
+  F1: 20,   // N   — fuerza de entrada
+  A1: 2.0,  // m²  — área pistón 1 (entrada)
+  A2: 8.0,  // m²  — área pistón 2 (salida)
+  D1: 0,    // m   — desplazamiento pistón 1
+
+  get P()    { return this.F1 / this.A1; },              // Pa
+  get F2()   { return this.P * this.A2; },               // N
+  get D2()   { return this.D1 * (this.A1 / this.A2); }, // m
+  get mult() { return this.A2 / this.A1; },              // razón
+};
+
+// ══════════════════════════════════════════════════════
+//  NIVELES
+// ══════════════════════════════════════════════════════
+const LEVELS = [
+  {
+    name:  "Exploración libre",
+    desc:  "Ajustá los controles y observá cómo la presión se distribuye en el fluido.",
+    goal:  null,
+    f1Fixed: false,
+    guide: ["¡Hola! Soy el Mecánico Pixel. Mové los sliders para ver cómo funciona la prensa hidráulica.",
+            "¿Ves que F₂ cambia cuando cambiás las áreas? La presión es la misma en todo el fluido.",
+            "Cuanto mayor es A₂ respecto a A₁, ¡más se multiplica la fuerza!"],
+    hints: ["Probá poner A₂ mucho más grande que A₁.",
+            "La presión P = F₁/A₁ se distribuye igual en todo el fluido.",
+            "F₂ = P × A₂. Si A₂ es el doble de A₁, F₂ es el doble de F₁.",
+            "Cuando A₁=2 y A₂=8: P=F₁/2, F₂=P×8 = F₁×4. ¡Cuatro veces más fuerza!"]
+  },
+  {
+    name:  "El Mecánico",
+    desc:  "Levantá el auto. Necesitás F₂ ≥ 2000 N. Tenés F₁ = 200 N fija.",
+    goal:  { F2min: 2000 },
+    f1Fixed: true,
+    f1Value: 200,
+    guide: ["El jefe quiere que levante ese auto pero solo puedo empujar con 200 N.",
+            "Necesito que la prensa multiplique mi fuerza al menos 10 veces.",
+            "Ayudame a elegir las áreas correctas para que F₂ ≥ 2000 N."],
+    hints: ["F₂ = F₁ × (A₂/A₁). Con F₁=200 necesitás A₂/A₁ ≥ 10.",
+            "Poné A₁ chico y A₂ grande. Por ejemplo A₁=1 y A₂=10.",
+            "Con A₁=1 y A₂=10: P=200 Pa, F₂=200×10=2000 N. ¡Exacto!",
+            "Solución: A₁=1 m², A₂=10 m². F₂ = (200/1)×10 = 2000 N ✓"]
+  },
+  {
+    name:  "Desafío: Mínima Fuerza",
+    desc:  "Lográ F₂ ≥ 1500 N usando la MENOR F₁ posible. ¡Optimizá!",
+    goal:  { F2min: 1500, optimizeF1: true },
+    f1Fixed: false,
+    guide: ["¡Este es el desafío final! Tengo que levantar el auto con la menor fuerza posible.",
+            "Cuanto más grande sea la diferencia entre A₂ y A₁, menos fuerza necesito.",
+            "Pensá: con A₁=0.5 y A₂=10, ¿cuánta F₁ mínima necesito para F₂≥1500?"],
+    hints: ["Maximizá A₂/A₁. Con A₁=0.5 y A₂=10 el multiplicador es ×20.",
+            "Con mult=20: F₁ mínima = 1500/20 = 75 N.",
+            "Poné A₁=0.5, A₂=10, F₁=75. F₂ = (75/0.5)×10 = 1500 N ✓",
+            "Solución óptima: A₁=0.5 m², A₂=10 m², F₁=75 N → F₂=1500 N"]
+  }
+];
+
+// ══════════════════════════════════════════════════════
+//  ESTADO DEL JUEGO
+// ══════════════════════════════════════════════════════
+let currentLevel = 0;
+let attempts     = 0;
+let simRunning   = false;
+let simTime      = 0;          // 0..1 animación
+let victory      = false;
+let particles    = [];
+let pressureDots = [];
+let tick         = 0;
+let guideIdx     = 0;
+let levelsDone   = [false, false, false];
+
+// ══════════════════════════════════════════════════════
+//  CANVAS
+// ══════════════════════════════════════════════════════
+const canvas = document.getElementById('c');
+const ctx    = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+// Layout interno del canvas
+const PRESS_X  = 120;   // X inicio recipiente
+const PRESS_W  = 400;   // ancho total del recipiente
+const PRESS_CX = PRESS_X + PRESS_W / 2;
+const PRESS_Y  = 120;   // Y tope del recipiente
+const PRESS_H  = 220;   // alto del recipiente
+const FLOOR_Y  = PRESS_Y + PRESS_H;
+const WALL_T   = 14;    // grosor de paredes
+
+// Escala: ancho del pistón proporcional al área
+function pistonPxW(area) { return Math.max(30, Math.min(160, area * 15)); }
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — fondo taller pixel art
+// ══════════════════════════════════════════════════════
+function drawBackground() {
+  // Cielo / techo del taller
+  ctx.fillStyle = '#3D2B1F';
+  ctx.fillRect(0, 0, W, H);
+
+  // Vigas del techo
+  ctx.fillStyle = '#5C3A1E';
+  for (let x = 0; x < W; x += 80) {
+    ctx.fillRect(x, 0, 14, 80);
+  }
+  ctx.fillStyle = '#4A2E14';
+  ctx.fillRect(0, 75, W, 10);
+
+  // Piso
+  const floorY = H - 50;
+  for (let x = 0; x < W; x += 32) {
+    ctx.fillStyle = (Math.floor(x / 32) % 2 === 0) ? '#6B4A1C' : '#7A5520';
+    ctx.fillRect(x, floorY, 32, 50);
+    ctx.fillStyle = '#3D2008';
+    ctx.fillRect(x, floorY, 32, 2);
+  }
+
+  // Fondo de pared con ladrillos
+  for (let row = 0; row < 5; row++) {
+    const offset = (row % 2) * 36;
+    for (let col = -1; col < 10; col++) {
+      ctx.fillStyle = (row + col) % 3 === 0 ? '#4A2810' : '#3D2008';
+      ctx.fillRect(offset + col * 72, 85 + row * 28, 68, 24);
+      ctx.fillStyle = '#2C1208';
+      ctx.strokeStyle = '#2C1208';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(offset + col * 72 + 1, 86 + row * 28, 67, 23);
+    }
+  }
+
+  // Letrero "TALLER HIDRÁULICO"
+  ctx.fillStyle = '#8B5E0A';
+  ctx.fillRect(200, 88, 240, 28);
+  ctx.fillStyle = '#FFD921';
+  ctx.font = 'bold 8px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('TALLER HIDRAULICO', 320, 107);
+}
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — recipiente hidráulico en U
+// ══════════════════════════════════════════════════════
+function drawPress() {
+  const WT = WALL_T;
+
+  // Fondo del recipiente (madera oscura)
+  ctx.fillStyle = '#5C3A1E';
+  ctx.fillRect(PRESS_X, PRESS_Y, PRESS_W, PRESS_H);
+
+  // Interior (espacio para fluido) — limpiamos con color neutro
+  ctx.fillStyle = '#2C1810';
+  ctx.fillRect(PRESS_X + WT, PRESS_Y + WT, PRESS_W - WT * 2, PRESS_H - WT);
+
+  // Paredes izq / der / fondo (pixel bevel)
+  // Pared izquierda
+  ctx.fillStyle = '#7A4A20';
+  ctx.fillRect(PRESS_X, PRESS_Y, WT, PRESS_H);
+  ctx.fillStyle = '#A06030';
+  ctx.fillRect(PRESS_X, PRESS_Y, 3, PRESS_H);
+
+  // Pared derecha
+  ctx.fillStyle = '#7A4A20';
+  ctx.fillRect(PRESS_X + PRESS_W - WT, PRESS_Y, WT, PRESS_H);
+  ctx.fillStyle = '#4A2810';
+  ctx.fillRect(PRESS_X + PRESS_W - 3, PRESS_Y, 3, PRESS_H);
+
+  // Piso del recipiente
+  ctx.fillStyle = '#7A4A20';
+  ctx.fillRect(PRESS_X, FLOOR_Y - WT, PRESS_W, WT);
+  ctx.fillStyle = '#4A2810';
+  ctx.fillRect(PRESS_X, FLOOR_Y - 3, PRESS_W, 3);
+
+  // Divisor central (para hacer la U)
+  const divW = 18;
+  const divX = PRESS_CX - divW / 2;
+  ctx.fillStyle = '#6B3710';
+  ctx.fillRect(divX, PRESS_Y + WT, divW, PRESS_H - WT * 2 - 40);
+  ctx.fillStyle = '#4A2810';
+  ctx.fillRect(divX, PRESS_Y + WT, 3, PRESS_H - WT * 2 - 40);
+  ctx.fillStyle = '#8B5020';
+  ctx.fillRect(divX + divW - 3, PRESS_Y + WT, 3, PRESS_H - WT * 2 - 40);
+
+  // Tornillos decorativos en las esquinas
+  ctx.fillStyle = '#C0A060';
+  [[PRESS_X + 4, PRESS_Y + 4], [PRESS_X + PRESS_W - 8, PRESS_Y + 4],
+   [PRESS_X + 4, FLOOR_Y - 8], [PRESS_X + PRESS_W - 8, FLOOR_Y - 8]].forEach(([x, y]) => {
+    ctx.fillRect(x, y, 6, 6);
+    ctx.fillStyle = '#8B7040';
+    ctx.fillRect(x + 2, y + 1, 2, 4);
+    ctx.fillStyle = '#C0A060';
+  });
+}
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — fluido hidráulico
+// ══════════════════════════════════════════════════════
+function drawFluid() {
+  const WT   = WALL_T;
+  const divW = 18;
+  const divX = PRESS_CX - divW / 2;
+
+  // Altura visual del fluido (80% del recipiente)
+  const fluidH   = (PRESS_H - WT * 2) * 0.78;
+  const fluidTop = FLOOR_Y - WT - fluidH;
+
+  // Lado izquierdo
+  const leftX  = PRESS_X + WT;
+  const leftW  = divX - leftX;
+  ctx.fillStyle = '#1A5580';
+  ctx.fillRect(leftX, fluidTop, leftW, fluidH);
+
+  // Lado derecho
+  const rightX = divX + divW;
+  const rightW = PRESS_X + PRESS_W - WT - rightX;
+  ctx.fillStyle = '#1A5580';
+  ctx.fillRect(rightX, fluidTop, rightW, fluidH);
+
+  // Canal inferior (fondo que conecta los dos lados)
+  const channelH = 40;
+  ctx.fillStyle = '#1A5580';
+  ctx.fillRect(leftX, FLOOR_Y - WT - channelH, PRESS_W - WT * 2, channelH);
+
+  // Brillo del fluido (reflejo)
+  ctx.fillStyle = 'rgba(100, 180, 255, 0.18)';
+  ctx.fillRect(leftX + 4, fluidTop + 4, leftW - 8, 6);
+  ctx.fillRect(rightX + 4, fluidTop + 4, rightW - 8, 6);
+
+  // Olas animadas en la superficie
+  const wave = Math.sin(tick * 0.06) * 2;
+  ctx.strokeStyle = 'rgba(100, 200, 255, 0.5)';
+  ctx.lineWidth = 2;
+
+  // Ola izquierda
+  ctx.beginPath();
+  for (let x = leftX; x < leftX + leftW; x += 2) {
+    const y = fluidTop + Math.sin((x - leftX) * 0.15 + tick * 0.08) * 2 + wave;
+    x === leftX ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Ola derecha
+  ctx.beginPath();
+  for (let x = rightX; x < rightX + rightW; x += 2) {
+    const y = fluidTop + Math.sin((x - rightX) * 0.15 + tick * 0.08 + 1) * 2 - wave;
+    x === rightX ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — pistones
+// ══════════════════════════════════════════════════════
+function drawPistons() {
+  const WT    = WALL_T;
+  const divX  = PRESS_CX - 9;
+  const leftX = PRESS_X + WT;
+  const rightX = PRESS_CX + 9;
+
+  const pw1 = Math.min(pistonPxW(phys.A1), divX - leftX - 4);
+  const pw2 = Math.min(pistonPxW(phys.A2), PRESS_X + PRESS_W - WT - rightX - 4);
+
+  const fluidH    = (PRESS_H - WT * 2) * 0.78;
+  const fluidTop  = FLOOR_Y - WT - fluidH;
+
+  // Animación: d1 baja durante simTime, d2 sube
+  const d1px = simRunning || victory ? Math.sin(simTime * Math.PI) * 25 : 0;
+  const d2px = simRunning || victory ? Math.sin(simTime * Math.PI) * 25 * (phys.A1 / phys.A2) : 0;
+
+  const piston1Y = fluidTop - 28 + d1px;   // pistón 1 baja
+  const piston2Y = fluidTop - 28 - d2px;   // pistón 2 sube
+
+  // Pistón 1 (izquierdo — entrada)
+  const p1cx = leftX + (divX - leftX) / 2;
+  drawPixelPiston(p1cx - pw1 / 2, piston1Y, pw1, 20, '#8B6030', '#C49050', '#5C3A10');
+
+  // Vástago pistón 1
+  ctx.fillStyle = '#A07040';
+  ctx.fillRect(p1cx - 6, piston1Y - 60, 12, 60 + d1px);
+  ctx.fillStyle = '#C0A060';
+  ctx.fillRect(p1cx - 6, piston1Y - 60, 3, 60 + d1px);
+
+  // Pistón 2 (derecho — salida)
+  const p2cx = rightX + pw2 / 2;
+  drawPixelPiston(p2cx - pw2 / 2, piston2Y, pw2, 20, '#8B6030', '#C49050', '#5C3A10');
+
+  // Vástago pistón 2
+  ctx.fillStyle = '#A07040';
+  ctx.fillRect(p2cx - 6, piston2Y - 60, 12, 60 - d2px);
+  ctx.fillStyle = '#C0A060';
+  ctx.fillRect(p2cx - 6, piston2Y - 60, 3, 60 - d2px);
+
+  return { p1cx, piston1Y, pw1, p2cx, piston2Y, pw2 };
+}
+
+function drawPixelPiston(x, y, w, h, colMain, colTop, colShadow) {
+  ctx.fillStyle = colMain;
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = colTop;
+  ctx.fillRect(x, y, w, 4);        // borde superior claro
+  ctx.fillStyle = colShadow;
+  ctx.fillRect(x, y + h - 3, w, 3); // borde inferior oscuro
+  ctx.fillRect(x + w - 3, y, 3, h); // borde derecho oscuro
+  // Remache central
+  ctx.fillStyle = '#E8C070';
+  ctx.fillRect(x + w / 2 - 3, y + h / 2 - 3, 6, 6);
+  ctx.fillStyle = '#8B7040';
+  ctx.fillRect(x + w / 2 - 1, y + h / 2 - 1, 2, 2);
+}
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — auto (objeto a levantar)
+// ══════════════════════════════════════════════════════
+function drawCar(carX, carY) {
+  const cx = carX;
+  const cy = carY;
+
+  // Carrocería
+  ctx.fillStyle = '#B52121';
+  ctx.fillRect(cx - 32, cy - 20, 64, 20);
+  // Capó
+  ctx.fillStyle = '#8B1A1A';
+  ctx.fillRect(cx - 28, cy - 32, 56, 14);
+  // Techo
+  ctx.fillStyle = '#CC2525';
+  ctx.fillRect(cx - 16, cy - 44, 32, 14);
+  // Parabrisas
+  ctx.fillStyle = '#59C9F1';
+  ctx.fillRect(cx - 14, cy - 42, 28, 11);
+  // Ruedas
+  ctx.fillStyle = '#1A1A1A';
+  ctx.fillRect(cx - 28, cy, 18, 14);
+  ctx.fillRect(cx + 10, cy, 18, 14);
+  ctx.fillStyle = '#8B8B8B';
+  ctx.fillRect(cx - 24, cy + 3, 10, 8);
+  ctx.fillRect(cx + 14, cy + 3, 10, 8);
+  // Faros
+  ctx.fillStyle = '#FFD921';
+  ctx.fillRect(cx - 30, cy - 16, 6, 8);
+  ctx.fillRect(cx + 24, cy - 16, 6, 8);
+  // Outline pixel
+  ctx.strokeStyle = '#1A0808';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(cx - 32, cy - 44, 64, 58);
+}
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — mecánico pixel art
+// ══════════════════════════════════════════════════════
+function drawMechanic(state, pushOffset) {
+  const mx = 62;
+  const my = PRESS_Y - 10;
+  const armY = state === 'ACTIVE' ? my + 40 + pushOffset : my + 40;
+
+  // Cuerpo (overol azul)
+  ctx.fillStyle = '#2855A0';
+  ctx.fillRect(mx - 12, my + 20, 24, 30);
+  // Pecho (camisa)
+  ctx.fillStyle = '#C8A870';
+  ctx.fillRect(mx - 8, my + 22, 16, 14);
+  // Cabeza
+  ctx.fillStyle = '#D4A070';
+  ctx.beginPath(); ctx.arc(mx, my + 10, 14, 0, Math.PI * 2); ctx.fill();
+  // Casco amarillo
+  ctx.fillStyle = '#FFD921';
+  ctx.fillRect(mx - 14, my, 28, 12);
+  ctx.fillRect(mx - 16, my + 8, 32, 6);
+  // Frente casco
+  ctx.fillStyle = '#E8C000';
+  ctx.fillRect(mx - 14, my, 28, 4);
+  // Ojos
+  ctx.fillStyle = '#1A1A1A';
+  ctx.fillRect(mx - 7, my + 10, 4, 4);
+  ctx.fillRect(mx + 3, my + 10, 4, 4);
+  // Nariz
+  ctx.fillStyle = '#B8885A';
+  ctx.fillRect(mx - 1, my + 15, 2, 3);
+  // Bigote
+  ctx.fillStyle = '#5C3A10';
+  ctx.fillRect(mx - 5, my + 18, 10, 2);
+
+  // Brazos
+  if (state === 'ACTIVE') {
+    // Brazos empujando hacia abajo
+    ctx.fillStyle = '#2855A0';
+    ctx.fillRect(mx - 20, my + 25, 10, 30);
+    ctx.fillRect(mx + 10, my + 25, 10, 30);
+    ctx.fillStyle = '#D4A070';
+    ctx.fillRect(mx - 20, my + 52, 10, 8);
+    ctx.fillRect(mx + 10, my + 52, 10, 8);
+  } else if (state === 'SUCCESS') {
+    // Pulgar arriba
+    ctx.fillStyle = '#2855A0';
+    ctx.fillRect(mx + 14, my + 20, 10, 20);
+    ctx.fillStyle = '#D4A070';
+    ctx.fillRect(mx + 14, my + 16, 10, 10);
+    ctx.fillRect(mx - 24, my + 24, 10, 20);
+    ctx.fillStyle = '#D4A070';
+    ctx.fillRect(mx - 24, my + 22, 10, 8);
+  } else {
+    // IDLE — brazos caídos
+    ctx.fillStyle = '#2855A0';
+    ctx.fillRect(mx - 22, my + 20, 10, 28);
+    ctx.fillRect(mx + 12, my + 20, 10, 28);
+    ctx.fillStyle = '#D4A070';
+    ctx.fillRect(mx - 22, my + 44, 10, 8);
+    ctx.fillRect(mx + 12, my + 44, 10, 8);
+  }
+
+  // Piernas
+  ctx.fillStyle = '#1A3060';
+  ctx.fillRect(mx - 10, my + 48, 10, 20);
+  ctx.fillRect(mx + 2,  my + 48, 10, 20);
+  // Botas
+  ctx.fillStyle = '#2C1810';
+  ctx.fillRect(mx - 12, my + 65, 14, 8);
+  ctx.fillRect(mx,      my + 65, 14, 8);
+
+  // Llave inglesa
+  if (state !== 'SUCCESS') {
+    ctx.fillStyle = '#808080';
+    ctx.fillRect(mx + 22, my + 36, 6, 20);
+    ctx.fillRect(mx + 20, my + 34, 10, 6);
+    ctx.fillRect(mx + 20, my + 50, 10, 6);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — vectores de fuerza
+// ══════════════════════════════════════════════════════
+function drawArrow(fromX, fromY, toX, toY, color, label, labelSide) {
+  const angle = Math.atan2(toY - fromY, toX - fromX);
+  const len = Math.sqrt((toX-fromX)**2 + (toY-fromY)**2);
+  if (len < 5) return;
+
+  ctx.strokeStyle = color;
+  ctx.fillStyle   = color;
+  ctx.lineWidth   = 3;
+  ctx.lineCap     = 'round';
+
+  // Línea
+  ctx.beginPath(); ctx.moveTo(fromX, fromY); ctx.lineTo(toX, toY); ctx.stroke();
+
+  // Punta
+  const hs = 10;
+  ctx.beginPath();
+  ctx.moveTo(toX, toY);
+  ctx.lineTo(toX - hs * Math.cos(angle - 0.4), toY - hs * Math.sin(angle - 0.4));
+  ctx.lineTo(toX - hs * Math.cos(angle + 0.4), toY - hs * Math.sin(angle + 0.4));
+  ctx.closePath(); ctx.fill();
+
+  // Label
+  ctx.font = 'bold 9px "Press Start 2P", monospace';
+  ctx.fillStyle = color;
+  ctx.textAlign = labelSide === 'left' ? 'right' : 'left';
+  const lx = labelSide === 'left' ? fromX - 6 : fromX + 6;
+  ctx.fillText(label, lx, fromY + 4);
+}
+
+function drawForceArrows(pistons) {
+  if (!pistons) return;
+  const { p1cx, piston1Y, p2cx, piston2Y } = pistons;
+
+  // F₁ hacia abajo sobre pistón 1
+  const f1Scale = Math.max(20, Math.min(80, phys.F1 * 0.16));
+  drawArrow(p1cx, piston1Y - 65, p1cx, piston1Y - 65 + f1Scale, '#FF4444', 'F₁', 'left');
+
+  // F₂ hacia arriba sobre pistón 2
+  const f2Scale = Math.max(20, Math.min(100, phys.F2 * 0.04));
+  drawArrow(p2cx, piston2Y + 5, p2cx, piston2Y + 5 - f2Scale, '#44CC44', 'F₂', 'right');
+}
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — puntos de presión en el fluido
+// ══════════════════════════════════════════════════════
+function updatePressureDots() {
+  if (tick % 8 === 0 && (simRunning || tick % 20 === 0)) {
+    const fluidH  = (PRESS_H - WALL_T * 2) * 0.78;
+    const fluidTop = FLOOR_Y - WALL_T - fluidH;
+
+    // Generar punto en zona aleatoria del fluido
+    const zones = [
+      // Izquierda
+      { x: PRESS_X + WALL_T + Math.random() * (PRESS_CX - 9 - PRESS_X - WALL_T - 4),
+        y: fluidTop + Math.random() * fluidH },
+      // Derecha
+      { x: PRESS_CX + 9 + Math.random() * (PRESS_X + PRESS_W - WALL_T - PRESS_CX - 13),
+        y: fluidTop + Math.random() * fluidH },
+      // Canal inferior
+      { x: PRESS_X + WALL_T + Math.random() * (PRESS_W - WALL_T * 2),
+        y: FLOOR_Y - WALL_T - 20 + Math.random() * 10 },
+    ];
+    const z = zones[Math.floor(Math.random() * zones.length)];
+    pressureDots.push({ x: z.x, y: z.y, life: 1, size: 3 + Math.random() * 2 });
+  }
+  pressureDots = pressureDots.filter(d => d.life > 0.05);
+  pressureDots.forEach(d => { d.life -= 0.025; });
+}
+
+function drawPressureDots() {
+  pressureDots.forEach(d => {
+    ctx.globalAlpha = d.life * 0.85;
+    ctx.fillStyle = '#59C9F1';
+    ctx.fillRect(d.x - d.size / 2, d.y - d.size / 2, d.size, d.size);
+    ctx.globalAlpha = d.life * 0.3;
+    ctx.strokeStyle = '#A0E0FF';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(d.x - d.size, d.y - d.size, d.size * 2, d.size * 2);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — partículas de victoria
+// ══════════════════════════════════════════════════════
+function spawnParticles(x, y, n) {
+  for (let i = 0; i < n; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1.5 + Math.random() * 3;
+    particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 2,
+      life: 1,
+      color: ['#FFD921','#5DA832','#59C9F1','#E8A020'][Math.floor(Math.random()*4)],
+      size: 4 + Math.random() * 4
+    });
+  }
+}
+
+function updateParticles() {
+  particles = particles.filter(p => p.life > 0.05);
+  particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.vy += 0.1; p.life -= 0.018; });
+}
+
+function drawParticles() {
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.fillRect(p.x, p.y, p.size, p.size);
+  });
+  ctx.globalAlpha = 1;
+}
+
+// ══════════════════════════════════════════════════════
+//  DIBUJO — overlay victoria
+// ══════════════════════════════════════════════════════
+function drawVictoryOverlay() {
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, W, H);
+
+  // Panel de madera
+  ctx.fillStyle = '#F5E6C8';
+  ctx.fillRect(W/2 - 200, H/2 - 90, 400, 200);
+  ctx.fillStyle = '#6B3710';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(W/2 - 200, H/2 - 90, 400, 200);
+  ctx.strokeStyle = '#DDA059';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(W/2 - 195, H/2 - 85, 390, 190);
+
+  ctx.fillStyle = '#5DA832';
+  ctx.font = '9px "Press Start 2P", monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('¡NIVEL COMPLETADO!', W/2, H/2 - 50);
+
+  const lv = LEVELS[currentLevel];
+  const f2val = phys.F2.toFixed(0);
+  const pval  = phys.P.toFixed(1);
+
+  ctx.fillStyle = '#2C1810';
+  ctx.font = '18px "VT323", monospace';
+  ctx.fillText(`F₂ = ${f2val} N   P = ${pval} Pa`, W/2, H/2 - 15);
+  ctx.fillText(`F₁/A₁ = F₂/A₂ → P₁ = P₂`, W/2, H/2 + 15);
+
+  ctx.fillStyle = '#6B3710';
+  ctx.font = '8px "Press Start 2P", monospace';
+  ctx.fillText('Principio de Pascal verificado  ✓', W/2, H/2 + 50);
+
+  ctx.textAlign = 'left';
+}
+
+// ══════════════════════════════════════════════════════
+//  LOOP PRINCIPAL
+// ══════════════════════════════════════════════════════
+function loop() {
+  ctx.clearRect(0, 0, W, H);
+
+  drawBackground();
+  drawPress();
+  drawFluid();
+  updatePressureDots();
+  drawPressureDots();
+
+  const pistonData = drawPistons();
+
+  // Auto encima del pistón derecho (piston2Y ya incluye el desplazamiento animado)
+  drawCar(pistonData.p2cx, pistonData.piston2Y - 56);
+
+  // Mecánico
+  const mechState = victory ? 'SUCCESS' : (simRunning ? 'ACTIVE' : 'IDLE');
+  const pushOff   = simRunning ? Math.sin(simTime * Math.PI) * 10 : 0;
+  drawMechanic(mechState, pushOff);
+
+  drawForceArrows(pistonData);
+
+  // Partículas
+  if (simRunning) {
+    simTime += 0.012;
+    if (simTime >= 1) {
+      simTime = 0;
+      // Si el nivel tiene objetivo, verificar victoria
+      if (LEVELS[currentLevel].goal) {
+        const lv = LEVELS[currentLevel];
+        if (phys.F2 >= lv.goal.F2min) {
+          victory = true;
+          simRunning = false;
+          spawnParticles(pistonData.p2cx, pistonData.piston2Y - 60, 40);
+          levelsDone[currentLevel] = true;
+          updateLevelDots();
+          setGuide('¡Excelente! Calculaste correctamente. F₂ = F₁ × (A₂/A₁) — ¡El Principio de Pascal funciona!');
+          document.getElementById('btn-apply').textContent = '▶ SIGUIENTE';
+          document.getElementById('btn-apply').onclick = nextLevel;
+        } else {
+          simRunning = false;
+          attempts++;
+          setGuide(getHint());
+          document.getElementById('btn-apply').textContent = '▶ APLICAR';
+          document.getElementById('btn-apply').onclick = applyForce;
+        }
+      } else {
+        simRunning = false;
+        guideIdx = (guideIdx + 1) % LEVELS[currentLevel].guide.length;
+        setGuide(LEVELS[currentLevel].guide[guideIdx]);
+        document.getElementById('btn-apply').textContent = '▶ APLICAR';
+        document.getElementById('btn-apply').onclick = applyForce;
+      }
+      setSliders(true);
+    }
+  }
+
+  if (victory) {
+    updateParticles();
+    drawParticles();
+    drawVictoryOverlay();
+  }
+
+  tick++;
+  requestAnimationFrame(loop);
+}
+
+// ══════════════════════════════════════════════════════
+//  SISTEMA DE PISTAS
+// ══════════════════════════════════════════════════════
+function getHint() {
+  const lv = LEVELS[currentLevel];
+  const idx = Math.min(attempts - 1, lv.hints.length - 1);
+  return lv.hints[idx] || lv.hints[lv.hints.length - 1];
+}
+
+function showHint() {
+  const lv = LEVELS[currentLevel];
+  const idx = Math.min(attempts, lv.hints.length - 1);
+  setGuide('💡 ' + lv.hints[idx]);
+  attempts++;
+}
+
+// ══════════════════════════════════════════════════════
+//  UI — ACTUALIZACIÓN
+// ══════════════════════════════════════════════════════
+function updateUI() {
+  document.getElementById('lbl-f1').textContent = phys.F1.toFixed(0);
+  document.getElementById('lbl-a1').textContent = phys.A1.toFixed(1);
+  document.getElementById('lbl-a2').textContent = phys.A2.toFixed(1);
+  document.getElementById('m-p').textContent    = phys.P.toFixed(1);
+  document.getElementById('m-f2').textContent   = phys.F2.toFixed(0);
+  document.getElementById('m-mult').textContent = phys.mult.toFixed(1);
+}
+
+function setGuide(msg) {
+  document.getElementById('guide-msg').textContent = msg;
+}
+
+function setSliders(enabled) {
+  const lv = LEVELS[currentLevel];
+  document.getElementById('sl-f1').disabled = !enabled || lv.f1Fixed;
+  document.getElementById('sl-a1').disabled = !enabled;
+  document.getElementById('sl-a2').disabled = !enabled;
+}
+
+function updateLevelDots() {
+  for (let i = 0; i < 3; i++) {
+    const d = document.getElementById('dot' + i);
+    d.className = 'level-dot' +
+      (i === currentLevel ? ' active' : '') +
+      (levelsDone[i] ? ' done' : '');
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  ACCIONES DEL JUGADOR
+// ══════════════════════════════════════════════════════
+function applyForce() {
+  if (simRunning || victory) return;
+  simRunning = true;
+  simTime    = 0;
+  setSliders(false);
+  document.getElementById('btn-apply').textContent = '⏸ SIMULANDO...';
+
+  if (!LEVELS[currentLevel].goal) {
+    guideIdx = (guideIdx + 1) % LEVELS[currentLevel].guide.length;
+    setGuide(LEVELS[currentLevel].guide[guideIdx]);
+  } else {
+    setGuide('Aplicando fuerza... observá cómo reacciona el sistema.');
+  }
+}
+
+function resetGame() {
+  simRunning = false;
+  simTime    = 0;
+  victory    = false;
+  attempts   = 0;
+  particles  = [];
+
+  const lv = LEVELS[currentLevel];
+  if (lv.f1Fixed) {
+    phys.F1 = lv.f1Value;
+    document.getElementById('sl-f1').value = phys.F1;
+  }
+  setSliders(true);
+  updateUI();
+  setGuide(lv.guide[0]);
+  guideIdx = 0;
+  document.getElementById('btn-apply').textContent = '▶ APLICAR';
+  document.getElementById('btn-apply').onclick = applyForce;
+}
+
+function goLevel(n) {
+  currentLevel = n;
+  victory = false;
+  simRunning = false;
+  simTime = 0;
+  attempts = 0;
+  particles = [];
+  guideIdx = 0;
+
+  const lv = LEVELS[n];
+  document.getElementById('lv-name').textContent = lv.name;
+  document.getElementById('lv-desc').textContent = lv.desc;
+
+  if (lv.f1Fixed) {
+    phys.F1 = lv.f1Value;
+    document.getElementById('sl-f1').value = phys.F1;
+  }
+
+  setSliders(true);
+  updateUI();
+  setGuide(lv.guide[0]);
+  updateLevelDots();
+  document.getElementById('btn-apply').textContent = '▶ APLICAR';
+  document.getElementById('btn-apply').onclick = applyForce;
+}
+
+function nextLevel() {
+  if (currentLevel < 2) goLevel(currentLevel + 1);
+  else {
+    setGuide('¡Felicitaciones! Completaste todos los niveles. ¡Ahora entendés el Principio de Pascal!');
+    document.getElementById('btn-apply').textContent = '↺ REINICIAR';
+    document.getElementById('btn-apply').onclick = () => goLevel(0);
+  }
+}
+
+// ══════════════════════════════════════════════════════
+//  SLIDERS
+// ══════════════════════════════════════════════════════
+document.getElementById('sl-f1').addEventListener('input', e => {
+  phys.F1 = parseFloat(e.target.value);
+  updateUI();
+});
+document.getElementById('sl-a1').addEventListener('input', e => {
+  phys.A1 = parseFloat(e.target.value);
+  updateUI();
+});
+document.getElementById('sl-a2').addEventListener('input', e => {
+  phys.A2 = parseFloat(e.target.value);
+  updateUI();
+});
+
+// ══════════════════════════════════════════════════════
+//  TECLADO
+// ══════════════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  switch (e.code) {
+    case 'Space':
+      e.preventDefault();
+      if (!victory) applyForce();
+      break;
+    case 'KeyR': resetGame(); break;
+    case 'KeyH': showHint();  break;
+    case 'ArrowRight':
+      phys.F1 = Math.min(500, phys.F1 + 10);
+      document.getElementById('sl-f1').value = phys.F1;
+      updateUI(); break;
+    case 'ArrowLeft':
+      phys.F1 = Math.max(1, phys.F1 - 10);
+      document.getElementById('sl-f1').value = phys.F1;
+      updateUI(); break;
+  }
+});
+
+// ══════════════════════════════════════════════════════
+//  INICIO
+// ══════════════════════════════════════════════════════
+updateUI();
+setGuide(LEVELS[0].guide[0]);
+loop();
+</script>
+</body>
+</html>

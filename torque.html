@@ -1,0 +1,925 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Torque: Momentos de Fuerza</title>
+<style>
+  :root {
+    --bg: #0b1024;
+    --panel: #141a35;
+    --panel-light: #1c2445;
+
+    --accent: #78d7f2;
+    --accent-secondary: #9b7cff;
+
+    --ok: #4ade80;
+    --warn: #ffb454;
+    --danger: #ff6262;
+
+    --text: #f1f5f9;
+    --text-muted: #9ba7c2;
+    --border: #303a61;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  }
+  #app {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: flex-start;
+    gap: 0; min-height: 100%;
+  }
+  #stage-wrap { position: relative; line-height: 0; }
+  canvas#stage { display: block; width: 920px; max-width: 100vw; height: auto; background: #080d20; }
+  #move-controls {
+    position: absolute; left: 24px; bottom: 24px; display: flex; gap: 10px;
+  }
+  .move-btn {
+    width: 120px; height: 68px; border-radius: 12px; border: 1px solid rgba(120,215,242,0.35);
+    cursor: pointer; background: rgba(11,16,36,0.72); backdrop-filter: blur(4px);
+    color: var(--accent); font-size: 15px; font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.04);
+    touch-action: none; user-select: none; transition: background 0.15s, border-color 0.15s;
+  }
+  .move-btn:active { background: rgba(120,215,242,0.16); border-color: var(--accent); }
+
+  #hud {
+    width: 360px; max-width: 100vw;
+    background: linear-gradient(180deg, var(--panel), #10142a);
+    padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 8px;
+    min-height: 720px; border-left: 1px solid var(--border);
+  }
+  #hud h1 { font-size: 17px; margin: 4px 0 2px; color: var(--text); font-weight: 700; letter-spacing: 0.03em; }
+
+  #level-buttons { display: flex; gap: 6px; }
+  .level-btn {
+    flex: 1; min-height: 44px; border-radius: 10px; cursor: pointer;
+    background: rgba(255,255,255,0.02); border: 1px solid var(--border); color: var(--text-muted);
+    font-size: 13px; font-weight: 600; transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .level-btn:hover { background: rgba(120,215,242,0.08); color: var(--accent); }
+  .level-btn.active {
+    background: rgba(120,215,242,0.14); border-color: var(--accent); color: var(--accent); cursor: default;
+  }
+
+  #status-badge {
+    min-height: 42px; border-radius: 14px; display: flex; align-items: center; padding: 0 14px;
+    font-size: 15px; font-weight: 700; letter-spacing: 0.01em;
+    background: rgba(74,222,128,0.12); border: 1px solid rgba(74,222,128,0.4); color: var(--ok);
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+  }
+
+  .card {
+    background: rgba(28,36,69,0.55); border: 1px solid var(--border); border-radius: 12px;
+    padding: 8px 10px; backdrop-filter: blur(2px);
+  }
+  .card-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; letter-spacing: 0.04em; }
+  .bar { height: 16px; border-radius: 8px; background: rgba(0,0,0,0.4); overflow: hidden; }
+  .bar-fill { height: 100%; width: 0%; background: var(--ok); transition: width 0.15s ease-out, background 0.15s; }
+  .bar-fill.tension { background: var(--accent-secondary); transition: width 0.1s linear; }
+  .card-value { font-size: 13px; margin-top: 4px; }
+
+  #tension-card[hidden] { display: none; }
+
+  .metrics { display: grid; grid-template-columns: 1fr auto; row-gap: 3px; column-gap: 8px; font-size: 13px; }
+  .metrics span:nth-child(odd) { color: var(--text-muted); }
+  .metrics span:nth-child(even) { text-align: right; }
+
+  #distance-text, #best-text { font-size: 13px; color: var(--text-muted); }
+  #best-text { color: var(--accent); }
+
+  #btn-reset {
+    min-height: 44px; border-radius: 10px; cursor: pointer; margin-top: 4px;
+    background: rgba(255,255,255,0.02); border: 1px solid var(--border); color: var(--text);
+    font-size: 13px; font-weight: 700; letter-spacing: 0.04em; transition: background 0.15s, border-color 0.15s;
+  }
+  #btn-reset:hover { background: rgba(255,255,255,0.06); border-color: var(--text-muted); }
+
+  @media (max-width: 920px) {
+    canvas#stage { width: 100vw; }
+    #hud { width: 100vw; min-height: 0; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage-wrap">
+    <canvas id="stage" width="920" height="720"></canvas>
+    <div id="move-controls">
+      <button class="move-btn" id="btn-back">◀ Atrás</button>
+      <button class="move-btn" id="btn-fwd">Adelante ▶</button>
+    </div>
+  </div>
+  <aside id="hud">
+    <h1>MOMENTOS DE FUERZA</h1>
+    <div id="level-buttons">
+      <button class="level-btn" data-level="0">Nivel 1</button>
+      <button class="level-btn" data-level="1">Nivel 2</button>
+      <button class="level-btn" data-level="2">Nivel 3</button>
+    </div>
+    <div id="status-badge">EQUILIBRIO ESTABLE</div>
+    <div class="card">
+      <div class="card-label">MARGEN DE VUELCO USADO</div>
+      <div class="bar"><div id="margin-fill" class="bar-fill"></div></div>
+      <div id="margin-text" class="card-value">0%</div>
+    </div>
+    <div class="card" id="tension-card" hidden>
+      <div class="card-label">TENSIÓN DE LA SOGA</div>
+      <div class="bar"><div id="tension-fill" class="bar-fill tension"></div></div>
+      <div id="tension-text" class="card-value">0 / 0 N</div>
+    </div>
+    <div class="card metrics">
+      <span>τ tabla</span><span id="m-plank">0.00 N·m</span>
+      <span>τ persona</span><span id="m-person">0.00 N·m</span>
+      <span>τ neto</span><span id="m-net">0.00 N·m</span>
+    </div>
+    <div id="distance-text">Distancia sobre el vacío: 0.00 m</div>
+    <div id="best-text">Mejor distancia: 0.00 m</div>
+    <button id="btn-reset">REINICIAR</button>
+  </aside>
+</div>
+
+<script>
+'use strict';
+
+/* =========================================================================
+ * MODELO FISICO — puerto directo de TorqueSolver.gd / LevelData.gd
+ * (proyecto Godot 4 "torque-momentos-de-fuerza"). Convencion de signos:
+ * torque positivo = tiende a girar el extremo en voladizo hacia abajo
+ * (vuelco hacia el vacio). Todo en metros/kg/N/N*m — la conversion a
+ * pixeles ocurre solo en el renderizado (PPM), nunca se mezcla aca.
+ * ========================================================================= */
+
+const G = 9.81;
+const PERSON_MASS_KG = 60.0;
+const WALK_SPEED_MPS = 0.4;
+
+const LEVELS = [
+  {
+    name: "Nivel 1 — Tabla corta",
+    lengthM: 3.0, overhangM: 0.9, plankMassKg: 30.0,
+    hasRope: false, tensionMaxN: 0.0,
+  },
+  {
+    name: "Nivel 2 — Tabla larga",
+    lengthM: 5.0, overhangM: 1.6, plankMassKg: 45.0,
+    hasRope: false, tensionMaxN: 0.0,
+  },
+  {
+    name: "Nivel 3 — Tabla con soga",
+    lengthM: 5.0, overhangM: 2.6, plankMassKg: 40.0,
+    hasRope: true, tensionMaxN: 350.0,
+  },
+];
+
+/** Calcula el estado de equilibrio para una posicion dada de la persona. */
+function computeState(level, xPersonM) {
+  const a = level.lengthM - level.overhangM;
+  const weightPlank = level.plankMassKg * G;
+  const weightPerson = PERSON_MASS_KG * G;
+
+  const torquePlank = weightPlank * (level.overhangM - level.lengthM / 2.0);
+  const torquePerson = weightPerson * (xPersonM - a);
+  const torqueNoRope = torquePlank + torquePerson;
+
+  let tensionRequired = 0.0;
+  let isFailing;
+  if (level.hasRope) {
+    tensionRequired = Math.max(0.0, torqueNoRope / a);
+    isFailing = tensionRequired >= level.tensionMaxN;
+  } else {
+    isFailing = torqueNoRope > 0.0;
+  }
+
+  const overhangDistanceM = Math.max(0.0, xPersonM - a);
+  const normalPivot = weightPlank + weightPerson + (level.hasRope ? tensionRequired : 0.0);
+
+  return {
+    a, xPersonM, overhangDistanceM,
+    weightPlank, weightPerson,
+    torquePlank, torquePerson, torqueNet: torqueNoRope,
+    hasRope: level.hasRope, tensionRequired, tensionMaxN: level.tensionMaxN,
+    normalPivot, isFailing,
+  };
+}
+
+/** Maxima distancia (m) que la persona puede recorrer sobre el voladizo antes del fallo. */
+function computeMaxOverhangDistance(level) {
+  const a = level.lengthM - level.overhangM;
+  const weightPlank = level.plankMassKg * G;
+  const weightPerson = PERSON_MASS_KG * G;
+  const torquePlank = weightPlank * (level.overhangM - level.lengthM / 2.0);
+
+  let dMax;
+  if (level.hasRope) {
+    dMax = (level.tensionMaxN * a - torquePlank) / weightPerson;
+  } else {
+    dMax = -torquePlank / weightPerson;
+  }
+  return Math.min(Math.max(dMax, 0.0), level.overhangM);
+}
+
+/* Exponer el modelo puro para test/logic-check.mjs (sin tocar el DOM). */
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { G, PERSON_MASS_KG, WALK_SPEED_MPS, LEVELS, computeState, computeMaxOverhangDistance };
+}
+</script>
+
+<script>
+'use strict';
+
+/* =========================================================================
+ * JUEGO — canvas, render, input, loop. Todo lo de arriba (modelo fisico)
+ * es puro y sin estado; esta parte es la unica con estado mutable / DOM.
+ * ========================================================================= */
+
+const PPM = 100.0;               // pixeles por metro
+const PIVOT_PX = { x: 400, y: 380 };
+const THICKNESS_M = 0.08;
+const THICKNESS_PX = THICKNESS_M * PPM;
+const ROPE_ANCHOR_DROP_PX = 70.0;
+const RADIUS_PX = 15.0;          // radio "de referencia" de la persona
+const FORCE_SCALE = 0.08;        // px de flecha por Newton
+const FALL_PIVOT_LIMIT_RAD = 75 * Math.PI / 180;  // angulo al que la tabla "suelta" el borde
+
+function metersToPx(m) { return m * PPM; }
+
+const canvas = document.getElementById('stage');
+const ctx = canvas.getContext('2d');
+
+const el = {
+  levelButtons: Array.from(document.querySelectorAll('.level-btn')),
+  status: document.getElementById('status-badge'),
+  marginFill: document.getElementById('margin-fill'),
+  marginText: document.getElementById('margin-text'),
+  tensionCard: document.getElementById('tension-card'),
+  tensionFill: document.getElementById('tension-fill'),
+  tensionText: document.getElementById('tension-text'),
+  mPlank: document.getElementById('m-plank'),
+  mPerson: document.getElementById('m-person'),
+  mNet: document.getElementById('m-net'),
+  distanceText: document.getElementById('distance-text'),
+  bestText: document.getElementById('best-text'),
+  btnReset: document.getElementById('btn-reset'),
+  btnFwd: document.getElementById('btn-fwd'),
+  btnBack: document.getElementById('btn-back'),
+};
+
+const COLORS = {
+  // Cielo nocturno — frio y profundo, con un unico foco de luz calida (la luna).
+  skyTop: '#080d20', skyMiddle: '#151b3a', skyBottom: '#3a3158',
+  moon: '#fff1c7', moonGlow: '#f5d98a',
+  star: 'rgba(241,245,249,0.55)',
+
+  // Terreno / roca — masas frias en silueta, con un filo tenue de vegetacion.
+  rock: '#3a3a4d', rockDark: '#232231', rockTop: '#4d4f66', grass: '#2f4436',
+  fog: 'rgba(120,140,200,0.06)',
+
+  // Tabla — unico elemento calido de gran tamano: ancla la mirada.
+  wood: '#8f6947', woodDark: '#4e392c', woodLight: '#c79a63',
+
+  // Fuerzas — el color es informacion fisica real, no decoracion.
+  weight: '#ff6b5b', normal: '#5bd97c', tension: '#a47cff',
+  ropeSlack: '#6b5a45', ropeTaut: '#ff6b5b',
+
+  // Persona — punto calido deliberado contra el fondo frio (rim light).
+  skin: '#e3c9a3', skinOutline: '#8a6a4a', shirt: '#d98a4a', shirtOutline: '#8a5222',
+  pants: '#232838', shoe: '#15171f', hair: '#3a2e22', cheek: 'rgba(255,180,140,0.3)',
+  rimLight: 'rgba(255,217,138,0.55)',
+
+  particle: 'rgba(255,217,138,0.55)',
+};
+
+/* Elementos decorativos fijos de la escena (posiciones deterministas,
+ * calculadas una sola vez al cargar) — presentacion pura, sin estado
+ * de juego. */
+const MOON = { x: 760, y: 96, r: 30 };
+const STARS = Array.from({ length: 46 }, (_, i) => {
+  const seed = i * 137.51;
+  return {
+    x: (seed * 3.7) % canvas.width,
+    y: (seed * 1.9) % (canvas.height * 0.55),
+    r: 0.3 + ((seed * 2.3) % 1) * 1.1,
+    tw: (seed % 6.283),
+  };
+});
+const HILLS = Array.from({ length: 9 }, (_, i) => ({
+  x: (i / 8) * (canvas.width + 200) - 100,
+  h: 30 + Math.sin(i * 1.7) * 22 + Math.cos(i * 0.6) * 14,
+}));
+const GRASS_TUFTS = Array.from({ length: 22 }, (_, i) => ({
+  t: i / 21, h: 6 + ((i * 53) % 7), lean: ((i * 29) % 5) - 2,
+}));
+const AMBIENT_PARTICLES = Array.from({ length: 16 }, (_, i) => ({
+  x: (i * 61) % canvas.width,
+  y: (i * 97) % (canvas.height * 0.8),
+  r: 0.6 + ((i * 13) % 10) / 10,
+  speed: 4 + ((i * 7) % 10),
+  drift: (((i * 11) % 10) - 5) * 0.6,
+  phase: (i * 0.9) % 6.283,
+}));
+
+/* ---------------------------------------------------------------------
+ * ESTADO
+ * ------------------------------------------------------------------- */
+
+const state = {
+  levelIndex: 0,
+  xPersonM: 0,
+  walking: false,
+  walkPhase: 0,
+  time: 0,
+  bestByLevel: [0, 0, 0],
+  keyAxis: 0,
+  touchAxis: 0,
+
+  isFalling: false,
+  fallPhase: null,      // 'pivot' | 'free'
+  boardAngle: 0,
+  boardAngularVel: 0,
+  fallOffsetX: 0, fallOffsetY: 0,
+  fallVelX: 0, fallVelY: 0,
+  fallIMoment: 0, fallDCm: 0, fallDPerson: 0, fallMPlank: 0,
+
+  ropeCut: false,
+  ropeCutT: 0,
+  ropeCutPoints: null,   // {anchor, midA, midB, nearEnd} en espacio local, con velocidades propias
+};
+
+function currentLevel() { return LEVELS[state.levelIndex]; }
+
+function loadLevel(index) {
+  state.levelIndex = index;
+  const level = currentLevel();
+  state.xPersonM = 0;
+  state.walking = false;
+  state.walkPhase = 0;
+  state.isFalling = false;
+  state.fallPhase = null;
+  state.boardAngle = 0;
+  state.boardAngularVel = 0;
+  state.fallOffsetX = 0; state.fallOffsetY = 0;
+  state.fallVelX = 0; state.fallVelY = 0;
+  state.ropeCut = false;
+  state.ropeCutT = 0;
+  state.ropeCutPoints = null;
+
+  el.levelButtons.forEach((btn, i) => btn.classList.toggle('active', i === index));
+  el.tensionCard.hidden = !level.hasRope;
+}
+
+/* ---------------------------------------------------------------------
+ * INPUT
+ * ------------------------------------------------------------------- */
+
+const pressedKeys = new Set();
+window.addEventListener('keydown', (e) => { pressedKeys.add(e.key); });
+window.addEventListener('keyup', (e) => { pressedKeys.delete(e.key); });
+
+function keyboardAxis() {
+  let axis = 0;
+  if (pressedKeys.has('ArrowRight') || pressedKeys.has('d') || pressedKeys.has('D')) axis += 1;
+  if (pressedKeys.has('ArrowLeft') || pressedKeys.has('a') || pressedKeys.has('A')) axis -= 1;
+  return axis;
+}
+
+function setTouchAxis(v) { state.touchAxis = v; }
+el.btnFwd.addEventListener('pointerdown', (e) => { e.preventDefault(); setTouchAxis(1); });
+el.btnBack.addEventListener('pointerdown', (e) => { e.preventDefault(); setTouchAxis(-1); });
+window.addEventListener('pointerup', () => setTouchAxis(0));
+window.addEventListener('pointercancel', () => setTouchAxis(0));
+
+el.levelButtons.forEach((btn) => {
+  btn.addEventListener('click', () => loadLevel(parseInt(btn.dataset.level, 10)));
+});
+el.btnReset.addEventListener('click', () => loadLevel(state.levelIndex));
+
+/* ---------------------------------------------------------------------
+ * HUD
+ * ------------------------------------------------------------------- */
+
+function updateHud(computed, dMax) {
+  el.mPlank.textContent = computed.torquePlank.toFixed(2) + ' N·m';
+  el.mPerson.textContent = computed.torquePerson.toFixed(2) + ' N·m';
+  el.mNet.textContent = computed.torqueNet.toFixed(2) + ' N·m';
+
+  const percent = dMax <= 0.0001 ? 0 : Math.min(Math.max(computed.overhangDistanceM / dMax * 100, 0), 100);
+  el.marginText.textContent = Math.round(percent) + '%';
+  let barColor = 'var(--ok)';
+  if (percent >= 90) barColor = 'var(--danger)';
+  else if (percent >= 60) barColor = 'var(--warn)';
+  el.marginFill.style.width = percent + '%';
+  el.marginFill.style.background = barColor;
+
+  if (computed.hasRope) {
+    const tPercent = Math.min(Math.max(computed.tensionRequired / Math.max(computed.tensionMaxN, 0.0001) * 100, 0), 100);
+    el.tensionFill.style.width = tPercent + '%';
+    el.tensionText.textContent = Math.round(computed.tensionRequired) + ' / ' + Math.round(computed.tensionMaxN) + ' N';
+  }
+
+  el.distanceText.textContent = 'Distancia sobre el vacío: ' + computed.overhangDistanceM.toFixed(2) + ' m';
+  el.bestText.textContent = 'Mejor distancia: ' + state.bestByLevel[state.levelIndex].toFixed(2) + ' m';
+
+  if (computed.isFailing) {
+    setStatus(computed.hasRope ? '¡LA SOGA SE CORTÓ!' : '¡VUELCO!', 'danger');
+  } else {
+    setStatus('EQUILIBRIO ESTABLE', 'ok');
+  }
+}
+
+const STATUS_TONES = {
+  ok:     { color: '#4ade80', bg: 'rgba(74,222,128,0.12)' },
+  danger: { color: '#ff6262', bg: 'rgba(255,98,98,0.14)' },
+};
+
+function setStatus(text, tone) {
+  const t = STATUS_TONES[tone];
+  el.status.textContent = text;
+  el.status.style.color = t.color;
+  el.status.style.background = t.bg;
+  el.status.style.borderColor = t.color;
+}
+
+function setFallSettledStatus() {
+  setStatus('CAÍDA — REINICIA PARA VOLVER A INTENTAR', 'danger');
+}
+
+/* ---------------------------------------------------------------------
+ * CAIDA — dinamica rotacional real (no una animacion "enlatada"):
+ * fase A, la tabla+persona giran rigidamente alrededor del pivote bajo
+ * su propio torque (que cae como cos(theta) a medida que gira, igual
+ * que un pendulo) hasta un angulo limite; fase B, se "sueltan" del
+ * borde y caen libremente conservando la velocidad angular que traian.
+ * ------------------------------------------------------------------- */
+
+function startFall(level, computed) {
+  state.isFalling = true;
+  state.fallPhase = 'pivot';
+  state.boardAngle = 0;
+  state.boardAngularVel = 0.15;  // pequeno empujon inicial, ver Plank.gd (misma razon)
+  state.fallOffsetX = 0; state.fallOffsetY = 0;
+  state.fallVelX = 0; state.fallVelY = 0;
+
+  const dCm = level.overhangM - level.lengthM / 2.0;               // brazo (m) tabla->pivote
+  const dPerson = state.xPersonM - computed.a;                      // brazo (m) persona->pivote
+  const iPlank = (1 / 12) * level.plankMassKg * level.lengthM ** 2 + level.plankMassKg * dCm ** 2;
+  const iPerson = PERSON_MASS_KG * dPerson ** 2;
+
+  state.fallDCm = dCm;
+  state.fallDPerson = dPerson;
+  state.fallMPlank = level.plankMassKg;
+  state.fallIMoment = iPlank + iPerson;
+
+  if (level.hasRope) startRopeCut();
+
+  setStatus(level.hasRope ? '¡LA SOGA SE CORTÓ!' : '¡VUELCO!', 'danger');
+}
+
+function updateFall(dt) {
+  if (state.fallPhase === 'pivot') {
+    const torque = G * Math.cos(state.boardAngle) *
+        (state.fallMPlank * state.fallDCm + PERSON_MASS_KG * state.fallDPerson);
+    const angularAccel = torque / state.fallIMoment;
+    state.boardAngularVel += angularAccel * dt;
+    state.boardAngle += state.boardAngularVel * dt;
+
+    if (Math.abs(state.boardAngle) >= FALL_PIVOT_LIMIT_RAD) {
+      state.fallPhase = 'free';
+      const dir = state.fallDCm + state.fallDPerson >= 0 ? 1 : -1;
+      state.fallVelX = dir * 60;
+      state.fallVelY = 40;
+    }
+  } else if (state.fallPhase === 'free') {
+    state.fallVelY += G * PPM * dt;
+    state.fallOffsetX += state.fallVelX * dt;
+    state.fallOffsetY += state.fallVelY * dt;
+    state.boardAngle += state.boardAngularVel * dt;  // angular momentum conservado, sin mas torque
+  }
+
+  if (state.ropeCut) updateRopeCut(dt);
+
+  if (state.fallOffsetY > canvas.height * 2) {
+    setFallSettledStatus();
+    state.fallPhase = 'settled';
+  }
+}
+
+function startRopeCut() {
+  const level = currentLevel();
+  const aPx = metersToPx(level.lengthM - level.overhangM);
+  const anchor = { x: PIVOT_PX.x - aPx, y: PIVOT_PX.y + ROPE_ANCHOR_DROP_PX };
+  const nearEnd = { x: PIVOT_PX.x - aPx, y: PIVOT_PX.y };
+  const mid = { x: (anchor.x + nearEnd.x) / 2, y: (anchor.y + nearEnd.y) / 2 };
+  state.ropeCut = true;
+  state.ropeCutT = 0;
+  state.ropeCutPoints = {
+    anchor, nearEnd,
+    midA: { ...mid }, midB: { ...mid },
+    velA: { x: -30, y: -40 }, velB: { x: 40, y: 60 },
+  };
+}
+
+function updateRopeCut(dt) {
+  const p = state.ropeCutPoints;
+  state.ropeCutT += dt;
+  p.midA.x += p.velA.x * dt; p.midA.y += p.velA.y * dt;
+  p.midB.x += p.velB.x * dt; p.midB.y += p.velB.y * dt;
+  p.velA.y += 300 * dt; p.velB.y += 300 * dt;
+}
+
+/* ---------------------------------------------------------------------
+ * RENDER
+ * ------------------------------------------------------------------- */
+
+function drawSky() {
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, COLORS.skyTop);
+  grad.addColorStop(0.55, COLORS.skyMiddle);
+  grad.addColorStop(1, COLORS.skyBottom);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  for (const s of STARS) {
+    const tw = 0.5 + 0.5 * Math.sin(state.time * 1.4 + s.tw);
+    ctx.globalAlpha = 0.15 + tw * 0.35;
+    ctx.fillStyle = COLORS.star;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  const pulse = 0.92 + 0.08 * Math.sin(state.time * 0.5);
+  const haloR = MOON.r * 4.2 * pulse;
+  const halo = ctx.createRadialGradient(MOON.x, MOON.y, 0, MOON.x, MOON.y, haloR);
+  halo.addColorStop(0, 'rgba(245,217,138,0.26)');
+  halo.addColorStop(0.4, 'rgba(245,217,138,0.09)');
+  halo.addColorStop(1, 'rgba(245,217,138,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(MOON.x, MOON.y, haloR, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = COLORS.moon;
+  ctx.beginPath(); ctx.arc(MOON.x, MOON.y, MOON.r, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(190,170,120,0.22)';
+  ctx.beginPath(); ctx.arc(MOON.x + MOON.r * 0.32, MOON.y - MOON.r * 0.08, MOON.r * 0.88, 0, Math.PI * 2); ctx.fill();
+}
+
+function drawDistantHills() {
+  const baseY = PIVOT_PX.y - 4;
+  ctx.fillStyle = 'rgba(58,49,88,0.55)';
+  ctx.beginPath();
+  ctx.moveTo(HILLS[0].x, baseY);
+  for (const h of HILLS) ctx.lineTo(h.x, baseY - h.h);
+  ctx.lineTo(HILLS[HILLS.length - 1].x, baseY);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function updateAmbientParticles(dt) {
+  for (const p of AMBIENT_PARTICLES) {
+    p.phase += dt * 0.6;
+    p.y -= p.speed * dt * 0.3;
+    p.x += p.drift * dt * 0.3;
+    if (p.y < -10) { p.y = canvas.height * 0.8; }
+    if (p.x < -10) p.x = canvas.width + 10;
+    if (p.x > canvas.width + 10) p.x = -10;
+  }
+}
+
+function drawAmbientParticles() {
+  for (const p of AMBIENT_PARTICLES) {
+    const flicker = 0.3 + 0.35 * (0.5 + 0.5 * Math.sin(p.phase * 2));
+    ctx.globalAlpha = flicker;
+    ctx.fillStyle = COLORS.particle;
+    ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawGround(level) {
+  const aPx = metersToPx(level.lengthM - level.overhangM);
+  const marginPx = 400;
+  const depthPx = 420;
+  const left = PIVOT_PX.x - aPx - marginPx;
+  const right = PIVOT_PX.x;
+  const top = PIVOT_PX.y;
+
+  const grad = ctx.createLinearGradient(0, top, 0, top + depthPx);
+  grad.addColorStop(0, COLORS.rockTop);
+  grad.addColorStop(0.12, COLORS.rock);
+  grad.addColorStop(1, COLORS.rockDark);
+  ctx.fillStyle = grad;
+  ctx.fillRect(left, top, right - left, depthPx);
+
+  ctx.strokeStyle = COLORS.grass;
+  ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.moveTo(left, top); ctx.lineTo(right, top); ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 8; i++) {
+    const x = left + (right - left) * (i + 0.5) / 8;
+    ctx.beginPath(); ctx.moveTo(x, top + 14); ctx.lineTo(x, top + depthPx); ctx.stroke();
+  }
+
+  ctx.strokeStyle = COLORS.grass;
+  ctx.lineWidth = 1.4;
+  for (const tuft of GRASS_TUFTS) {
+    const x = left + (right - left) * tuft.t;
+    if (x < left + 6 || x > right - 6) continue;
+    ctx.beginPath();
+    ctx.moveTo(x, top);
+    ctx.lineTo(x + tuft.lean, top - tuft.h);
+    ctx.stroke();
+  }
+}
+
+function drawVoid(level) {
+  const overhangPx = metersToPx(level.overhangM);
+  const left = PIVOT_PX.x;
+  const right = PIVOT_PX.x + overhangPx + 260;
+  const top = PIVOT_PX.y;
+  const depthPx = 500;
+
+  const grad = ctx.createLinearGradient(0, top, 0, top + depthPx);
+  grad.addColorStop(0, COLORS.skyMiddle);
+  grad.addColorStop(1, COLORS.skyBottom);
+  ctx.fillStyle = grad;
+  ctx.fillRect(left, top, right - left, depthPx);
+
+  ctx.fillStyle = COLORS.fog;
+  for (let i = 0; i < 4; i++) {
+    const x = left + (right - left) * (0.15 + i * 0.22);
+    const y = top + depthPx * (0.3 + 0.15 * i);
+    ctx.beginPath(); ctx.arc(x, y, 60 - i * 8, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+function drawRope(level) {
+  if (!level.hasRope) return;
+  const aPx = metersToPx(level.lengthM - level.overhangM);
+  const anchor = { x: PIVOT_PX.x - aPx, y: PIVOT_PX.y + ROPE_ANCHOR_DROP_PX };
+
+  if (state.ropeCut) {
+    const p = state.ropeCutPoints;
+    const alpha = Math.max(1 - state.ropeCutT * 2.5, 0);
+    if (alpha <= 0) return;
+    ctx.strokeStyle = `rgba(255,107,91,${alpha})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(p.anchor.x, p.anchor.y); ctx.lineTo(p.midA.x, p.midA.y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(p.midB.x, p.midB.y); ctx.lineTo(p.nearEnd.x, p.nearEnd.y); ctx.stroke();
+    return;
+  }
+
+  const computed = computeState(level, state.xPersonM);
+  const tRatio = Math.min(Math.max(computed.tensionRequired / Math.max(level.tensionMaxN, 0.0001), 0), 1);
+  const nearEnd = { x: PIVOT_PX.x - aPx, y: PIVOT_PX.y };
+  const sag = 10 * (1 - tRatio * 0.7);
+  const mid = { x: (anchor.x + nearEnd.x) / 2, y: (anchor.y + nearEnd.y) / 2 + sag };
+
+  ctx.strokeStyle = lerpColor(COLORS.ropeSlack, COLORS.ropeTaut, tRatio);
+  ctx.lineWidth = 2.5 + tRatio * 2;
+  ctx.beginPath();
+  ctx.moveTo(anchor.x, anchor.y);
+  ctx.quadraticCurveTo(mid.x, mid.y, nearEnd.x, nearEnd.y);
+  ctx.stroke();
+
+  ctx.fillStyle = COLORS.rockDark;
+  ctx.beginPath(); ctx.arc(anchor.x, anchor.y, 4, 0, Math.PI * 2); ctx.fill();
+}
+
+function lerpColor(hexA, hexB, t) {
+  const a = hexToRgb(hexA), b = hexToRgb(hexB);
+  const r = Math.round(a.r + (b.r - a.r) * t);
+  const g = Math.round(a.g + (b.g - a.g) * t);
+  const bl = Math.round(a.b + (b.b - a.b) * t);
+  return `rgb(${r},${g},${bl})`;
+}
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+
+/** Devuelve la transformada actual de la tabla: origen del pivote en pantalla + angulo. */
+function boardTransform() {
+  if (!state.isFalling) return { x: PIVOT_PX.x, y: PIVOT_PX.y, angle: 0 };
+  return { x: PIVOT_PX.x + state.fallOffsetX, y: PIVOT_PX.y + state.fallOffsetY, angle: state.boardAngle };
+}
+
+function drawPlank(level, xform) {
+  const aPx = metersToPx(level.lengthM - level.overhangM);
+  const overhangPx = metersToPx(level.overhangM);
+
+  ctx.save();
+  ctx.translate(xform.x, xform.y);
+  ctx.rotate(xform.angle);
+
+  ctx.fillStyle = COLORS.wood;
+  ctx.fillRect(-aPx, -THICKNESS_PX, aPx + overhangPx, THICKNESS_PX);
+
+  // Rim light lunar sutil en el canto superior — mismo foco calido que la luna del cielo.
+  ctx.strokeStyle = COLORS.woodLight;
+  ctx.lineWidth = THICKNESS_PX * 0.22;
+  ctx.globalAlpha = 0.85;
+  ctx.beginPath(); ctx.moveTo(-aPx, -THICKNESS_PX * 0.74); ctx.lineTo(overhangPx, -THICKNESS_PX * 0.74); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = COLORS.woodDark;
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(-aPx, -THICKNESS_PX, aPx + overhangPx, THICKNESS_PX);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(0, -THICKNESS_PX - 4); ctx.lineTo(0, 4); ctx.stroke();
+
+  ctx.restore();
+}
+
+/** Persona: origen local (0,0) = pies, dibujada hacia arriba (Y negativa). */
+function drawPerson(level, xform) {
+  const aPx = metersToPx(level.lengthM - level.overhangM);
+  const localX = metersToPx(state.xPersonM) - aPx;
+  const r = RADIUS_PX;
+
+  ctx.save();
+  ctx.translate(xform.x, xform.y);
+  ctx.rotate(xform.angle);
+  ctx.translate(localX, -THICKNESS_PX);
+
+  const falling = state.isFalling;
+  const bob = state.walking && !falling ? Math.abs(Math.sin(state.walkPhase)) * 2.2 : Math.sin(state.time * 2.2) * 1.2;
+  const legSwing = state.walking && !falling ? Math.sin(state.walkPhase) * (r * 0.5) : 0;
+  const hipY = -r * 0.2 - bob;
+  const headC = { x: 0, y: -r * 2.5 - bob };
+
+  // Sombra de contacto — ancla la silueta al suelo, mas tenue si esta en el aire cayendo.
+  if (!falling) {
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
+    ctx.beginPath(); ctx.ellipse(0, 1, r * 0.9, r * 0.28, 0, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Piernas + zapatos
+  ctx.strokeStyle = COLORS.pants; ctx.lineWidth = 4.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, hipY); ctx.lineTo(-r * 0.55 + legSwing, r * 1.3); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, hipY); ctx.lineTo(r * 0.55 - legSwing, r * 1.3); ctx.stroke();
+  ctx.fillStyle = COLORS.shoe;
+  ctx.beginPath(); ctx.arc(-r * 0.55 + legSwing, r * 1.35, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(r * 0.55 - legSwing, r * 1.35, 3, 0, Math.PI * 2); ctx.fill();
+
+  // Brazos
+  ctx.strokeStyle = COLORS.skin; ctx.lineWidth = 3;
+  if (falling) {
+    ctx.beginPath(); ctx.moveTo(0, -r * 1.5 - bob); ctx.lineTo(-r * 1.1, -r * 2.5 - bob); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -r * 1.5 - bob); ctx.lineTo(r * 1.1, -r * 2.5 - bob); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.moveTo(0, -r * 1.5 - bob); ctx.lineTo(-r * 0.85 - legSwing * 0.4, -r * 0.4 - bob); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -r * 1.5 - bob); ctx.lineTo(r * 0.85 + legSwing * 0.4, -r * 0.4 - bob); ctx.stroke();
+  }
+
+  // Torso
+  ctx.fillStyle = COLORS.shirt;
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.55, -r * 1.7 - bob); ctx.lineTo(r * 0.55, -r * 1.7 - bob);
+  ctx.lineTo(r * 0.45, hipY); ctx.lineTo(-r * 0.45, hipY); ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = COLORS.shirtOutline; ctx.lineWidth = 1.5; ctx.stroke();
+
+  // Cabeza
+  ctx.fillStyle = COLORS.skin;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y, r * 0.7, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = COLORS.skinOutline; ctx.lineWidth = 1.5; ctx.stroke();
+
+  ctx.strokeStyle = COLORS.hair; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y - r * 0.15, r * 0.72, Math.PI, Math.PI * 2); ctx.stroke();
+
+  // Rim light lunar — borde calido sutil del lado iluminado, para que la silueta
+  // no se pierda contra el fondo frio (foco de contraste sobre el personaje).
+  ctx.strokeStyle = COLORS.rimLight; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.arc(headC.x, headC.y, r * 0.7, -Math.PI * 0.65, -Math.PI * 0.1); ctx.stroke();
+
+  ctx.fillStyle = COLORS.cheek;
+  ctx.beginPath(); ctx.arc(headC.x - r * 0.42, headC.y + r * 0.12, r * 0.16, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(headC.x + r * 0.42, headC.y + r * 0.12, r * 0.16, 0, Math.PI * 2); ctx.fill();
+
+  ctx.fillStyle = COLORS.skinOutline;
+  if (falling) {
+    ctx.beginPath(); ctx.arc(headC.x - r * 0.22, headC.y - r * 0.05, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(headC.x + r * 0.22, headC.y - r * 0.05, 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = COLORS.skinOutline; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.arc(headC.x, headC.y + r * 0.32, r * 0.18, 0, Math.PI); ctx.stroke();
+  } else {
+    ctx.beginPath(); ctx.arc(headC.x - r * 0.22, headC.y, 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(headC.x + r * 0.22, headC.y, 1.6, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawArrow(fromWorld, deltaPx, color, label) {
+  const len = Math.hypot(deltaPx.x, deltaPx.y);
+  if (len < 1) return;
+  const to = { x: fromWorld.x + deltaPx.x, y: fromWorld.y + deltaPx.y };
+  const dir = { x: deltaPx.x / len, y: deltaPx.y / len };
+  const perp = { x: -dir.y, y: dir.x };
+  const headLen = 10;
+
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.arc(fromWorld.x, fromWorld.y, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = color; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(fromWorld.x, fromWorld.y); ctx.lineTo(to.x, to.y); ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(to.x, to.y);
+  ctx.lineTo(to.x - dir.x * headLen + perp.x * headLen * 0.55, to.y - dir.y * headLen + perp.y * headLen * 0.55);
+  ctx.lineTo(to.x - dir.x * headLen - perp.x * headLen * 0.55, to.y - dir.y * headLen - perp.y * headLen * 0.55);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = color;
+  ctx.font = '13px sans-serif';
+  ctx.fillText(label, to.x + dir.x * (headLen + 4), to.y + dir.y * (headLen + 4) + 4);
+}
+
+function drawForceVectors(level, computed) {
+  const aPx = metersToPx(level.lengthM - level.overhangM);
+  const overhangPx = metersToPx(level.overhangM);
+  const comLocalX = (overhangPx - aPx) / 2;
+  const personLocalX = metersToPx(state.xPersonM) - aPx;
+
+  const com = { x: PIVOT_PX.x + comLocalX, y: PIVOT_PX.y };
+  const person = { x: PIVOT_PX.x + personLocalX, y: PIVOT_PX.y - THICKNESS_PX };
+  const pivot = { x: PIVOT_PX.x, y: PIVOT_PX.y };
+
+  drawArrow(com, { x: 0, y: computed.weightPlank * FORCE_SCALE }, COLORS.weight, 'Pt');
+  drawArrow(person, { x: 0, y: computed.weightPerson * FORCE_SCALE }, COLORS.weight, 'Pp');
+  drawArrow(pivot, { x: 0, y: -computed.normalPivot * FORCE_SCALE }, COLORS.normal, 'N');
+
+  if (computed.hasRope && computed.tensionRequired > 0.5) {
+    const nearEnd = { x: PIVOT_PX.x - aPx, y: PIVOT_PX.y };
+    drawArrow(nearEnd, { x: 0, y: computed.tensionRequired * FORCE_SCALE }, COLORS.tension, 'T');
+  }
+}
+
+function render() {
+  const level = currentLevel();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawSky();
+  drawDistantHills();
+  drawGround(level);
+  drawVoid(level);
+  drawAmbientParticles();
+  drawRope(level);
+
+  const xform = boardTransform();
+  drawPlank(level, xform);
+  drawPerson(level, xform);
+
+  if (!state.isFalling) {
+    drawForceVectors(level, computeState(level, state.xPersonM));
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * LOOP PRINCIPAL
+ * ------------------------------------------------------------------- */
+
+let lastTs = null;
+function frame(ts) {
+  if (lastTs === null) lastTs = ts;
+  const dt = Math.min((ts - lastTs) / 1000, 0.05);
+  lastTs = ts;
+  state.time += dt;
+  updateAmbientParticles(dt);
+
+  const level = currentLevel();
+
+  if (!state.isFalling) {
+    const axis = Math.min(Math.max(keyboardAxis() + state.touchAxis, -1), 1);
+    if (Math.abs(axis) > 0.0001) {
+      state.xPersonM = Math.min(Math.max(state.xPersonM + axis * WALK_SPEED_MPS * dt, 0), level.lengthM);
+      state.walking = true;
+      state.walkPhase += dt * 9;
+    } else {
+      state.walking = false;
+    }
+
+    const computed = computeState(level, state.xPersonM);
+    if (computed.overhangDistanceM > state.bestByLevel[state.levelIndex]) {
+      state.bestByLevel[state.levelIndex] = computed.overhangDistanceM;
+    }
+    updateHud(computed, computeMaxOverhangDistance(level));
+
+    if (computed.isFailing) startFall(level, computed);
+  } else if (state.fallPhase !== 'settled') {
+    updateFall(dt);
+  }
+
+  render();
+  requestAnimationFrame(frame);
+}
+
+loadLevel(0);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
