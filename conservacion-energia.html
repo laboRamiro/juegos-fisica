@@ -1053,10 +1053,10 @@ window.UI.EscenaIntro = class EscenaIntro {
 
   function actualizarMetaTexto() {
     if (estado.nivel === 'explorar') {
-      metaTextoEl.textContent = 'Modo libre: cambiá la altura inicial y el rozamiento del tramo plano. Mirá cómo la energía mecánica baja pero la total no.';
+      metaTextoEl.textContent = 'Modo libre: cambiá la altura inicial y el rozamiento del tramo plano (las rampas no tienen rozamiento). Mirá cómo la energía mecánica baja pero la total no.';
     } else if (estado.nivel === 'desafio') {
       const cfg = NIVELES.desafio;
-      metaTextoEl.textContent = `Meta: ajustá altura y rozamiento para que el carrito llegue a ${cfg.metaAlturaFinal} m del otro lado (±${cfg.tolerancia} m).`;
+      metaTextoEl.textContent = `Meta: ajustá altura y rozamiento para que el carrito llegue a ${cfg.metaAlturaFinal} m del otro lado (±${cfg.tolerancia} m). Solo el tramo plano tiene rozamiento.`;
     } else {
       const cfg = NIVELES.prediccion;
       metaTextoEl.textContent = `El carrito parte de ${cfg.alturaInicial} m y cruza un tramo con rozamiento. ¿Llega a la misma altura del otro lado, o menos?`;
@@ -1194,25 +1194,38 @@ window.UI.EscenaIntro = class EscenaIntro {
       const h1 = estado.nivel === 'prediccion' ? NIVELES.prediccion.alturaInicial : estado.alturaInicial;
       const mu = estado.nivel === 'prediccion' ? NIVELES.prediccion.coeficienteFriccion : estado.coeficienteFriccion;
 
-      const a = aceleracionEnPosicion(estado.s, h1, mu);
-      estado.velocidad += a * dt;
-
-      if (estado.velocidad <= 0) {
-        estado.velocidad = 0;
-        estado.fase = 'detenido';
-      } else {
+      // Subpasos de 1 ms. La aceleración solo pone en marcha el carrito; desde ahí la
+      // velocidad sale de la energía (Ec = m·g·h1 − m·g·y − Q), así la energía total
+      // queda exacta en cualquier computadora y sin rozamiento no se pierde nada.
+      const subpasos = Math.max(1, Math.ceil(dt / 0.001));
+      const h = dt / subpasos;
+      for (let i = 0; i < subpasos && estado.fase === 'rodando'; i++) {
         const sAnterior = estado.s;
-        estado.s += estado.velocidad * dt;
-        if (estado.s >= LARGO_ZONA_M * 3) {
-          estado.s = LARGO_ZONA_M * 3;
-          estado.fase = 'detenido';
-        }
+        const a = aceleracionEnPosicion(estado.s, h1, mu);
+        const vPrueba = Math.max(estado.velocidad + a * h, 0);
+        estado.s += (estado.velocidad + vPrueba) / 2 * h;
+        if (estado.s >= LARGO_ZONA_M * 3) estado.s = LARGO_ZONA_M * 3;
 
         // pérdida por rozamiento: solo mientras avanza dentro del tramo plano
         const inicioTramo = Math.max(sAnterior, LARGO_ZONA_M);
         const finTramo = Math.min(estado.s, LARGO_ZONA_M * 2);
-        if (finTramo > inicioTramo) {
-          estado.calorGenerado += mu * MASA * G * (finTramo - inicioTramo);
+        if (finTramo > inicioTramo) estado.calorGenerado += mu * MASA * G * (finTramo - inicioTramo);
+
+        const ecRestante = MASA * G * h1 - MASA * G * alturaEnPosicion(estado.s, h1) - estado.calorGenerado;
+        if (ecRestante <= 0 && estado.s > 0.01) {
+          // Se quedó sin energía cinética: corregir el último tramo para que la cuenta cierre exacta.
+          if (estado.s > LARGO_ZONA_M * 2) {
+            const hMax = Math.max(0, h1 - estado.calorGenerado / (MASA * G));
+            estado.s = LARGO_ZONA_M * 2 + (hMax / h1) * LARGO_ZONA_M;
+          } else if (estado.s > LARGO_ZONA_M && mu > 0) {
+            estado.calorGenerado = MASA * G * h1;
+            estado.s = LARGO_ZONA_M + h1 / mu;
+          }
+          estado.velocidad = 0;
+          estado.fase = 'detenido';
+        } else {
+          estado.velocidad = estado.s > 0.01 ? Math.sqrt(2 * Math.max(ecRestante, 0) / MASA) : vPrueba;
+          if (estado.s >= LARGO_ZONA_M * 3) estado.fase = 'detenido';
         }
       }
 
