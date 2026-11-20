@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>El Espejo de Nico — Reflexión en Espejo Plano</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; image-rendering: pixelated; }
+  html, body {
+    background: #1a1008;
+    color: #F5E6C8;
+    font-family: 'VT323', monospace;
+    min-height: 100vh;
+  }
+  body {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 14px 10px 30px;
+  }
+  #wrap { width: 100%; max-width: 1360px; }
+
+  header { text-align: center; margin-bottom: 10px; }
+  h1 {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 1.1rem;
+    color: #FFD921;
+    text-shadow: 2px 2px 0 #6B3710, 4px 4px 0 #000;
+    letter-spacing: 1px;
+  }
+  .subtitle { font-size: 1.15rem; color: #DDA059; margin-top: 6px; }
+  .subtitle b { color: #59C9F1; }
+
+  #main-area { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; justify-content: center; margin-top: 12px; }
+
+  #canvas-col { display: flex; flex-direction: column; gap: 12px; flex: 1 1 700px; min-width: 320px; max-width: 1000px; }
+  .stage-block { display: flex; flex-direction: column; gap: 4px; }
+  .stage-label {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.62rem;
+    color: #F5E6C8;
+    background: #6B3710;
+    border: 3px solid #2C1810;
+    padding: 6px 10px;
+    display: inline-block;
+    width: fit-content;
+  }
+  .stage {
+    position: relative;
+    border: 5px solid #6B3710;
+    box-shadow: inset 0 0 0 2px #DDA059, 5px 5px 0 #000;
+    background: #87CEEB;
+    width: 100%;
+  }
+  .stage canvas { display: block; width: 100%; height: auto; }
+
+  #guide-bar {
+    display: flex; gap: 10px; align-items: center;
+    background: #2C1810; border: 3px solid #6B3710; box-shadow: 3px 3px 0 #000;
+    padding: 8px 12px; min-height: 54px;
+  }
+  #guide-face { width: 42px; height: 42px; flex-shrink: 0; }
+  #guide-text { font-size: 1.15rem; color: #F5E6C8; line-height: 1.25; }
+  #guide-text b { color: #FFD921; }
+
+  #side-panel { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
+  .panel {
+    background: #F5E6C8;
+    border: 4px solid #6B3710;
+    box-shadow: inset 0 0 0 2px #DDA059, 4px 4px 0 #000;
+    padding: 12px;
+    color: #2C1810;
+  }
+  .panel-title {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.55rem;
+    color: #6B3710;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+  }
+  .slider-group { margin-bottom: 12px; }
+  .slider-head { display: flex; justify-content: space-between; font-size: 1.05rem; margin-bottom: 2px; }
+  .slider-head b { color: #B52121; font-family: 'VT323', monospace; font-size: 1.15rem; }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 10px;
+    background: #DDA059; outline: none; border: 2px solid #2C1810;
+    cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 18px; height: 18px;
+    background: #E8A020; border: 2px solid #2C1810; cursor: pointer;
+    box-shadow: 2px 2px 0 #000;
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px; background: #E8A020; border: 2px solid #2C1810; cursor: pointer;
+  }
+
+  .metric-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 5px 0; border-bottom: 2px dashed #DDA059; font-size: 1.05rem;
+  }
+  .metric-row:last-child { border-bottom: none; }
+  .metric-val { font-family: 'Press Start 2P', monospace; font-size: 0.6rem; color: #6B3710; }
+  .ok   { color: #2E7D32; }
+  .bad  { color: #B52121; }
+
+  .toggles { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .toggle-row { display: flex; align-items: center; gap: 8px; font-size: 1.05rem; }
+  .toggle-row input { width: 18px; height: 18px; }
+
+  .btn {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.58rem;
+    padding: 9px 6px;
+    border: 3px solid #2C1810;
+    box-shadow: 3px 3px 0 #000;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 6px;
+    color: #F5E6C8;
+  }
+  .btn:hover { transform: translate(1px,1px); box-shadow: 2px 2px 0 #000; }
+  .btn:active { transform: translate(3px,3px); box-shadow: none; }
+  .btn-min   { background: #5DA832; }
+  .btn-big   { background: #59C9F1; color: #1A0F08; }
+  .btn-reset { background: #B52121; }
+
+  #conclusion {
+    margin-top: 14px;
+    background: #2C1810;
+    border: 4px solid #FFD921;
+    box-shadow: 4px 4px 0 #000;
+    padding: 14px 18px;
+    text-align: center;
+  }
+  #conclusion .lbl {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 0.55rem;
+    color: #FFD921;
+    margin-bottom: 8px;
+  }
+  #conclusion p { font-size: 1.25rem; color: #F5E6C8; line-height: 1.4; max-width: 800px; margin: 0 auto; }
+  #conclusion b { color: #59C9F1; }
+
+  @media (max-width: 1100px) {
+    #main-area { flex-direction: column; align-items: stretch; }
+    #side-panel { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <header>
+    <h1>EL ESPEJO DE NICO</h1>
+    <div class="subtitle">Óptica geométrica — reflexión en espejo plano · <b>H<sub>espejo</sub> = H<sub>persona</sub> / 2</b></div>
+  </header>
+
+  <div id="main-area">
+    <div id="canvas-col">
+      <div class="stage-block">
+        <div class="stage-label">👤 VISTA LATERAL — el espejo queda fijo, Nico se acerca o se aleja</div>
+        <div class="stage"><canvas id="canvasLateral" width="1200" height="520"></canvas></div>
+      </div>
+      <div class="stage-block">
+        <div class="stage-label">🙂 VISTA FRONTAL — mismo espejo, mismo tamaño de imagen</div>
+        <div class="stage"><canvas id="canvasFrontal" width="1200" height="520"></canvas></div>
+      </div>
+      <div id="guide-bar">
+        <svg id="guide-face" viewBox="0 0 42 42"></svg>
+        <div id="guide-text">Cargando...</div>
+      </div>
+    </div>
+
+    <div id="side-panel">
+      <div class="panel">
+        <div class="panel-title">CONTROLES</div>
+        <div class="slider-group">
+          <div class="slider-head"><span>Distancia al espejo (d)</span><b id="v-d">1.20 m</b></div>
+          <input type="range" id="s-d" min="0.5" max="3.2" step="0.05" value="1.2">
+        </div>
+        <div class="slider-group">
+          <div class="slider-head"><span>Altura de Nico (H)</span><b id="v-h">1.60 m</b></div>
+          <input type="range" id="s-h" min="1.0" max="2.0" step="0.02" value="1.6">
+        </div>
+        <div class="toggles">
+          <label class="toggle-row"><input type="checkbox" id="chk-rays" checked> Mostrar rayos de luz</label>
+          <label class="toggle-row"><input type="checkbox" id="chk-image" checked> Mostrar imagen virtual</label>
+          <label class="toggle-row"><input type="checkbox" id="chk-angles" checked> Mostrar ángulos i = r</label>
+        </div>
+        <button class="btn btn-min" id="btn-min">🪞 ESPEJO MÍNIMO (H/2)</button>
+        <button class="btn btn-big" id="btn-big">↕ ESPEJO GRANDE</button>
+        <button class="btn btn-reset" id="btn-reset">↺ REINICIAR</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-title">MEDICIONES EN VIVO</div>
+        <div class="metric-row"><span>Altura persona H</span><span class="metric-val" id="m-h">1.60 m</span></div>
+        <div class="metric-row"><span>Distancia d</span><span class="metric-val" id="m-d">1.20 m</span></div>
+        <div class="metric-row"><span>Distancia imagen d'</span><span class="metric-val" id="m-di">1.20 m</span></div>
+        <div class="metric-row"><span>Espejo actual</span><span class="metric-val" id="m-mirror">— m</span></div>
+        <div class="metric-row"><span>Espejo mínimo H/2</span><span class="metric-val" id="m-min">0.80 m</span></div>
+        <div class="metric-row"><span>θ rayo cabeza (i=r)</span><span class="metric-val" id="m-angle-head">—°</span></div>
+        <div class="metric-row"><span>θ rayo pies (i=r)</span><span class="metric-val" id="m-angle-feet">—°</span></div>
+        <div class="metric-row"><span>Estado</span><span class="metric-val" id="m-status">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="conclusion">
+    <div class="lbl">CONCLUSIÓN FÍSICA</div>
+    <p>"En un espejo plano, para verse de cuerpo completo, la altura mínima del espejo es <b>la mitad de la altura de la persona</b> y <b>no depende de la distancia</b> al espejo."</p>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- Palette (Stardew Pixel) ----------
+  const PAL = {
+    sky2:'#F4C97A', wall:'#C98A4B',
+    wallStripe:'rgba(0,0,0,0.06)', floor:'#8B6914', floorDark:'#6E520E',
+    floorLine:'rgba(0,0,0,0.14)', rug:'#B5432E', rugPattern:'#8C2F1F',
+    frameWood:'#6B3710', frameLight:'#DDA059', glass1:'#DCEEF7', glass2:'#AFDCEE',
+    glassShine:'rgba(255,255,255,0.55)', outline:'#2C1810',
+    skin:'#E8B27E', hair:'#5A3420', shirt:'#3E8E8A',
+    shirtShade:'#2E6B68', pants:'#4A5A3A', shoe:'#3B2A1E',
+    ray:'#FFD966', rayVirtual:'rgba(255,217,102,0.45)', imageTint:'rgba(89,201,241,0.55)',
+    normalLine:'rgba(255,255,255,0.55)', angleArc:'#FF7A45',
+    eyeLine:'rgba(255,255,255,0.35)'
+  };
+
+  // ---------- Shared state (both views read/write the SAME mirror & person) ----------
+  const state = {
+    d: 1.2,             // distancia persona-espejo (m)
+    H: 1.6,             // altura persona (m)
+    eyeFrac: 0.93,       // ojos a 93% de la altura total (promedio antropométrico)
+    mirrorBottom: 0.35,  // borde inferior del espejo (m desde el piso)
+    mirrorTop: 1.55,     // borde superior del espejo (m desde el piso)
+    showRays: true,
+    showImage: true,
+    showAngles: true,
+    dragging: null,      // 'bottom' | 'top' | null, shared: only one handle drags at a time
+    t: 0,
+    celebrated: false
+  };
+
+  // ---------- Shared pixel scale (both canvases use the same floor line & scale) ----------
+  const CANVAS_W = 1200, CANVAS_H = 520;
+  const SCALE = 110;     // px por metro
+  const GROUND_Y = 400;  // y del piso, en ambos canvases
+
+  function wy(ym){ return GROUND_Y - ym*SCALE; }
+
+  // Lateral view: the MIRROR is the fixed reference (x=0m), Nico moves toward/
+  // away from it as `d` changes — the mirror never moves on screen.
+  const L_MIRROR_X = 720;
+  function lwx(xm){ return L_MIRROR_X + xm*SCALE; }
+
+  // Frontal view: person and mirror both sit at fixed screen positions.
+  const F_PERSON_X = 300, F_MIRROR_CX = 820, F_MIRROR_W = 150;
+  const F_HANDLE_X = F_MIRROR_CX + F_MIRROR_W/2 + 16;
+
+  // ---------- Physics: geometry of a vertical plane mirror ----------
+  // For a person modelled as a thin vertical line with eyes at height hEye,
+  // looking at a point of their own body at height y, the reflected ray
+  // reaches the mirror at height (hEye + y) / 2 — the midpoint between
+  // eye-height and that point's height — regardless of the distance d to
+  // the mirror (d cancels out algebraically; see similar-triangles proof).
+  function reflectHeight(hEye, y){ return (hEye + y) / 2; }
+
+  function eyeHeight(){ return state.eyeFrac * state.H; }
+
+  function idealMirror(){
+    const hEye = eyeHeight();
+    return { bottom: reflectHeight(hEye, 0), top: reflectHeight(hEye, state.H) };
+  }
+
+  function visibleYRange(){
+    const hEye = eyeHeight();
+    // y such that reflectHeight(hEye,y) falls within [mirrorBottom, mirrorTop]
+    const y0 = 2*state.mirrorBottom - hEye;
+    const y1 = 2*state.mirrorTop - hEye;
+    return [Math.max(0,y0), Math.min(state.H,y1)];
+  }
+
+  function isFullBodyVisible(){
+    const [y0,y1] = visibleYRange();
+    return y0 <= 0.001 && y1 >= state.H - 0.001;
+  }
+
+  function isMinimalFit(){
+    const ideal = idealMirror();
+    return isFullBodyVisible() &&
+      Math.abs(state.mirrorBottom - ideal.bottom) < 0.035 &&
+      Math.abs(state.mirrorTop - ideal.top) < 0.035;
+  }
+
+  // Each ray (head→mirror→eye, feet→mirror→eye) has its OWN angle of
+  // incidence/reflection from the mirror's normal — they are generally
+  // different from each other (equal only in the special case hEye = H/2).
+  // What IS always true is angle-in = angle-out for the SAME ray.
+  function headAngleDeg(){
+    const hEye = eyeHeight();
+    return Math.atan2((state.H - hEye)/2, state.d) * 180/Math.PI;
+  }
+  function feetAngleDeg(){
+    const hEye = eyeHeight();
+    return Math.atan2(hEye/2, state.d) * 180/Math.PI;
+  }
+
+  // ---------- Canvas setup ----------
+  const canvasL = document.getElementById('canvasLateral');
+  const canvasF = document.getElementById('canvasFrontal');
+  const ctxL = canvasL.getContext('2d');
+  const ctxF = canvasF.getContext('2d');
+
+  function pxToMeters(py){ return (GROUND_Y - py)/SCALE; }
+
+  function attachDrag(canvasEl, handleX, getHandleTopY, getHandleBottomY){
+    let dragging = null;
+    function getPos(evt){
+      const rect = canvasEl.getBoundingClientRect();
+      const scaleX = canvasEl.width/rect.width, scaleY = canvasEl.height/rect.height;
+      const cx = (evt.touches ? evt.touches[0].clientX : evt.clientX);
+      const cy = (evt.touches ? evt.touches[0].clientY : evt.clientY);
+      return { x:(cx-rect.left)*scaleX, y:(cy-rect.top)*scaleY };
+    }
+    function hit(pos){
+      if (Math.abs(pos.x-handleX) > 22) return null;
+      if (Math.abs(pos.y-getHandleTopY()) < 16) return 'top';
+      if (Math.abs(pos.y-getHandleBottomY()) < 16) return 'bottom';
+      return null;
+    }
+    function onDown(evt){
+      const pos = getPos(evt);
+      const h = hit(pos);
+      if (h){ dragging = h; state.dragging = h; evt.preventDefault(); }
+    }
+    function onMove(evt){
+      if (!dragging) return;
+      evt.preventDefault();
+      const pos = getPos(evt);
+      let ym = Math.max(0, Math.min(2.3, pxToMeters(pos.y)));
+      if (dragging==='bottom'){
+        state.mirrorBottom = Math.min(ym, state.mirrorTop-0.08);
+      } else {
+        state.mirrorTop = Math.max(ym, state.mirrorBottom+0.08);
+      }
+      updateAll();
+    }
+    function onUp(){ dragging = null; state.dragging = null; updateGuide(); }
+    canvasEl.addEventListener('mousedown', onDown);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    canvasEl.addEventListener('touchstart', onDown, {passive:false});
+    window.addEventListener('touchmove', onMove, {passive:false});
+    window.addEventListener('touchend', onUp);
+  }
+
+  attachDrag(canvasL, L_MIRROR_X, ()=>wy(state.mirrorTop), ()=>wy(state.mirrorBottom));
+  attachDrag(canvasF, F_HANDLE_X, ()=>wy(state.mirrorTop), ()=>wy(state.mirrorBottom));
+
+  // ---------- Drawing helpers ----------
+  function ditherRect(ctx,x,y,w,h,color,alpha){
+    ctx.save(); ctx.globalAlpha = alpha===undefined?1:alpha; ctx.fillStyle = color;
+    const step = 3;
+    for (let py=0; py<h; py+=step){
+      for (let px=0; px<w; px+=step){
+        if (((px/step|0)+(py/step|0)) % 2 === 0) ctx.fillRect(x+px, y+py, step, step);
+      }
+    }
+    ctx.restore();
+  }
+
+  function roundRect(ctx,x,y,w,h,r){
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
+    ctx.closePath();
+  }
+
+  // ---------- Room background ----------
+  function drawRoom(ctx, mirrorScreenX, decorAnchorX){
+    const w = CANVAS_W, h = CANVAS_H;
+    const g = ctx.createLinearGradient(0,0,0,GROUND_Y);
+    g.addColorStop(0, PAL.sky2); g.addColorStop(1, PAL.wall);
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,GROUND_Y);
+
+    ctx.fillStyle = PAL.wallStripe;
+    for (let x=0;x<w;x+=48) ctx.fillRect(x,0,20,GROUND_Y);
+
+    // window (top-left) with daylight
+    const winX=40, winY=40, winW=150, winH=150;
+    ctx.fillStyle = '#FFF3D0'; ctx.fillRect(winX,winY,winW,winH);
+    const wg = ctx.createLinearGradient(winX,winY,winX,winY+winH);
+    wg.addColorStop(0,'#BEE9FB'); wg.addColorStop(1,'#FCEBB0');
+    ctx.fillStyle = wg; ctx.fillRect(winX+8,winY+8,winW-16,winH-16);
+    ctx.fillStyle = PAL.frameWood;
+    ctx.fillRect(winX-6,winY-6,winW+12,10); ctx.fillRect(winX-6,winY+winH-4,winW+12,10);
+    ctx.fillRect(winX-6,winY-6,10,winH+12); ctx.fillRect(winX+winW-4,winY-6,10,winH+12);
+    ctx.fillRect(winX+winW/2-4,winY,8,winH); ctx.fillRect(winX,winY+winH/2-4,winW,8);
+    ctx.save(); ctx.globalAlpha=0.18; ctx.fillStyle='#FFFFFF';
+    ctx.beginPath(); ctx.moveTo(winX+winW,winY+20); ctx.lineTo(winX+winW+140,winY-10); ctx.lineTo(winX+winW+140,winY+8); ctx.lineTo(winX+winW,winY+50); ctx.fill();
+    ctx.restore();
+
+    // hanging pendant lamp, anchored near the mirror (fixed, doesn't drift)
+    const lampX = mirrorScreenX - 60;
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth=3;
+    ctx.beginPath(); ctx.moveTo(lampX,0); ctx.lineTo(lampX,40); ctx.stroke();
+    ctx.fillStyle='#E8A020'; ctx.beginPath(); ctx.arc(lampX,52,15,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle=PAL.outline; ctx.stroke();
+    ctx.fillStyle='rgba(255,230,150,0.25)'; ctx.beginPath(); ctx.arc(lampX,65,38,0,Math.PI*2); ctx.fill();
+
+    // picture frame decoration
+    ctx.fillStyle = PAL.frameWood; ctx.fillRect(w-150,60,70,90);
+    ctx.fillStyle = '#EFD9A8'; ctx.fillRect(w-144,66,58,78);
+    ctx.strokeStyle='rgba(0,0,0,0.15)'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(w-140,130); ctx.lineTo(w-110,90); ctx.lineTo(w-95,110); ctx.lineTo(w-90,130); ctx.stroke();
+    ctx.fillStyle='#F4D35E'; ctx.beginPath(); ctx.arc(w-108,80,7,0,Math.PI*2); ctx.fill();
+
+    // floor
+    ctx.fillStyle = PAL.floor; ctx.fillRect(0,GROUND_Y,w,h-GROUND_Y);
+    ctx.strokeStyle = PAL.floorLine; ctx.lineWidth=2;
+    for (let x=-40;x<w+200;x+=46){
+      ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x-30, h); ctx.stroke();
+    }
+    for (let y=GROUND_Y+22;y<h;y+=26){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+    ctx.fillStyle=PAL.floorDark; ctx.fillRect(0,GROUND_Y,w,4);
+
+    // rug under the walking area (between decorAnchorX and mirror)
+    const rugCX = (decorAnchorX + mirrorScreenX)/2;
+    ctx.fillStyle = PAL.rug;
+    roundRect(ctx, rugCX-110, GROUND_Y+8, 260, 70, 14); ctx.fill();
+    ctx.strokeStyle = PAL.rugPattern; ctx.lineWidth=4;
+    roundRect(ctx, rugCX-90, GROUND_Y+20, 220, 46, 10); ctx.stroke();
+
+    // small dresser + plant, always anchored just beside the mirror
+    const dx = mirrorScreenX + 70;
+    ctx.fillStyle = PAL.frameWood; ctx.fillRect(dx,GROUND_Y-58,64,58);
+    ctx.fillStyle = PAL.frameLight; ctx.fillRect(dx+6,GROUND_Y-50,52,16);
+    ctx.fillStyle = PAL.frameLight; ctx.fillRect(dx+6,GROUND_Y-28,52,16);
+    ctx.fillStyle='#8B6914'; ctx.beginPath(); ctx.arc(dx+32,GROUND_Y-70,10,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#5DA832';
+    for (let i=0;i<5;i++){
+      ctx.beginPath(); ctx.ellipse(dx+22+i*4, GROUND_Y-80-((i%3)*6), 10,5, i*0.6, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  // ---------- Character: "Nico" ----------
+  function drawPersonLateral(ctx, xPx, H, facing){
+    const x = xPx;
+    const groundY = GROUND_Y;
+    const s = H/1.7;
+    const headR = 16*s;
+    const legLen = H*0.46*SCALE;
+    const torsoLen = H*0.34*SCALE;
+    const neckY = groundY - legLen - torsoLen;
+    const headCY = neckY - headR - 2;
+
+    ctx.save();
+    ditherRect(ctx, x-22*s, groundY-4, 44*s, 8, '#000', 0.28);
+
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth = 3;
+    ctx.fillStyle = PAL.pants;
+    const legW = 10*s;
+    ctx.fillRect(x-legW-1, neckY+torsoLen*0.15, legW, legLen*0.85);
+    ctx.strokeRect(x-legW-1, neckY+torsoLen*0.15, legW, legLen*0.85);
+    ctx.fillRect(x-legW-1+2, neckY+torsoLen*0.15, legW, legLen*0.9);
+    ctx.fillStyle = PAL.shoe;
+    ctx.fillRect(x-legW-4, groundY-8*s, 18*s, 8*s);
+    ctx.strokeRect(x-legW-4, groundY-8*s, 18*s, 8*s);
+
+    ctx.fillStyle = PAL.shirt;
+    roundRect(ctx, x-13*s, neckY, 22*s, torsoLen, 5*s); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = PAL.shirtShade;
+    ctx.fillRect(x-13*s, neckY+torsoLen*0.55, 22*s, torsoLen*0.45);
+
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth=3;
+    ctx.fillStyle = PAL.skin;
+    ctx.beginPath();
+    ctx.ellipse(x+ (facing>0? 14*s : -14*s), neckY+torsoLen*0.55, 6*s, 12*s, 0,0,Math.PI*2);
+    ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = PAL.skin;
+    ctx.beginPath(); ctx.arc(x, headCY, headR, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = PAL.hair;
+    ctx.beginPath(); ctx.arc(x, headCY-2, headR+1, Math.PI*1.02, Math.PI*2.02); ctx.fill();
+    ctx.fillRect(x-headR, headCY-headR, headR*2, headR*0.55);
+    ctx.beginPath(); ctx.moveTo(x-headR*0.2,headCY-headR); ctx.lineTo(x-headR*0.1,headCY-headR-6*s); ctx.lineTo(x+headR*0.2,headCY-headR+1); ctx.fill();
+
+    ctx.fillStyle = PAL.outline;
+    const eyeX = x + facing*7*s;
+    ctx.beginPath(); ctx.arc(eyeX, headCY+1, 2.2*s, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth = 1.6;
+    ctx.beginPath(); ctx.arc(eyeX - facing*2*s, headCY+7*s, 3*s, 0.1*Math.PI, 0.7*Math.PI); ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawPersonFrontal(ctx, x, H, alpha, mirrored){
+    const groundY = GROUND_Y;
+    const s = H/1.7;
+    const headR = 17*s;
+    const legLen = H*0.46*SCALE;
+    const torsoLen = H*0.34*SCALE;
+    const shoulderY = groundY - legLen - torsoLen;
+    const headCY = shoulderY - headR - 2;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ditherRect(ctx, x-26*s, groundY-4, 52*s, 8, '#000', 0.28*alpha);
+
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth = 3;
+    ctx.fillStyle = PAL.pants;
+    ctx.fillRect(x-16*s, shoulderY+torsoLen*0.2, 12*s, legLen*0.82);
+    ctx.strokeRect(x-16*s, shoulderY+torsoLen*0.2, 12*s, legLen*0.82);
+    ctx.fillRect(x+4*s, shoulderY+torsoLen*0.2, 12*s, legLen*0.82);
+    ctx.strokeRect(x+4*s, shoulderY+torsoLen*0.2, 12*s, legLen*0.82);
+    ctx.fillStyle = PAL.shoe;
+    ctx.fillRect(x-18*s, groundY-8*s, 16*s, 8*s); ctx.strokeRect(x-18*s, groundY-8*s, 16*s, 8*s);
+    ctx.fillRect(x+2*s, groundY-8*s, 16*s, 8*s); ctx.strokeRect(x+2*s, groundY-8*s, 16*s, 8*s);
+
+    ctx.fillStyle = PAL.shirt;
+    roundRect(ctx, x-17*s, shoulderY, 34*s, torsoLen, 6*s); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = PAL.shirtShade; ctx.fillRect(x-17*s, shoulderY+torsoLen*0.55, 34*s, torsoLen*0.45);
+
+    ctx.fillStyle = PAL.skin;
+    ctx.beginPath(); ctx.ellipse(x-24*s, shoulderY+torsoLen*0.45, 6.5*s, 15*s, 0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(x+24*s, shoulderY+torsoLen*0.45, 6.5*s, 15*s, 0,0,Math.PI*2); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = PAL.skin;
+    ctx.beginPath(); ctx.arc(x, headCY, headR, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = PAL.hair;
+    ctx.beginPath(); ctx.arc(x, headCY-1, headR+1, Math.PI, Math.PI*2); ctx.fill();
+    ctx.fillRect(x-headR-1, headCY-headR*0.3, (headR*2)+2, headR*0.35);
+    ctx.fillStyle = PAL.outline;
+    ctx.beginPath(); ctx.arc(x-6*s, headCY+1, 2*s, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x+6*s, headCY+1, 2*s, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth=1.6;
+    ctx.beginPath(); ctx.arc(x, headCY+8*s, 4*s, 0.15*Math.PI, 0.85*Math.PI); ctx.stroke();
+
+    ctx.restore();
+  }
+
+  // ---------- Mirror (narrow, lateral profile) ----------
+  function drawMirrorFrameLateral(ctx, mx, bottomY, topY, glow){
+    const w = 20;
+    ctx.save();
+    ctx.fillStyle = PAL.frameWood;
+    roundRect(ctx, mx-w/2-6, topY-10, w+12, (bottomY-topY)+20, 6); ctx.fill();
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle = PAL.frameLight;
+    roundRect(ctx, mx-w/2-2, topY-6, w+4, (bottomY-topY)+12, 4); ctx.fill();
+
+    const g = ctx.createLinearGradient(mx-w/2, topY, mx+w/2, bottomY);
+    g.addColorStop(0, PAL.glass1); g.addColorStop(0.5, PAL.glass2); g.addColorStop(1, PAL.glass1);
+    ctx.fillStyle = g;
+    roundRect(ctx, mx-w/2, topY, w, bottomY-topY, 3); ctx.fill();
+
+    ctx.save();
+    ctx.beginPath(); roundRect(ctx, mx-w/2, topY, w, bottomY-topY, 3); ctx.clip();
+    const sweepX = mx-w/2 + ((Math.sin(state.t*0.4)+1)/2) * (w+20) - 20;
+    ctx.fillStyle = PAL.glassShine;
+    ctx.beginPath();
+    ctx.moveTo(sweepX, topY); ctx.lineTo(sweepX+8, topY); ctx.lineTo(sweepX-6, bottomY); ctx.lineTo(sweepX-14, bottomY);
+    ctx.fill();
+    ctx.restore();
+
+    if (glow){
+      ctx.strokeStyle = 'rgba(93,168,50,0.9)'; ctx.lineWidth=3;
+      roundRect(ctx, mx-w/2-2, topY-2, w+4, (bottomY-topY)+4, 4); ctx.stroke();
+    }
+
+    [ [topY,'top'], [bottomY,'bottom'] ].forEach(([hy,tag])=>{
+      ctx.beginPath(); ctx.arc(mx, hy, 8, 0, Math.PI*2);
+      ctx.fillStyle = state.dragging===tag ? '#FFD921' : '#E8A020';
+      ctx.fill(); ctx.strokeStyle=PAL.outline; ctx.lineWidth=2; ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  // ---------- Mirror (wide, frontal) — single source of truth for handle position ----------
+  function drawMirrorFrameFrontal(ctx, cx, w, bottomY, topY, glow){
+    ctx.save();
+    ctx.fillStyle = PAL.frameWood;
+    roundRect(ctx, cx-w/2-8, topY-10, w+16, (bottomY-topY)+20, 6); ctx.fill();
+    ctx.strokeStyle = PAL.outline; ctx.lineWidth=2; ctx.stroke();
+    ctx.fillStyle = PAL.frameLight;
+    roundRect(ctx, cx-w/2-3, topY-6, w+6, (bottomY-topY)+12, 4); ctx.fill();
+
+    const g = ctx.createLinearGradient(cx-w/2,0,cx+w/2,0);
+    g.addColorStop(0, PAL.glass1); g.addColorStop(0.5, PAL.glass2); g.addColorStop(1, PAL.glass1);
+    ctx.fillStyle = g;
+    roundRect(ctx, cx-w/2, topY, w, bottomY-topY, 4); ctx.fill();
+
+    if (glow){
+      ctx.strokeStyle = 'rgba(93,168,50,0.9)'; ctx.lineWidth=3;
+      roundRect(ctx, cx-w/2-3, topY-3, w+6, (bottomY-topY)+6, 5); ctx.stroke();
+    }
+
+    [ [topY,'top'], [bottomY,'bottom'] ].forEach(([hy,tag])=>{
+      ctx.beginPath(); ctx.arc(F_HANDLE_X, hy, 8, 0, Math.PI*2);
+      ctx.fillStyle = state.dragging===tag ? '#FFD921' : '#E8A020';
+      ctx.fill(); ctx.strokeStyle=PAL.outline; ctx.lineWidth=2; ctx.stroke();
+    });
+    ctx.restore();
+  }
+
+  // ---------- Rays ----------
+  function drawRayLine(ctx,x1,y1,x2,y2,color,width,dash){
+    ctx.save();
+    ctx.setLineDash(dash||[]);
+    ctx.strokeStyle = color; ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawArrowHead(ctx,x,y,angle,color){
+    ctx.save();
+    ctx.translate(x,y); ctx.rotate(angle);
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-9,-4); ctx.lineTo(-9,4); ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  function angleArc(ctx,px,py,fromAng,toAng,r,color){
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(px,py,r,fromAng,toAng); ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawDim(ctx,x1,y,x2,label){
+    ctx.save();
+    ctx.strokeStyle='rgba(245,230,200,0.7)'; ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(x1,y-6); ctx.lineTo(x1,y+6); ctx.moveTo(x1,y); ctx.lineTo(x2,y);
+    ctx.moveTo(x2,y-6); ctx.lineTo(x2,y+6); ctx.stroke();
+    ctx.fillStyle='#F5E6C8'; ctx.font="14px 'VT323'"; ctx.textAlign='center';
+    ctx.fillText(label, (x1+x2)/2, y+16);
+    ctx.textAlign='left';
+    ctx.restore();
+  }
+
+  // ---------- Lateral view ----------
+  function drawLateral(){
+    const ctx = ctxL, w = CANVAS_W, h = CANVAS_H;
+    ctx.clearRect(0,0,w,h);
+    const personPx = lwx(-state.d);
+    drawRoom(ctx, L_MIRROR_X, personPx);
+
+    const hEye = eyeHeight();
+    const mx = L_MIRROR_X; // fixed: the mirror never moves on screen
+    const by = wy(state.mirrorBottom), ty = wy(state.mirrorTop);
+
+    ctx.save();
+    ctx.setLineDash([4,6]); ctx.strokeStyle = PAL.eyeLine; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(0, wy(hEye)); ctx.lineTo(w, wy(hEye)); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle='rgba(255,255,255,0.55)'; ctx.font="12px 'VT323'";
+    ctx.fillText('altura de los ojos', 12, wy(hEye)-6);
+
+    drawPersonLateral(ctx, personPx, state.H, 1);
+    drawMirrorFrameLateral(ctx, mx, by, ty, isMinimalFit());
+
+    const [visY0, visY1] = visibleYRange();
+    const topReflectM = reflectHeight(hEye, state.H);
+    const botReflectM = reflectHeight(hEye, 0);
+    const topVisible = topReflectM >= state.mirrorBottom-0.001 && topReflectM <= state.mirrorTop+0.001;
+    const botVisible = botReflectM >= state.mirrorBottom-0.001 && botReflectM <= state.mirrorTop+0.001;
+
+    const eyePx = { x: personPx, y: wy(hEye) };
+    const headPx = { x: personPx, y: wy(state.H) };
+    const feetPx = { x: personPx, y: wy(0) };
+    const imagePx = lwx(state.d);
+    const imgHeadPx = { x: imagePx, y: wy(state.H) };
+    const imgFeetPx = { x: imagePx, y: wy(0) };
+    const reflectTopPx = { x: mx, y: wy(topReflectM) };
+    const reflectBotPx = { x: mx, y: wy(botReflectM) };
+
+    if (state.showImage && visY1>visY0){
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, wy(visY1)-4, w, wy(visY0)-wy(visY1)+8);
+      ctx.clip();
+      ctx.globalAlpha=0.16; ctx.fillStyle = PAL.imageTint;
+      ctx.fillRect(mx+10, wy(visY1), w-(mx+10), wy(visY0)-wy(visY1));
+      ctx.globalAlpha = 0.8;
+      ctx.shadowColor = '#59C9F1'; ctx.shadowBlur = 10;
+      ctx.setLineDash([5,4]);
+      drawPersonLateral(ctx, imagePx, state.H, -1);
+      ctx.restore();
+    }
+
+    if (state.showRays){
+      drawRayLine(ctx, headPx.x, headPx.y, reflectTopPx.x, reflectTopPx.y, PAL.ray, 2.4, topVisible?[]:[6,5]);
+      drawRayLine(ctx, reflectTopPx.x, reflectTopPx.y, eyePx.x, eyePx.y, PAL.ray, 2.4, topVisible?[]:[6,5]);
+      if (state.showImage) drawRayLine(ctx, reflectTopPx.x, reflectTopPx.y, imgHeadPx.x, imgHeadPx.y, PAL.rayVirtual, 1.4, [3,4]);
+      const angH = Math.atan2(eyePx.y-reflectTopPx.y, eyePx.x-reflectTopPx.x);
+      drawArrowHead(ctx, eyePx.x, eyePx.y, angH, PAL.ray);
+
+      drawRayLine(ctx, feetPx.x, feetPx.y, reflectBotPx.x, reflectBotPx.y, PAL.ray, 2.4, botVisible?[]:[6,5]);
+      drawRayLine(ctx, reflectBotPx.x, reflectBotPx.y, eyePx.x, eyePx.y, PAL.ray, 2.4, botVisible?[]:[6,5]);
+      if (state.showImage) drawRayLine(ctx, reflectBotPx.x, reflectBotPx.y, imgFeetPx.x, imgFeetPx.y, PAL.rayVirtual, 1.4, [3,4]);
+      const angF = Math.atan2(eyePx.y-reflectBotPx.y, eyePx.x-reflectBotPx.x);
+      drawArrowHead(ctx, eyePx.x, eyePx.y, angF, PAL.ray);
+
+      [reflectTopPx, reflectBotPx].forEach(p=>{
+        ctx.beginPath(); ctx.arc(p.x,p.y,3.5,0,Math.PI*2); ctx.fillStyle='#fff'; ctx.fill();
+        ctx.strokeStyle=PAL.outline; ctx.lineWidth=1; ctx.stroke();
+      });
+
+      if (state.showAngles){
+        [ {p:reflectTopPx, target:headPx}, {p:reflectBotPx, target:feetPx} ].forEach(({p,target})=>{
+          ctx.save(); ctx.setLineDash([3,4]); ctx.strokeStyle=PAL.normalLine; ctx.lineWidth=1.4;
+          ctx.beginPath(); ctx.moveTo(p.x-26,p.y); ctx.lineTo(p.x+26,p.y); ctx.stroke();
+          ctx.restore();
+          const angIncident = Math.atan2(Math.abs(target.y-p.y), Math.abs(target.x-p.x));
+          angleArc(ctx, p.x,p.y, Math.PI-angIncident, Math.PI, 20, PAL.angleArc);
+          angleArc(ctx, p.x,p.y, 0, angIncident, 20, PAL.angleArc);
+        });
+      }
+    }
+
+    ctx.beginPath(); ctx.arc(eyePx.x, eyePx.y, 3, 0, Math.PI*2); ctx.fillStyle='#59C9F1'; ctx.fill();
+
+    drawDim(ctx, personPx, 460, mx, `d = ${state.d.toFixed(2)} m`);
+    if (state.showImage) drawDim(ctx, mx, 486, imagePx, `d' = ${state.d.toFixed(2)} m`);
+  }
+
+  // ---------- Frontal view ----------
+  function drawFrontal(){
+    const ctx = ctxF, h = CANVAS_H;
+    ctx.clearRect(0,0,CANVAS_W,h);
+    drawRoom(ctx, F_MIRROR_CX, F_PERSON_X);
+
+    drawPersonFrontal(ctx, F_PERSON_X, state.H, 1, false);
+
+    const by = wy(state.mirrorBottom), ty = wy(state.mirrorTop);
+    drawMirrorFrameFrontal(ctx, F_MIRROR_CX, F_MIRROR_W, by, ty, isMinimalFit());
+
+    // reflected image clipped to the mirror's actual vertical extent
+    ctx.save();
+    ctx.beginPath(); ctx.rect(F_MIRROR_CX-F_MIRROR_W/2, ty, F_MIRROR_W, by-ty); ctx.clip();
+    drawPersonFrontal(ctx, F_MIRROR_CX, state.H, 0.95, true);
+    ctx.restore();
+
+    // faint hint of the hidden parts, drawn only outside the mirror's clip
+    ctx.save();
+    ctx.globalAlpha = 0.22;
+    ctx.beginPath();
+    ctx.rect(F_MIRROR_CX-F_MIRROR_W/2, 0, F_MIRROR_W, ty);
+    ctx.rect(F_MIRROR_CX-F_MIRROR_W/2, by, F_MIRROR_W, h-by);
+    ctx.clip();
+    drawPersonFrontal(ctx, F_MIRROR_CX, state.H, 1, true);
+    ctx.restore();
+
+    ctx.fillStyle='rgba(245,230,200,0.85)'; ctx.font="16px 'VT323'"; ctx.textAlign='center';
+    ctx.fillText('Nico', F_PERSON_X, GROUND_Y+40);
+    ctx.fillText('reflejo en el espejo (mismo tamaño)', F_MIRROR_CX, GROUND_Y+40);
+    ctx.fillText(`d = ${state.d.toFixed(2)} m`, (F_PERSON_X+F_MIRROR_CX)/2, GROUND_Y+40);
+    ctx.textAlign='left';
+  }
+
+  // ---------- Metrics / Guide ----------
+  function fmt(n){ return n.toFixed(2)+' m'; }
+
+  function updateMetrics(){
+    document.getElementById('v-d').textContent = state.d.toFixed(2)+' m';
+    document.getElementById('v-h').textContent = state.H.toFixed(2)+' m';
+    document.getElementById('m-h').textContent = fmt(state.H);
+    document.getElementById('m-d').textContent = fmt(state.d);
+    document.getElementById('m-di').textContent = fmt(state.d);
+    document.getElementById('m-mirror').textContent = fmt(state.mirrorTop-state.mirrorBottom);
+    document.getElementById('m-min').textContent = fmt(state.H/2);
+    document.getElementById('m-angle-head').textContent = headAngleDeg().toFixed(1)+'°';
+    document.getElementById('m-angle-feet').textContent = feetAngleDeg().toFixed(1)+'°';
+    const fit = isFullBodyVisible();
+    const statusEl = document.getElementById('m-status');
+    if (fit){
+      statusEl.textContent = isMinimalFit() ? '✓ MÍNIMO ✓' : '✓ COMPLETO';
+      statusEl.className = 'metric-val ok';
+    } else {
+      const [y0,y1] = visibleYRange();
+      const missing = [];
+      if (y0>0.02) missing.push('pies');
+      if (y1<state.H-0.02) missing.push('cabeza');
+      statusEl.textContent = '✗ falta: '+(missing.join(', ')||'—');
+      statusEl.className = 'metric-val bad';
+    }
+  }
+
+  const guideMessages = {
+    intro: '¡Hola! Soy Nico. El espejo queda fijo en su lugar — soy yo el que se acerca o se aleja. Probá mover la <b>distancia</b> y arrastrar los bordes del espejo (círculos amarillos) para ver cuánto necesito para verme entero.',
+    minimal: '¡Genial! Encontraste el <b>espejo mínimo</b>: mide exactamente <b>H/2</b>. La parte de abajo queda a mitad de camino entre mis ojos y mis pies.',
+    fullBig: 'Así ya me veo completo, ¡pero el espejo es más grande de lo necesario! ¿Podés achicarlo sin perder ninguna parte de mi cuerpo?',
+    missingFeet: 'Con este espejo no veo mis pies. Bajá el borde inferior (círculo de abajo) un poco más.',
+    missingHead: 'Con este espejo no veo mi cabeza. Subí el borde superior (círculo de arriba) un poco más.',
+    missingBoth: 'Este espejo es muy chico y encima está mal ubicado: no veo ni mis pies ni mi cabeza.',
+    invariance: '¡Mirá eso! Cambiaste la <b>distancia</b> y seguís viéndome completo con el <b>mismo espejo</b>. ¡La distancia no importa!'
+  };
+
+  function updateGuide(){
+    const fit = isFullBodyVisible();
+    const minimal = isMinimalFit();
+    let key;
+    if (minimal){
+      key = state.celebrated ? 'invariance' : 'minimal';
+      state.celebrated = true;
+    } else if (fit){
+      key = 'fullBig';
+    } else {
+      const [y0,y1] = visibleYRange();
+      const missFeet = y0>0.02, missHead = y1<state.H-0.02;
+      key = missFeet && missHead ? 'missingBoth' : (missFeet ? 'missingFeet' : 'missingHead');
+    }
+    document.getElementById('guide-text').innerHTML = guideMessages[key];
+    drawGuideFace(minimal ? 'excited' : (fit ? 'neutral' : 'explaining'));
+  }
+
+  function drawGuideFace(mood){
+    const svg = document.getElementById('guide-face');
+    const blink = (Math.sin(state.t*1.3)>0.96);
+    const eyes = blink
+      ? `<line x1="13" y1="20" x2="19" y2="20" stroke="#2C1810" stroke-width="2"/><line x1="23" y1="20" x2="29" y2="20" stroke="#2C1810" stroke-width="2"/>`
+      : `<circle cx="16" cy="19" r="2.3" fill="#2C1810"/><circle cx="26" cy="19" r="2.3" fill="#2C1810"/>`;
+    const mouth = mood==='excited'
+      ? `<path d="M14 26 Q21 34 28 26" stroke="#2C1810" stroke-width="2" fill="none"/>`
+      : mood==='explaining'
+      ? `<circle cx="21" cy="28" r="3" fill="#2C1810"/>`
+      : `<path d="M15 27 Q21 31 27 27" stroke="#2C1810" stroke-width="2" fill="none"/>`;
+    svg.innerHTML = `
+      <circle cx="21" cy="21" r="19" fill="#E8B27E" stroke="#2C1810" stroke-width="2"/>
+      <path d="M2 16 Q21 -4 40 16 Q40 6 21 4 Q2 6 2 16Z" fill="#5A3420"/>
+      ${eyes}${mouth}
+    `;
+  }
+
+  // ---------- Buttons / inputs ----------
+  document.getElementById('s-d').addEventListener('input', e=>{ state.d = parseFloat(e.target.value); updateAll(); });
+  document.getElementById('s-h').addEventListener('input', e=>{
+    state.H = parseFloat(e.target.value);
+    state.mirrorTop = Math.min(state.mirrorTop, 2.3);
+    updateAll();
+  });
+  document.getElementById('chk-rays').addEventListener('change', e=>{ state.showRays = e.target.checked; draw(); });
+  document.getElementById('chk-image').addEventListener('change', e=>{ state.showImage = e.target.checked; draw(); });
+  document.getElementById('chk-angles').addEventListener('change', e=>{ state.showAngles = e.target.checked; draw(); });
+
+  document.getElementById('btn-min').addEventListener('click', ()=>{
+    const ideal = idealMirror();
+    state.mirrorBottom = ideal.bottom; state.mirrorTop = ideal.top;
+    updateAll();
+  });
+  document.getElementById('btn-big').addEventListener('click', ()=>{
+    state.mirrorBottom = 0; state.mirrorTop = state.H;
+    updateAll();
+  });
+  document.getElementById('btn-reset').addEventListener('click', ()=>{
+    state.d = 1.2; state.H = 1.6; state.mirrorBottom = 0.35; state.mirrorTop = 1.55;
+    state.celebrated = false;
+    document.getElementById('s-d').value = 1.2; document.getElementById('s-h').value = 1.6;
+    updateAll();
+  });
+
+  function updateAll(){ updateMetrics(); updateGuide(); draw(); }
+
+  function draw(){
+    drawLateral();
+    drawFrontal();
+  }
+
+  function loop(){
+    state.t += 1/60;
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  updateMetrics();
+  document.getElementById('guide-text').innerHTML = guideMessages.intro;
+  drawGuideFace('neutral');
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
